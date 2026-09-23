@@ -36,3 +36,42 @@ class Customer(models.Model):
 
     def __str__(self):
         return self.name
+
+class Customer(models.Model):
+
+    lead = models.OneToOneField(
+        "leads.Lead",
+        on_delete=models.PROTECT,
+        related_name="customer",
+    )
+
+    name = models.CharField(
+        max_length=150
+    )
+
+    phone = models.CharField(
+        max_length=20
+    )
+
+    email = models.EmailField(
+        blank=True
+    )
+
+    company_name = models.CharField(
+        max_length=200,
+        blank=True
+    )
+
+    converted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="converted_customers",
+    )
+
+    converted_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def __str__(self):
+        return self.name

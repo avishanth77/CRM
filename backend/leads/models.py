@@ -157,3 +157,98 @@ class ActivityLog(models.Model):
 
     def __str__(self):
         return f"{self.action} - {self.entity_type}"
+
+class FollowUp(models.Model):
+
+    class FollowUpType(models.TextChoices):
+        CALL = "CALL", "Call"
+        MEETING = "MEETING", "Meeting"
+        EMAIL = "EMAIL", "Email"
+        TASK = "TASK", "Task"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        COMPLETED = "COMPLETED", "Completed"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    lead = models.ForeignKey(
+        Lead,
+        on_delete=models.CASCADE,
+        related_name="followups",
+    )
+
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="followups",
+    )
+
+    follow_up_type = models.CharField(
+        max_length=20,
+        choices=FollowUpType.choices,
+        default=FollowUpType.CALL,
+    )
+
+    scheduled_at = models.DateTimeField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    notes = models.TextField(
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    def __str__(self):
+        return f"{self.lead.name} - {self.follow_up_type}"
+
+class LeadActivity(models.Model):
+
+    class ActivityType(models.TextChoices):
+        NOTE = "NOTE", "Note"
+        CALL = "CALL", "Call"
+        EMAIL = "EMAIL", "Email"
+        MEETING = "MEETING", "Meeting"
+
+    lead = models.ForeignKey(
+        Lead,
+        on_delete=models.CASCADE,
+        related_name="activities",
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="lead_activities",
+    )
+
+    activity_type = models.CharField(
+        max_length=20,
+        choices=ActivityType.choices,
+        default=ActivityType.NOTE,
+    )
+
+    description = models.TextField()
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    def __str__(self):
+        return f"{self.lead.name} - {self.activity_type}"
+

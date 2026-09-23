@@ -1,15 +1,19 @@
 from django.contrib import admin
+
 from .models import Customer
 
 
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):
+
     list_display = (
+        "id",
         "name",
         "phone",
+        "email",
         "company_name",
+        "converted_by",
         "converted_at",
-        "created_by",
     )
 
     search_fields = (
@@ -17,4 +21,8 @@ class CustomerAdmin(admin.ModelAdmin):
         "phone",
         "email",
         "company_name",
+    )
+
+    list_filter = (
+        "converted_at",
     )

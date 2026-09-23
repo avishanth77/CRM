@@ -1,7 +1,12 @@
 from rest_framework import serializers
 
-from .models import Lead, LeadSource
-
+from .models import (
+    Lead,
+    LeadSource,
+    FollowUp,
+    LeadActivity,
+    ActivityLog,
+)
 
 class LeadSourceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -14,9 +19,6 @@ class LeadSourceSerializer(serializers.ModelSerializer):
         ]
 
 
-from rest_framework import serializers
-
-from .models import Lead, LeadSource
 
 
 class LeadSourceSerializer(serializers.ModelSerializer):
@@ -295,3 +297,208 @@ class LeadSerializer(serializers.ModelSerializer):
             })
     
         return attrs
+
+class FollowUpSerializer(serializers.ModelSerializer):
+
+    lead_name = serializers.CharField(
+        source="lead.name",
+        read_only=True
+    )
+
+    assigned_to_name = serializers.CharField(
+        source="assigned_to.username",
+        read_only=True
+    )
+
+    class Meta:
+        model = FollowUp
+
+        fields = [
+            "id",
+            "lead",
+            "lead_name",
+            "assigned_to",
+            "assigned_to_name",
+            "follow_up_type",
+            "scheduled_at",
+            "status",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "lead_name",
+            "assigned_to_name",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate(self, attrs):
+
+        request = self.context.get("request")
+        user = request.user if request else None
+
+        lead = attrs.get("lead")
+
+        # During PATCH, use the existing lead
+        if lead is None and self.instance:
+            lead = self.instance.lead
+
+        if lead is None:
+            raise serializers.ValidationError({
+                "lead": "Lead is required."
+            })
+
+        # --------------------------------
+        # EXECUTIVE LEAD ACCESS
+        # --------------------------------
+
+        if user and user.role == "EXECUTIVE":
+
+            if lead.assigned_to_id != user.id:
+                raise serializers.ValidationError({
+                    "lead": (
+                        "You can only create or update "
+                        "follow-ups for your assigned leads."
+                    )
+                })
+
+            # Prevent Executive from assigning
+            # the follow-up to another user.
+            if "assigned_to" in attrs:
+
+                assigned_user = attrs["assigned_to"]
+
+                if assigned_user.id != user.id:
+                    raise serializers.ValidationError({
+                        "assigned_to": (
+                            "Executives cannot assign "
+                            "follow-ups to other users."
+                        )
+                    })
+
+        # --------------------------------
+        # LEAD STATUS
+        # --------------------------------
+
+        if lead.status in [
+            Lead.Status.WON,
+            Lead.Status.LOST,
+        ]:
+            raise serializers.ValidationError({
+                "lead": (
+                    "Follow-ups cannot be created or "
+                    "updated for Won or Lost leads."
+                )
+            })
+
+        # --------------------------------
+        # COMPLETED FOLLOW-UP
+        # --------------------------------
+
+        if self.instance:
+
+            current_status = self.instance.status
+
+            new_status = attrs.get(
+                "status",
+                current_status
+            )
+
+            if current_status == FollowUp.Status.COMPLETED:
+
+                allowed_fields = {
+                    "notes",
+                }
+
+                changed_fields = set(attrs.keys())
+
+                if not changed_fields.issubset(
+                    allowed_fields
+                ):
+                    raise serializers.ValidationError({
+                        "status": (
+                            "A completed follow-up "
+                            "cannot be rescheduled "
+                            "or reopened."
+                        )
+                    })
+
+        return attrs
+
+class LeadActivitySerializer(serializers.ModelSerializer):
+
+    lead_name = serializers.CharField(
+        source="lead.name",
+        read_only=True,
+    )
+
+    created_by_name = serializers.CharField(
+        source="created_by.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = LeadActivity
+
+        fields = [
+            "id",
+            "lead",
+            "lead_name",
+            "created_by",
+            "created_by_name",
+            "activity_type",
+            "description",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "lead_name",
+            "created_by",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_description(self, value):
+
+        if not value.strip():
+            raise serializers.ValidationError(
+                "Activity description cannot be empty."
+            )
+
+        return value
+
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+
+    performed_by_name = serializers.CharField(
+        source="performed_by.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = ActivityLog
+
+        fields = [
+            "id",
+            "entity_type",
+            "entity_id",
+            "action",
+            "old_value",
+            "new_value",
+            "performed_by",
+            "performed_by_name",
+            "created_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "performed_by",
+            "performed_by_name",
+            "created_at",
+        ]

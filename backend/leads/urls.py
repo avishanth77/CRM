@@ -1,6 +1,12 @@
 from rest_framework.routers import DefaultRouter
 
-from .views import LeadViewSet, LeadSourceViewSet
+from .views import (
+    LeadViewSet,
+    LeadSourceViewSet,
+    FollowUpViewSet,
+    LeadActivityViewSet,
+    ActivityLogViewSet,
+)
 
 
 router = DefaultRouter()
@@ -17,4 +23,22 @@ router.register(
     basename="lead-source",
 )
 
+router.register(
+    "followups",
+    FollowUpViewSet,
+    basename="followup",
+)
+
+router.register(
+    "activities",
+    LeadActivityViewSet,
+    basename="activity",
+
+
+)
+router.register(
+    "activity-logs",
+    ActivityLogViewSet,
+    basename="activity-log",
+)
 urlpatterns = router.urls
