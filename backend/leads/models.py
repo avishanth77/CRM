@@ -61,7 +61,9 @@ class Lead(models.Model):
         choices=Priority.choices,
         default=Priority.MEDIUM,
     )
-
+    lost_reason = models.TextField(
+    blank=True,
+    )
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
