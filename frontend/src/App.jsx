@@ -13,6 +13,7 @@ import DashboardLayout from "./layouts/DashboardLayout";
 import Leads from "./pages/Leads";
 import CreateLead from "./pages/CreateLead";
 import LeadDetails from "./pages/LeadDetails";
+import EditLead from "./pages/EditLead";
 
 
 function App() {
@@ -53,6 +54,10 @@ function App() {
                    path="/leads/:id"
                     element={<LeadDetails/>}
                 />
+                <Route
+                        path="/leads/:id/edit"
+                        element={<EditLead />}
+                    />
 
 
                 </Route>

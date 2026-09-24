@@ -111,7 +111,14 @@ function LeadDetails() {
                     <p>
                         Lead #{lead.id}
                     </p>
-
+                    <button
+                            className="edit-lead-button"
+                            onClick={() =>
+                                navigate(`/leads/${lead.id}/edit`)
+                            }
+                        >
+                            Edit Lead
+                        </button>
                 </div>
 
             </div>

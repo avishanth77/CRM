@@ -98,3 +98,27 @@ export async function createLead(leadData) {
 
     return handleResponse(response);
 }
+export async function updateLead(id, leadData) {
+    const token = getToken();
+
+    if (!token) {
+        throw new Error("Authentication required");
+    }
+
+    const response = await fetch(
+        `${API_URL}/leads/${id}/`,
+        {
+            method: "PATCH",
+
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                Accept: "application/json",
+            },
+
+            body: JSON.stringify(leadData),
+        }
+    );
+
+    return handleResponse(response);
+}
