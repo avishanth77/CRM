@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { getLeads } from "../services/leadsApi";
 
@@ -8,6 +9,7 @@ function Leads() {
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const navigate = useNavigate();
 
     useEffect(() => {
         loadLeads();
@@ -140,9 +142,14 @@ function Leads() {
                                         </td>
 
                                         <td>
-                                            <strong>
+                                            <button
+                                                className="lead-name-button"
+                                                onClick={() =>
+                                                    navigate(`/leads/${lead.id}`)
+                                                }
+                                            >
                                                 {lead.name}
-                                            </strong>
+                                            </button>
                                         </td>
 
                                         <td>

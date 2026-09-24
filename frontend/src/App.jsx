@@ -12,6 +12,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardLayout from "./layouts/DashboardLayout";
 import Leads from "./pages/Leads";
 import CreateLead from "./pages/CreateLead";
+import LeadDetails from "./pages/LeadDetails";
 
 
 function App() {
@@ -44,12 +45,17 @@ function App() {
                       path="/leads"
                       element={<Leads />}
                   />
-
-                </Route>
-                        <Route
+                                          <Route
                    path="/leads/create"
                     element={<CreateLead />}
                 />
+                        <Route
+                   path="/leads/:id"
+                    element={<LeadDetails/>}
+                />
+
+
+                </Route>
 
                 {/* Default Route */}
 

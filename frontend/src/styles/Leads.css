@@ -168,3 +168,16 @@ tbody tr:hover {
         flex-direction: column;
     }
 }
+.lead-name-button {
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: #2563eb;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: inherit;
+}
+
+.lead-name-button:hover {
+    text-decoration: underline;
+}
