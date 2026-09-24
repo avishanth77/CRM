@@ -185,3 +185,48 @@
 .edit-lead-button:hover {
     background: #1d4ed8;
 }
+.lead-action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.lead-action-buttons button {
+    padding: 10px 16px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.edit-lead-button {
+    border: none;
+    background: #2563eb;
+    color: white;
+}
+
+.edit-lead-button:hover {
+    background: #1d4ed8;
+}
+
+.delete-lead-button {
+    border: 1px solid #dc2626;
+    background: white;
+    color: #dc2626;
+}
+
+.delete-lead-button:hover {
+    background: #dc2626;
+    color: white;
+}
+
+.lead-action-buttons button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+    .lead-action-buttons {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

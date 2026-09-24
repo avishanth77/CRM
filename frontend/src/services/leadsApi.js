@@ -122,3 +122,43 @@ export async function updateLead(id, leadData) {
 
     return handleResponse(response);
 }
+export async function deleteLead(id) {
+    const token = getToken();
+
+    if (!token) {
+        throw new Error("Authentication required");
+    }
+
+    const response = await fetch(
+        `${API_URL}/leads/${id}/`,
+        {
+            method: "DELETE",
+
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+            },
+        }
+    );
+
+    if (!response.ok) {
+        const text = await response.text();
+
+        let data = {};
+
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            throw new Error(
+                `Failed to delete lead (${response.status})`
+            );
+        }
+
+        throw new Error(
+            data.detail ||
+            "Failed to delete lead"
+        );
+    }
+
+    return true;
+}

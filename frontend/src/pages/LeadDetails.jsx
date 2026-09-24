@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { getLead } from "../services/leadsApi";
+import {
+    getLead,
+    deleteLead,
+} from "../services/leadsApi";
 
 import "../styles/LeadDetails.css";
 
@@ -12,6 +15,7 @@ function LeadDetails() {
     const [lead, setLead] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         loadLead();
@@ -86,7 +90,39 @@ function LeadDetails() {
 
             </div>
         );
+        
     }
+    const handleDelete = async () => {
+    const confirmed = window.confirm(
+        `Are you sure you want to delete "${lead.name}"?`
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        setDeleting(true);
+        setError("");
+
+        await deleteLead(id);
+
+        navigate("/leads");
+
+    } catch (err) {
+        console.error(
+            "Delete lead error:",
+            err
+        );
+
+        setError(
+            err.message ||
+            "Failed to delete lead"
+        );
+
+        setDeleting(false);
+    }
+    };
 
     return (
         <div className="lead-details-page">
@@ -111,14 +147,29 @@ function LeadDetails() {
                     <p>
                         Lead #{lead.id}
                     </p>
-                    <button
-                            className="edit-lead-button"
-                            onClick={() =>
-                                navigate(`/leads/${lead.id}/edit`)
-                            }
-                        >
-                            Edit Lead
-                        </button>
+<div className="lead-action-buttons">
+
+    <button
+        className="edit-lead-button"
+        onClick={() =>
+            navigate(`/leads/${lead.id}/edit`)
+        }
+        disabled={deleting}
+    >
+        Edit Lead
+    </button>
+
+    <button
+        className="delete-lead-button"
+        onClick={handleDelete}
+        disabled={deleting}
+    >
+        {deleting
+            ? "Deleting..."
+            : "Delete Lead"}
+    </button>
+
+</div>
                 </div>
 
             </div>
