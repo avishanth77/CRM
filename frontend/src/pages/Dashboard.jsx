@@ -3,6 +3,8 @@ import { getDashboard } from "../services/dashboardApi";
 import "../styles/Dashboard.css";
 import LeadAnalytics from "../components/LeadAnalytics";
 import RecentLeads from "../components/RecentLeads";
+import RecentActivities from "../components/RecentActivities";
+import UpcomingFollowUps from "../components/UpcomingFollowUps";
 
 function Dashboard() {
     const [dashboard, setDashboard] = useState(null);
@@ -138,47 +140,62 @@ function Dashboard() {
             {/* Analytics */}
 
             <div className="dashboard-grid">
-                            
+
                 <div className="dashboard-section">
-                            
+
                     <h2>
                         Lead Analytics
                     </h2>
-                            
+
                     <LeadAnalytics
                         data={dashboard?.analytics}
                     />
-            
+
                 </div>
-                            
-                            
-                <div className="dashboard-section">
-                            
-                    <h2>
+
+
+               <div className="dashboard-section">
+
+                  <h2>
                         Recent Activities
                     </h2>
-                            
-                    <p>
-                        Recent CRM activities will appear here.
-                    </p>
-                            
+
+                    <RecentActivities
+                        activities={
+                            dashboard?.recent_activities || []
+                        }
+                    />
+
                 </div>
-                            
+                <div className="dashboard-section">
+
+                    <h2>
+                        Upcoming Follow-ups
+                    </h2>
+                                    
+                    <UpcomingFollowUps
+                        followups={
+                            dashboard?.upcoming_followups || []
+                        }
+                    />
+                
+                </div>
+
             </div>
-                            
-                            
+
+
             {/* Recent Leads */}
-                            
+
             <div className="dashboard-section recent-leads-section">
-                            
+
                 <h2>
                     Recent Leads
                 </h2>
-                            
+
                 <RecentLeads
                     leads={dashboard?.recent_leads || []}
                 />
-            
+
             </div>
 
         </div>

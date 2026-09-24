@@ -1,11 +1,12 @@
 import {
     BrowserRouter,
     Routes,
-    Route
+    Route,
+    Navigate,
 } from "react-router-dom";
 
-import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import DashboardLayout from "./layouts/DashboardLayout";
 
 function App() {
     return (
@@ -14,14 +15,20 @@ function App() {
             <Routes>
 
                 <Route
-                    path="/login"
-                    element={<Login />}
+                    path="/"
+                    element={
+                        <Navigate to="/dashboard" />
+                    }
                 />
 
-                <Route
-                    path="/dashboard"
-                    element={<Dashboard />}
-                />
+                <Route element={<DashboardLayout />}>
+
+                    <Route
+                        path="/dashboard"
+                        element={<Dashboard />}
+                    />
+
+                </Route>
 
             </Routes>
 
