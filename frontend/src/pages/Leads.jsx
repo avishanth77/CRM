@@ -63,24 +63,37 @@ function Leads() {
     return (
         <div className="leads-page">
 
-            <div className="leads-header">
+<div className="leads-header">
 
-                <div>
-                    <h1>Leads</h1>
+    <div>
+        <h1>Leads</h1>
 
-                    <p>
-                        Manage your sales leads
-                    </p>
-                </div>
+        <p>
+            Manage your sales leads
+        </p>
+    </div>
 
-                <button
-                    className="refresh-button"
-                    onClick={loadLeads}
-                >
-                    Refresh
-                </button>
+    <div className="leads-header-actions">
 
-            </div>
+        <button
+            className="create-lead-button"
+            onClick={() =>
+                window.location.href = "/leads/create"
+            }
+        >
+            + Create Lead
+        </button>
+
+        <button
+            className="refresh-button"
+            onClick={loadLeads}
+        >
+            Refresh
+        </button>
+
+    </div>
+
+</div>
 
 
             {error && (

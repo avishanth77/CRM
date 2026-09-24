@@ -144,3 +144,27 @@ tbody tr:hover {
         font-size: 24px;
     }
 }
+.leads-header-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.create-lead-button {
+    border: none;
+    background: #16a34a;
+    color: white;
+    padding: 10px 16px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.create-lead-button:hover {
+    background: #15803d;
+}
+
+@media (max-width: 600px) {
+    .leads-header-actions {
+        flex-direction: column;
+    }
+}

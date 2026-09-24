@@ -11,6 +11,8 @@ import Dashboard from "./pages/Dashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardLayout from "./layouts/DashboardLayout";
 import Leads from "./pages/Leads";
+import CreateLead from "./pages/CreateLead";
+
 
 function App() {
     return (
@@ -44,7 +46,10 @@ function App() {
                   />
 
                 </Route>
-
+                        <Route
+                   path="/leads/create"
+                    element={<CreateLead />}
+                />
 
                 {/* Default Route */}
 
