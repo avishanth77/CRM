@@ -1,5 +1,7 @@
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import "../styles/Login.css";
 
 function Login() {
     const navigate = useNavigate();
@@ -7,10 +9,10 @@ function Login() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
 
-    const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
-    const handleLogin = async (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         setError("");
@@ -24,24 +26,67 @@ function Login() {
 
                     headers: {
                         "Content-Type": "application/json",
+                        Accept: "application/json",
                     },
 
                     body: JSON.stringify({
-                        username: username,
+                        username: username.trim(),
                         password: password,
                     }),
                 }
             );
 
-            const data = await response.json();
+            /*
+             * Read the response as text first.
+             *
+             * This prevents:
+             * Unexpected token '<',
+             * "<!DOCTYPE..." is not valid JSON
+             */
+            const responseText = await response.text();
 
-            if (!response.ok) {
+            console.log("Login status:", response.status);
+            console.log("Login response:", responseText);
+
+            let data = null;
+
+            /*
+             * Try to convert the response into JSON.
+             */
+            try {
+                data = JSON.parse(responseText);
+            } catch {
                 throw new Error(
-                    data.detail || "Login failed"
+                    `Server returned a non-JSON response (${response.status}). ` +
+                    `Check the Django login URL.`
                 );
             }
 
-            // Save JWT tokens
+            /*
+             * Django returned an error.
+             */
+            if (!response.ok) {
+                throw new Error(
+                    data.detail ||
+                    data.non_field_errors?.[0] ||
+                    data.username?.[0] ||
+                    data.password?.[0] ||
+                    "Invalid username or password."
+                );
+            }
+
+            /*
+             * Make sure JWT tokens exist.
+             */
+            if (!data.access || !data.refresh) {
+                throw new Error(
+                    "Login response does not contain access and refresh tokens."
+                );
+            }
+
+            /*
+             * Save JWT tokens.
+             */
             localStorage.setItem(
                 "access_token",
                 data.access
@@ -52,64 +97,122 @@ function Login() {
                 data.refresh
             );
 
-            // Go to dashboard
-            navigate("/dashboard");
+            console.log("Login successful");
 
-        } catch (err) {
+            /*
+             * Go to dashboard.
+             */
+            navigate("/dashboard", {
+                replace: true,
+            });
 
-            console.error("Login error:", err);
+        } catch (error) {
+            console.error("Login error:", error);
 
-            setError(err.message);
+            setError(
+                error.message ||
+                "Unable to login. Please try again."
+            );
 
         } finally {
-
             setLoading(false);
         }
     };
 
     return (
-        <div>
+        <div className="login-page">
 
-            <h1>CRM Login</h1>
+            <div className="login-card">
 
-            <form onSubmit={handleLogin}>
+                <div className="login-header">
 
-                <input
-                    type="text"
-                    placeholder="Username"
-                    value={username}
-                    onChange={(e) =>
-                        setUsername(e.target.value)
-                    }
-                />
+                    <h1>CRM Lite</h1>
 
-                <input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) =>
-                        setPassword(e.target.value)
-                    }
-                />
+                    <p>
+                        Sign in to your account
+                    </p>
+
+                </div>
+
 
                 {error && (
-                    <p>{error}</p>
+                    <div className="login-error">
+                        {error}
+                    </div>
                 )}
 
-                <button
-                    type="submit"
-                    disabled={loading}
-                >
-                    {loading
-                        ? "Logging in..."
-                        : "Login"
-                    }
-                </button>
 
-            </form>
+                <form
+                    className="login-form"
+                    onSubmit={handleSubmit}
+                >
+
+                    {/* Username */}
+
+                    <div className="form-group">
+
+                        <label htmlFor="username">
+                            Username
+                        </label>
+
+                        <input
+                            id="username"
+                            type="text"
+                            value={username}
+                            onChange={(e) =>
+                                setUsername(e.target.value)
+                            }
+                            placeholder="Enter username"
+                            autoComplete="username"
+                            disabled={loading}
+                            required
+                        />
+
+                    </div>
+
+
+                    {/* Password */}
+
+                    <div className="form-group">
+
+                        <label htmlFor="password">
+                            Password
+                        </label>
+
+                        <input
+                            id="password"
+                            type="password"
+                            value={password}
+                            onChange={(e) =>
+                                setPassword(e.target.value)
+                            }
+                            placeholder="Enter password"
+                            autoComplete="current-password"
+                            disabled={loading}
+                            required
+                        />
+
+                    </div>
+
+
+                    {/* Submit */}
+
+                    <button
+                        type="submit"
+                        disabled={loading}
+                    >
+                        {loading
+                            ? "Signing in..."
+                            : "Sign In"}
+                    </button>
+
+                </form>
+
+            </div>
 
         </div>
     );
 }
 
 export default Login;
+

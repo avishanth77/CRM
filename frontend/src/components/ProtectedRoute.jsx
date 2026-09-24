@@ -1,61 +1,13 @@
-import {
-    BrowserRouter,
-    Routes,
-    Route,
-    Navigate,
-} from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 
-import Dashboard from "./pages/Dashboard";
-import Login from "./pages/Login";
+function ProtectedRoute() {
+    const accessToken = localStorage.getItem("access_token");
 
-import DashboardLayout from "./layouts/DashboardLayout";
-import ProtectedRoute from "./components/ProtectedRoute";
+    if (!accessToken) {
+        return <Navigate to="/login" replace />;
+    }
 
-function App() {
-    return (
-        <BrowserRouter>
-
-            <Routes>
-
-                {/* Public */}
-
-                <Route
-                    path="/login"
-                    element={<Login />}
-                />
-
-                {/* Protected */}
-
-                <Route element={<ProtectedRoute />}>
-
-                    <Route element={<DashboardLayout />}>
-
-                        <Route
-                            path="/dashboard"
-                            element={<Dashboard />}
-                        />
-
-                    </Route>
-
-                </Route>
-
-
-                {/* Default */}
-
-                <Route
-                    path="/"
-                    element={
-                        <Navigate
-                            to="/dashboard"
-                            replace
-                        />
-                    }
-                />
-
-            </Routes>
-
-        </BrowserRouter>
-    );
+    return <Outlet />;
 }
 
-export default App;
+export default ProtectedRoute;

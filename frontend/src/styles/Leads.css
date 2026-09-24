@@ -1,0 +1,146 @@
+.leads-page {
+    padding: 30px;
+}
+
+.leads-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 25px;
+}
+
+.leads-header h1 {
+    margin: 0;
+    font-size: 28px;
+    color: #111827;
+}
+
+.leads-header p {
+    margin-top: 6px;
+    color: #6b7280;
+}
+
+.refresh-button {
+    border: none;
+    background: #2563eb;
+    color: white;
+    padding: 10px 16px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+.refresh-button:hover {
+    background: #1d4ed8;
+}
+
+.leads-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.table-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+thead {
+    background: #f9fafb;
+}
+
+th,
+td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
+}
+
+th {
+    color: #374151;
+    font-size: 13px;
+}
+
+td {
+    color: #4b5563;
+    font-size: 14px;
+}
+
+tbody tr:hover {
+    background: #f9fafb;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 5px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #e5e7eb;
+}
+
+.status-new {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.status-contacted {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-demo_scheduled {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.status-negotiation {
+    background: #ffedd5;
+    color: #c2410c;
+}
+
+.status-won {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-lost {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.leads-loading,
+.empty-leads {
+    padding: 50px;
+    text-align: center;
+    color: #6b7280;
+}
+
+.leads-error {
+    margin-bottom: 20px;
+    padding: 12px 15px;
+    border-radius: 8px;
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+@media (max-width: 768px) {
+    .leads-page {
+        padding: 20px 15px;
+    }
+
+    .leads-header {
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .leads-header h1 {
+        font-size: 24px;
+    }
+}
