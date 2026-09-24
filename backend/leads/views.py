@@ -200,55 +200,55 @@ class LeadViewSet(viewsets.ModelViewSet):
             serializer.data,
             status=status.HTTP_201_CREATED,
         )
-   def perform_update(self, serializer):
+    def perform_update(self, serializer):
 
-    lead = self.get_object()
+        lead = self.get_object()
 
-    old_status = lead.status
-    old_assigned_to = lead.assigned_to_id
-
-    updated_lead = serializer.save()
-
-    new_status = updated_lead.status
-    new_assigned_to = updated_lead.assigned_to_id
-
-    # --------------------------------
-    # STATUS CHANGE LOG
-    # --------------------------------
-
-    if old_status != new_status:
-
-        ActivityLog.objects.create(
-            entity_type="LEAD",
-            entity_id=lead.id,
-            action="STATUS_CHANGED",
-            old_value=old_status,
-            new_value=new_status,
-            performed_by=self.request.user,
-        )
-
-    # --------------------------------
-    # ASSIGNMENT CHANGE LOG
-    # --------------------------------
-
-    if old_assigned_to != new_assigned_to:
-
-        ActivityLog.objects.create(
-            entity_type="LEAD",
-            entity_id=lead.id,
-            action="LEAD_ASSIGNED",
-            old_value=(
-                str(old_assigned_to)
-                if old_assigned_to
-                else ""
-            ),
-            new_value=(
-                str(new_assigned_to)
-                if new_assigned_to
-                else ""
-            ),
-            performed_by=self.request.user,
-        )
+        old_status = lead.status
+        old_assigned_to = lead.assigned_to_id
+    
+        updated_lead = serializer.save()
+    
+        new_status = updated_lead.status
+        new_assigned_to = updated_lead.assigned_to_id
+    
+        # --------------------------------
+        # STATUS CHANGE LOG
+        # --------------------------------
+    
+        if old_status != new_status:
+        
+            ActivityLog.objects.create(
+                entity_type="LEAD",
+                entity_id=lead.id,
+                action="STATUS_CHANGED",
+                old_value=old_status,
+                new_value=new_status,
+                performed_by=self.request.user,
+            )
+    
+        # --------------------------------
+        # ASSIGNMENT CHANGE LOG
+        # --------------------------------
+    
+        if old_assigned_to != new_assigned_to:
+        
+            ActivityLog.objects.create(
+                entity_type="LEAD",
+                entity_id=lead.id,
+                action="LEAD_ASSIGNED",
+                old_value=(
+                    str(old_assigned_to)
+                    if old_assigned_to
+                    else ""
+                ),
+                new_value=(
+                    str(new_assigned_to)
+                    if new_assigned_to
+                    else ""
+                ),
+                performed_by=self.request.user,
+            )
 class LeadSourceViewSet(viewsets.ModelViewSet):
 
     queryset = LeadSource.objects.all()

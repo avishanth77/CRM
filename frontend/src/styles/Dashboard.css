@@ -130,3 +130,100 @@
         grid-template-columns: 1fr;
     }
 }
+/* Recent Leads */
+
+.recent-leads {
+    width: 100%;
+}
+
+.table-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.leads-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.leads-table th {
+    text-align: left;
+    padding: 12px;
+    font-size: 13px;
+    color: #6b7280;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.leads-table td {
+    padding: 14px 12px;
+    font-size: 14px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.leads-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+/* Status */
+
+.status-badge,
+.priority-badge {
+    display: inline-block;
+    padding: 5px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.status-new {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+.status-contacted {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-demo_scheduled {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+
+.status-negotiation {
+    background: #fce7f3;
+    color: #9d174d;
+}
+
+.status-won {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-lost {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Priority */
+
+.priority-low {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+.priority-medium {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.priority-high {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.empty-message {
+    text-align: center;
+    padding: 30px;
+    color: #6b7280;
+}

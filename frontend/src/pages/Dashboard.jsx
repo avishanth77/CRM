@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { getDashboard } from "../services/dashboardApi";
 import "../styles/Dashboard.css";
+import LeadAnalytics from "../components/LeadAnalytics";
+import RecentLeads from "../components/RecentLeads";
 
 function Dashboard() {
     const [dashboard, setDashboard] = useState(null);
@@ -133,33 +135,50 @@ function Dashboard() {
 
             {/* Main Dashboard */}
 
+            {/* Analytics */}
+
             <div className="dashboard-grid">
-
+                            
                 <div className="dashboard-section">
-
+                            
                     <h2>
                         Lead Analytics
                     </h2>
-
-                    <p>
-                        Lead statistics will appear here.
-                    </p>
-
+                            
+                    <LeadAnalytics
+                        data={dashboard?.analytics}
+                    />
+            
                 </div>
-
-
+                            
+                            
                 <div className="dashboard-section">
-
+                            
                     <h2>
                         Recent Activities
                     </h2>
-
+                            
                     <p>
                         Recent CRM activities will appear here.
                     </p>
-
+                            
                 </div>
-
+                            
+            </div>
+                            
+                            
+            {/* Recent Leads */}
+                            
+            <div className="dashboard-section recent-leads-section">
+                            
+                <h2>
+                    Recent Leads
+                </h2>
+                            
+                <RecentLeads
+                    leads={dashboard?.recent_leads || []}
+                />
+            
             </div>
 
         </div>
