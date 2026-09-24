@@ -7,6 +7,7 @@ import {
 
 import Dashboard from "./pages/Dashboard";
 import DashboardLayout from "./layouts/DashboardLayout";
+import Login from "./pages/Login";
 
 function App() {
     return (
@@ -20,7 +21,10 @@ function App() {
                         <Navigate to="/dashboard" />
                     }
                 />
-
+                           <Route
+                    path="/login"
+                    element={<Login />}
+                />
                 <Route element={<DashboardLayout />}>
 
                     <Route
@@ -30,7 +34,8 @@ function App() {
 
                 </Route>
 
-            </Routes>
+                </Routes>
+                 
 
         </BrowserRouter>
     );
