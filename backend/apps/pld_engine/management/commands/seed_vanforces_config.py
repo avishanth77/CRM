@@ -5,8 +5,9 @@ from apps.core.models import Tenant
 from apps.authentication.models import User, UserRole
 from apps.products.models import Product, ProductStatus, ProductModule, ProductCapability, Problem, ProblemCategory, ProblemCapability
 from apps.pld_engine.models import (
-    ProductConfigurationVersion, ConfigStatus, ICPRule, ICPRuleType, RuleOperator,
-    ScoreModel, ScoreDimension, QuestionnaireTemplate, PipelineStage, PipelineType, StageGate
+    ProductConfigurationVersion, ConfigStatus, ICPProfile, ICPRule, ICPRuleType, RuleOperator,
+    ScoreModel, ScoreDimension, QuestionnaireTemplate, QuestionnaireQuestion,
+    QuestionAnswerOption, QuestionType, PipelineStage, PipelineType, StageGate
 )
 from apps.leads.models import LeadSource
 
@@ -178,16 +179,32 @@ class Command(BaseCommand):
             }
         )
 
-        # 10. ICP Rules for VanForces v1
+        # 10. ICP Profile & Rules for VanForces v1
+        icp_profile, _ = ICPProfile.objects.get_or_create(
+            product=vanforces,
+            config_version=config_v1,
+            version_number=1,
+            defaults={
+                "name": "VanForces Standard Distribution Profile",
+                "description": "Baseline ICP rules for FMCG, Bakery & Food distributors in GCC",
+                "is_active": True,
+                "tenant": tenant
+            }
+        )
+
         # Knockout Rules
         ICPRule.objects.get_or_create(
             config_version=config_v1,
             field_name="industry",
             rule_type=ICPRuleType.KNOCKOUT,
             defaults={
+                "profile": icp_profile,
                 "operator": RuleOperator.IN,
                 "target_value": ["FMCG", "Bakery", "Food & Beverage", "Dairy", "Frozen Food", "Wholesale Distribution"],
                 "is_mandatory": True,
+                "is_active": True,
+                "description": "Target distribution industry sector",
+                "failure_reason": "Account industry is outside target distribution sectors (FMCG, Bakery, F&B, Dairy, Frozen Food, Wholesale Distribution)",
                 "tenant": tenant
             }
         )
@@ -196,9 +213,13 @@ class Command(BaseCommand):
             field_name="field_sales",
             rule_type=ICPRuleType.KNOCKOUT,
             defaults={
+                "profile": icp_profile,
                 "operator": RuleOperator.EQUALS,
                 "target_value": True,
                 "is_mandatory": True,
+                "is_active": True,
+                "description": "Must operate field sales or van delivery teams",
+                "failure_reason": "Company does not operate a direct field sales or van distribution model",
                 "tenant": tenant
             }
         )
@@ -208,10 +229,13 @@ class Command(BaseCommand):
             field_name="employees_count",
             rule_type=ICPRuleType.FIT,
             defaults={
+                "profile": icp_profile,
                 "operator": RuleOperator.GREATER_THAN_OR_EQUAL,
                 "target_value": 20,
                 "weight": 20,
                 "points": 20,
+                "is_active": True,
+                "description": "Company size >= 20 employees",
                 "tenant": tenant
             }
         )
@@ -220,10 +244,13 @@ class Command(BaseCommand):
             field_name="salesmen_count",
             rule_type=ICPRuleType.FIT,
             defaults={
+                "profile": icp_profile,
                 "operator": RuleOperator.GREATER_THAN_OR_EQUAL,
                 "target_value": 10,
                 "weight": 30,
                 "points": 30,
+                "is_active": True,
+                "description": "Field sales force >= 10 salesmen",
                 "tenant": tenant
             }
         )
@@ -232,15 +259,39 @@ class Command(BaseCommand):
             field_name="vans_count",
             rule_type=ICPRuleType.FIT,
             defaults={
+                "profile": icp_profile,
                 "operator": RuleOperator.GREATER_THAN_OR_EQUAL,
                 "target_value": 5,
                 "weight": 30,
                 "points": 30,
+                "is_active": True,
+                "description": "Van fleet size >= 5 active delivery vans",
+                "tenant": tenant
+            }
+        )
+        ICPRule.objects.get_or_create(
+            config_version=config_v1,
+            field_name="primary_erp",
+            rule_type=ICPRuleType.FIT,
+            defaults={
+                "profile": icp_profile,
+                "operator": RuleOperator.IN,
+                "target_value": ["SAP", "SAP S/4HANA", "Odoo", "Microsoft Dynamics", "Oracle", "Tally"],
+                "weight": 20,
+                "points": 20,
+                "is_active": True,
+                "description": "Supported enterprise ERP back-office system",
                 "tenant": tenant
             }
         )
 
         # 11. Score Model Dimensions (Sum = 100%)
+        standard_thresholds = {
+            "NURTURE": [0, 30],
+            "DEVELOPMENT": [31, 60],
+            "QUALIFIED": [61, 80],
+            "HIGH_PRIORITY": [81, 100]
+        }
         score_dimensions = [
             (ScoreDimension.PROBLEM_SEVERITY, 25, {"HIGH": 100, "MEDIUM": 65, "LOW": 30}),
             (ScoreDimension.BUSINESS_VALUE, 20, {">=20%": 100, "10-20%": 75, "<10%": 40}),
@@ -253,23 +304,265 @@ class Command(BaseCommand):
             ScoreModel.objects.get_or_create(
                 config_version=config_v1,
                 dimension_name=dim,
-                defaults={"weight_percentage": weight, "input_mapping": mapping, "tenant": tenant}
+                defaults={
+                    "weight_percentage": weight,
+                    "input_mapping": mapping,
+                    "thresholds": standard_thresholds,
+                    "is_active": True,
+                    "tenant": tenant
+                }
             )
 
-        # 12. Dynamic Questionnaire Template
-        questionnaire_schema = [
-            {"id": "q1", "text": "Is this a distribution or field delivery business?", "type": "boolean", "feeds_dimension": "TECHNICAL_FIT"},
-            {"id": "q2", "text": "How many active salesmen and vans operate daily?", "type": "number", "feeds_dimension": "COMMERCIAL_POTENTIAL"},
-            {"id": "q3", "text": "What is the primary current ERP system in use?", "type": "choice", "options": ["Odoo", "SAP", "Microsoft Dynamics", "Tally", "Custom", "None"], "feeds_dimension": "TECHNICAL_FIT"},
-            {"id": "q4", "text": "What is the single biggest operational pain point in the van sales workflow?", "type": "choice", "options": ["Route Inefficiency", "Missed Outlets", "Van Stock Shrinkage", "Manual ERP Re-entry"], "feeds_dimension": "PROBLEM_SEVERITY"},
-            {"id": "q5", "text": "Who is currently championing or evaluating this solution?", "type": "choice", "options": ["Managing Director / Owner", "Sales Director", "IT Manager", "Finance Manager", "Branch Supervisor"], "feeds_dimension": "DECISION_ACCESS"},
-            {"id": "q6", "text": "What is the expected purchase/implementation timeline?", "type": "choice", "options": ["<3 months", "3-6 months", "6-12 months", "Exploratory / >12 months"], "feeds_dimension": "TIMELINE"},
+        # 12. Dynamic Questionnaire Template — Full 15-Question Specification for VanForces (v1.1)
+        questions_definitions = [
+            {
+                "code": "Q1_DISTRIBUTION_BIZ",
+                "text": "Is this an active distribution or wholesale trading business?",
+                "type": QuestionType.BOOLEAN,
+                "feeds": ScoreDimension.TECHNICAL_FIT,
+                "order": 1,
+                "options": [
+                    ("Yes, Wholesale / B2B Distribution", "true", 100),
+                    ("No, Retail Only / Non-Distribution", "false", 0)
+                ]
+            },
+            {
+                "code": "Q2_FIELD_SALES",
+                "text": "Does the company deploy field sales representatives or van delivery drivers?",
+                "type": QuestionType.BOOLEAN,
+                "feeds": ScoreDimension.TECHNICAL_FIT,
+                "order": 2,
+                "options": [
+                    ("Yes, Dedicated Field Sales / Delivery Fleet", "true", 100),
+                    ("No, In-store / Showroom Only", "false", 0)
+                ]
+            },
+            {
+                "code": "Q3_SALESMEN_VANS",
+                "text": "How many active salesmen and delivery vans operate on routes daily?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.COMMERCIAL_POTENTIAL,
+                "order": 3,
+                "options": [
+                    ("50+ Active Vans & Salesmen", ">=50 vans", 100),
+                    ("20 to 49 Vans", "20-49 vans", 80),
+                    ("10 to 19 Vans", "10-19 vans", 60),
+                    ("5 to 9 Vans", "5-9 vans", 40),
+                    ("Fewer than 5 Vans", "<5 vans", 20)
+                ]
+            },
+            {
+                "code": "Q4_OUTLETS_CUSTOMERS",
+                "text": "How many active retail customer outlets are serviced per month?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.COMMERCIAL_POTENTIAL,
+                "order": 4,
+                "options": [
+                    ("2,000+ Retail Outlets", ">=2000 outlets", 100),
+                    ("500 to 1,999 Outlets", "500-1999 outlets", 80),
+                    ("100 to 499 Outlets", "100-499 outlets", 60),
+                    ("Fewer than 100 Outlets", "<100 outlets", 30)
+                ]
+            },
+            {
+                "code": "Q5_ORDER_CAPTURE",
+                "text": "How are customer sales orders currently captured in the field?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.TECHNICAL_FIT,
+                "order": 5,
+                "options": [
+                    ("Mobile Handheld Terminal / Sales App", "MOBILE_APP", 90),
+                    ("Phone Calls / WhatsApp Messages", "WHATSAPP", 60),
+                    ("Paper Carbon-Copy Order Books", "PAPER", 40),
+                    ("Driver End-of-Day Memory / Unrecorded", "NONE", 20)
+                ]
+            },
+            {
+                "code": "Q6_ROUTE_PLANNING",
+                "text": "How are delivery routes planned and assigned to drivers?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.PROBLEM_SEVERITY,
+                "order": 6,
+                "options": [
+                    ("Driver Discretion / No Structured Route", "DRIVER_CHOICE", 100),
+                    ("Static Fixed Excel Route Lists", "EXCEL", 70),
+                    ("Basic Weekly Paper Sequence", "PAPER_SEQUENCE", 50),
+                    ("Automated Dynamic Route Optimizer", "DYNAMIC_OPTIMIZER", 20)
+                ]
+            },
+            {
+                "code": "Q7_STOCK_CHECKS",
+                "text": "How is van inventory and physical mobile stock reconciled?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.PROBLEM_SEVERITY,
+                "order": 7,
+                "options": [
+                    ("No Formal Stock Check (Driver replenishes blindly)", "NO_STOCK_CHECK", 100),
+                    ("Weekly / Monthly Manual Inventory Count", "WEEKLY_MANUAL", 80),
+                    ("Daily Morning / Evening Tally Sheet", "DAILY_TALLY", 50),
+                    ("Real-time Mobile Barcode Scanning & Live Sync", "REALTIME_BARCODE", 20)
+                ]
+            },
+            {
+                "code": "Q8_INVOICES_COLLECTIONS",
+                "text": "How are customer invoices and payment collections handled on routes?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.BUSINESS_VALUE,
+                "order": 8,
+                "options": [
+                    ("Driver Cash with Delayed Bank Reconciliation", "CASH_DELAYED", 100),
+                    ("Handwritten Manual Invoices & Carbon Receipts", "MANUAL_RECEIPTS", 80),
+                    ("Customer Credit Accounts / Invoiced by Backoffice", "BACKOFFICE_CREDIT", 60),
+                    ("Real-time Mobile Invoicing with Bluetooth Printing", "MOBILE_POS", 20)
+                ]
+            },
+            {
+                "code": "Q9_BIGGEST_PROBLEM",
+                "text": "What is the single biggest operational problem facing field operations?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.PROBLEM_SEVERITY,
+                "order": 9,
+                "options": [
+                    ("Route Inefficiency & Skipped Retail Outlets", "HIGH", 100),
+                    ("Van Stock Leakage & Physical Shrinkage", "HIGH", 95),
+                    ("Manual Double-entry of Orders into ERP", "MEDIUM", 75),
+                    ("Lack of Salesman Activity Visibility & Geofencing", "MEDIUM", 70),
+                    ("Minor Clerical Delays", "LOW", 30)
+                ]
+            },
+            {
+                "code": "Q10_BUSINESS_IMPACT",
+                "text": "What is the quantified business impact or revenue loss caused by this problem?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.BUSINESS_VALUE,
+                "order": 10,
+                "options": [
+                    ("High Revenue Loss / Cost Inefficiency (>=20%)", ">=20%", 100),
+                    ("Moderate Operational Waste (10% to 20%)", "10-20%", 75),
+                    ("Low Operational Delay (<10%)", "<10%", 40),
+                    ("Negligible Financial Consequence", "NEGLIGIBLE", 10)
+                ]
+            },
+            {
+                "code": "Q11_AFFECTED_PEOPLE",
+                "text": "Who in the client organization is directly impacted by these problems?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.BUSINESS_VALUE,
+                "order": 11,
+                "options": [
+                    ("Entire Commercial Chain: Salesmen, Warehouse & MD", "FULL_CHAIN", 100),
+                    ("Van Drivers & Route Supervisors", "DRIVERS_SUPERVISORS", 80),
+                    ("Back-office Data Entry Clerks & Accountants", "BACKOFFICE", 60),
+                    ("Isolated Individual Drivers", "ISOLATED", 25)
+                ]
+            },
+            {
+                "code": "Q12_EVALUATOR",
+                "text": "Who is currently championing or evaluating software solutions?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.DECISION_ACCESS,
+                "order": 12,
+                "options": [
+                    ("Managing Director / Owner", "CHAMPION", 100),
+                    ("Sales Director / Commercial VP", "CHAMPION", 90),
+                    ("Operations / Supply Chain Manager", "INFLUENCER", 70),
+                    ("IT Systems Manager", "TECHNICAL", 60),
+                    ("Branch Supervisor / Dispatcher", "USER", 35)
+                ]
+            },
+            {
+                "code": "Q13_DECISION_MAKER",
+                "text": "Who is the ultimate economic decision maker with final budget authority?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.DECISION_ACCESS,
+                "order": 13,
+                "options": [
+                    ("CEO / Managing Director / Owner (Direct Access)", "DECISION_MAKER", 100),
+                    ("Executive Committee / Board Level", "CHAMPION", 80),
+                    ("Sales Director with Authorized Discretionary Budget", "CHAMPION", 75),
+                    ("IT / Operations Head without Independent Budget", "INFLUENCER", 45),
+                    ("No Decision Maker Identified / Committee Unknown", "USER", 15)
+                ]
+            },
+            {
+                "code": "Q14_TIMELINE",
+                "text": "What is the expected project implementation timeline?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.TIMELINE,
+                "order": 14,
+                "options": [
+                    ("Immediate Rollout (<3 months)", "<3 months", 100),
+                    ("Within Next Quarter (3 to 6 months)", "3-6 months", 70),
+                    ("Fiscal Year Horizon (6 to 12 months)", "6-12 months", 40),
+                    ("Exploratory / Unscheduled (>12 months)", ">12 months", 10)
+                ]
+            },
+            {
+                "code": "Q15_BUDGET_PROJECT",
+                "text": "Is there an approved commercial budget or allocated project fund?",
+                "type": QuestionType.CHOICE,
+                "feeds": ScoreDimension.COMMERCIAL_POTENTIAL,
+                "order": 15,
+                "options": [
+                    ("Fully Approved Project Budget", "APPROVED_BUDGET", 100),
+                    ("Budget in Formal Approval Workflow", "PENDING_APPROVAL", 75),
+                    ("Department Discretionary / Contingency Budget", "CONTINGENCY", 50),
+                    ("No Budget Allocated / Exploratory Inquiry", "NO_BUDGET", 20)
+                ]
+            }
         ]
-        QuestionnaireTemplate.objects.get_or_create(
+
+        # Convert to schema_json for backward compatibility
+        questionnaire_schema = []
+        for q in questions_definitions:
+            questionnaire_schema.append({
+                "id": q["code"],
+                "text": q["text"],
+                "type": "boolean" if q["type"] == QuestionType.BOOLEAN else "choice",
+                "feeds_dimension": q["feeds"],
+                "options": [opt[0] for opt in q["options"]]
+            })
+
+        template_obj, _ = QuestionnaireTemplate.objects.update_or_create(
             config_version=config_v1,
             stage_code="PLD_QUALIFICATION",
-            defaults={"title": "VanForces™ PLD Qualification Questionnaire", "schema_json": questionnaire_schema, "tenant": tenant}
+            defaults={
+                "product": vanforces,
+                "title": "VanForces™ PLD Qualification Questionnaire (15-Dimension)",
+                "version_number": 1,
+                "is_active": True,
+                "schema_json": questionnaire_schema,
+                "tenant": tenant
+            }
         )
+
+        # Create Question and Answer Option records
+        for q_def in questions_definitions:
+            q_rec, _ = QuestionnaireQuestion.objects.update_or_create(
+                template=template_obj,
+                code=q_def["code"],
+                defaults={
+                    "question_text": q_def["text"],
+                    "question_type": q_def["type"],
+                    "order": q_def["order"],
+                    "is_required": True,
+                    "is_active": True,
+                    "feeds_dimension": q_def["feeds"],
+                    "tenant": tenant
+                }
+            )
+            for opt_idx, (opt_label, opt_val, opt_pts) in enumerate(q_def["options"]):
+                QuestionAnswerOption.objects.update_or_create(
+                    question=q_rec,
+                    value=opt_val,
+                    defaults={
+                        "label": opt_label,
+                        "points": opt_pts,
+                        "order": opt_idx + 1,
+                        "is_active": True,
+                        "tenant": tenant
+                    }
+                )
 
         # 13. Pipeline Stages & Gates (Pursuit Pipeline)
         stages_data = [

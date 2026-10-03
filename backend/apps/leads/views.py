@@ -130,23 +130,61 @@ class LeadViewSet(viewsets.ModelViewSet):
             'lead': LeadSerializer(lead).data
         }, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post'], url_path='add-problem')
-    def add_problem(self, request, pk=None):
+    @action(detail=True, methods=['get', 'post'], url_path='problems')
+    def problems(self, request, pk=None):
         lead = self.get_object()
+        if request.method == 'GET':
+            qs = lead.recorded_problems.all().select_related('problem')
+            return Response(LeadProblemSerializer(qs, many=True).data)
+
         problem_id = request.data.get('problem_id')
+        problem_code = request.data.get('problem_code')
+        problem_name = request.data.get('problem_name')
+        category = request.data.get('category', 'DISTRIBUTION')
+        severity = request.data.get('severity', 'HIGH')
+        frequency = request.data.get('frequency', 'DAILY')
+        business_impact = request.data.get('business_impact', '')
+        affected_users = request.data.get('affected_users', '')
+        evidence = request.data.get('evidence', '')
         notes = request.data.get('notes', '')
 
-        try:
-            problem = Problem.objects.get(id=problem_id)
-        except Problem.DoesNotExist:
-            return Response({'error': 'Problem not found'}, status=status.HTTP_404_NOT_FOUND)
+        problem = None
+        if problem_id:
+            problem = Problem.objects.filter(id=problem_id).first()
+        elif problem_code:
+            problem = Problem.objects.filter(code=problem_code).first()
+        elif problem_name:
+            code = f"PROB_{problem_name.upper().replace(' ', '_')[:30]}"
+            problem, _ = Problem.objects.get_or_create(
+                code=code,
+                defaults={
+                    'name': problem_name,
+                    'category': category,
+                    'default_severity': severity
+                }
+            )
+
+        if not problem:
+            return Response({'error': 'Problem identification (problem_id, problem_code, or problem_name) is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         lp, _ = LeadProblem.objects.update_or_create(
             lead=lead,
             problem=problem,
-            defaults={'notes': notes}
+            defaults={
+                'category': category,
+                'severity': severity,
+                'frequency': frequency,
+                'business_impact': business_impact,
+                'affected_users': affected_users,
+                'evidence': evidence,
+                'notes': notes
+            }
         )
         return Response(LeadProblemSerializer(lp).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='add-problem')
+    def add_problem(self, request, pk=None):
+        return self.problems(request, pk)
 
     @action(detail=True, methods=['post'], url_path='add-product-interest')
     def add_product_interest(self, request, pk=None):
@@ -170,6 +208,22 @@ class LeadViewSet(viewsets.ModelViewSet):
                 'evidence_notes': evidence_notes
             }
         )
+
+        # Automatic ICP Evaluation when product interest is added/updated
+        if lead.account:
+            config_version = product.configurations.filter(status='PUBLISHED').first() or product.configurations.first()
+            if config_version:
+                try:
+                    ICPEvaluator.evaluate(
+                        account=lead.account,
+                        product=product,
+                        config_version=config_version,
+                        lead=lead,
+                        user=request.user if request.user.is_authenticated else None
+                    )
+                except Exception:
+                    pass
+
         return Response(LeadProductInterestSerializer(lpi).data, status=status.HTTP_201_CREATED)
 
 

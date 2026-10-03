@@ -3,7 +3,7 @@ from django.db import models
 from django.conf import settings
 from apps.core.models import BaseModel
 from apps.accounts.models import Account, Contact
-from apps.products.models import Product, Problem
+from apps.products.models import Product, Problem, ProblemCategory
 from apps.pld_engine.models import PipelineStage
 
 
@@ -143,10 +143,29 @@ class LeadProblem(BaseModel):
     """
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="recorded_problems")
     problem = models.ForeignKey(Problem, on_delete=models.CASCADE, related_name="lead_occurrences")
+    category = models.CharField(
+        max_length=32,
+        choices=ProblemCategory.choices,
+        default=ProblemCategory.DISTRIBUTION,
+        db_index=True
+    )
+    severity = models.CharField(
+        max_length=16,
+        choices=[('LOW', 'Low'), ('MEDIUM', 'Medium'), ('HIGH', 'High'), ('CRITICAL', 'Critical')],
+        default='HIGH'
+    )
+    frequency = models.CharField(
+        max_length=16,
+        choices=[('DAILY', 'Daily'), ('WEEKLY', 'Weekly'), ('MONTHLY', 'Monthly'), ('OCCASIONAL', 'Occasional')],
+        default='DAILY'
+    )
+    business_impact = models.TextField(blank=True, null=True, help_text="Quantified loss or consequence")
+    affected_users = models.CharField(max_length=255, blank=True, null=True)
+    evidence = models.TextField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
 
     class Meta:
         unique_together = ('lead', 'problem')
 
     def __str__(self):
-        return f"{self.lead}: {self.problem.name}"
+        return f"{self.lead}: {self.problem.name} [{self.severity}]"

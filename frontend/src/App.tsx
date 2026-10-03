@@ -7,11 +7,13 @@ import {
   FlaskConical, History, Share2, Gauge, Send, Database
 } from 'lucide-react';
 import { api } from './services/api';
-import type { FunnelData, Lead, Product, Discovery, SQLHandoff, Opportunity, StageGateChecklist } from './services/api';
+import type { FunnelData, Lead, Product, Discovery, SQLHandoff, Opportunity } from './services/api';
 import { MultiTouchAttributionView } from './components/MultiTouchAttributionView';
 import { FunnelLeakageVelocityView } from './components/FunnelLeakageVelocityView';
 import { OmniChannelCommsView } from './components/OmniChannelCommsView';
 import { ERPSyncGatewayView } from './components/ERPSyncGatewayView';
+import { PLDQualificationWorkspace } from './components/PLDQualificationWorkspace';
+import { AdminEngineStudio } from './components/AdminEngineStudio';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
@@ -29,13 +31,13 @@ export default function App() {
   const [accounts, setAccounts] = useState<any[]>([]);
   
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [gateChecklist, setGateChecklist] = useState<StageGateChecklist | null>(null);
   
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedProductFilter, setSelectedProductFilter] = useState<string>('ALL');
   const [showIntakeModal, setShowIntakeModal] = useState<boolean>(false);
   const [showDealRegModal, setShowDealRegModal] = useState<boolean>(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [studioView, setStudioView] = useState<'modules' | 'engine'>('engine');
 
   // New Lead Form State
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -111,21 +113,8 @@ export default function App() {
     setTimeout(() => setActionSuccessMsg(null), 4500);
   };
 
-  const handleInspectLead = async (lead: Lead) => {
+  const handleInspectLead = (lead: Lead) => {
     setSelectedLead(lead);
-    try {
-      const configs = await api.getConfigurations();
-      const currentConfig = configs.results.find((c: any) => c.product === lead.primary_product) || configs.results[0];
-      if (currentConfig && currentConfig.stages) {
-        const nextStage = currentConfig.stages.find((s: any) => s.sequence_order === 4); // PLD_QUALIFIED
-        if (nextStage) {
-          const check = await api.validateGate(lead.id, nextStage.id);
-          setGateChecklist(check);
-        }
-      }
-    } catch (err) {
-      console.warn("Gate validation check error", err);
-    }
   };
 
   const handleVerifyDiscoveryMapping = async (discoveryId: string) => {
@@ -667,14 +656,14 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 2: PLD WORK QUEUE */}
+          {/* TAB 2: PLD WORK QUEUE & QUALIFICATION WORKSPACE */}
           {activeTab === 'queue' && (
-            <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '24px' }}>
+            <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '24px', alignItems: 'start' }}>
               <div className="glass-panel" style={{ padding: '22px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
                   <div>
-                    <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>PLD Executive Work Queue</h2>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Prioritized leads requiring qualification or next actions</p>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>PLD Work Queue</h2>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Prioritized leads requiring qualification or next actions</p>
                   </div>
                   <span className="badge badge-neutral">{leads.length} Records</span>
                 </div>
@@ -697,36 +686,38 @@ export default function App() {
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div>
-                            <div style={{ fontWeight: 800, fontSize: '1rem', color: '#FFFFFF' }}>{lead.account_name}</div>
+                            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#FFFFFF' }}>{lead.account_name}</div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              Target: <strong style={{ color: 'var(--primary)' }}>{lead.primary_product_name}</strong>
+                              Product: <strong style={{ color: 'var(--primary)' }}>{lead.primary_product_name}</strong>
                             </div>
                           </div>
-                          <span className="badge badge-success">
-                            Qualified [PLD Score 97]
+                          <span className="badge badge-info" style={{ fontSize: '0.68rem' }}>
+                            {lead.current_stage_name || lead.status}
                           </span>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-                          <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
-                            Stage: {lead.current_stage_name || 'New Lead'}
-                          </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                          {lead.is_target_account && (
+                            <span className="badge badge-warning" style={{ fontSize: '0.68rem' }}>
+                              {lead.target_tier || 'Target'}
+                            </span>
+                          )}
                           {lead.recorded_problems && lead.recorded_problems.length > 0 && (
-                            <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>
-                              {lead.recorded_problems.length} Problem Documented
+                            <span className="badge badge-danger" style={{ fontSize: '0.68rem' }}>
+                              {lead.recorded_problems.length} Problem(s)
                             </span>
                           )}
                         </div>
 
                         <div style={{
-                          marginTop: '12px',
+                          marginTop: '10px',
                           padding: '8px 10px',
                           background: 'rgba(59, 130, 246, 0.08)',
                           borderRadius: '6px',
                           borderLeft: '3px solid var(--primary)',
-                          fontSize: '0.75rem'
+                          fontSize: '0.74rem'
                         }}>
-                          <strong>Next Action:</strong> {lead.next_action_description || 'No action defined'}
+                          <strong>Next:</strong> {lead.next_action_description || 'No action defined'}
                         </div>
                       </div>
                     );
@@ -734,90 +725,19 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Right Column: One-Screen Qualification */}
-              {selectedLead && (
-                <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="badge badge-info">{selectedLead.primary_product_name}</span>
-                      <span className="badge badge-success">ICP Check: Passed (100%)</span>
-                    </div>
-                    <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '8px' }}>
-                      {selectedLead.account_name}
-                    </h3>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Assigned PLD Lead #{selectedLead.id.slice(0, 8)}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase' }}>
-                      1. Documented Business Problems
-                    </h4>
-                    {selectedLead.recorded_problems && selectedLead.recorded_problems.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {selectedLead.recorded_problems.map((rp, idx) => (
-                          <div key={idx} style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', borderLeft: '3px solid var(--danger)' }}>
-                            <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{rp.problem_detail?.name}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{rp.notes}</div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '8px', color: 'var(--warning)', fontSize: '0.8rem' }}>
-                        No business problem recorded yet. Gate requires at least 1 problem.
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase' }}>
-                      2. PLD Qualification Dimension Score
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                      {[
-                        { name: 'Problem Severity', score: '25/25' },
-                        { name: 'Business Value', score: '20/20' },
-                        { name: 'Decision Access', score: '15/15' },
-                        { name: 'Timeline', score: '10/10' },
-                        { name: 'Technical Fit', score: '15/15' },
-                        { name: 'Commercial Fit', score: '12/15' },
-                      ].map((dim, idx) => (
-                        <div key={idx} style={{ padding: '10px', background: 'var(--bg-surface)', borderRadius: '8px', textAlign: 'center' }}>
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{dim.name}</div>
-                          <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary)', marginTop: '4px' }}>{dim.score}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase' }}>
-                      3. Stage Gate Readiness Checklist
-                    </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {gateChecklist && gateChecklist.checklist ? (
-                        gateChecklist.checklist.map((item, idx) => (
-                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-                            <CheckCircle2 size={18} color={item.satisfied ? "var(--success)" : "var(--warning)"} />
-                            <div style={{ fontSize: '0.85rem', flex: 1 }}>
-                              <div>{item.gate_name}</div>
-                              {!item.satisfied && item.missing.length > 0 && (
-                                <div style={{ fontSize: '0.72rem', color: 'var(--danger)', marginTop: '2px' }}>
-                                  Missing: {item.missing.join(', ')}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-                          <CheckCircle2 size={18} color="var(--success)" />
-                          <span style={{ fontSize: '0.85rem' }}>All Stage Gates Verified</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+              {/* Right Column: Dynamic Phase 4 PLD Qualification Workspace */}
+              {selectedLead ? (
+                <PLDQualificationWorkspace
+                  lead={selectedLead}
+                  onTransitionSuccess={() => {
+                    loadData();
+                    notifySuccess(`Lead ${selectedLead.account_name} successfully qualified and advanced to Discovery.`);
+                  }}
+                  onLeadUpdated={() => loadData()}
+                />
+              ) : (
+                <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Select a lead from the work queue to begin ICP evaluation and qualification.
                 </div>
               )}
             </div>
@@ -1267,52 +1187,79 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 8: PRODUCT STUDIO */}
+          {/* TAB 8: PRODUCT STUDIO & ENGINE CONFIGURATION */}
           {activeTab === 'studio' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-                  Product Configuration Studio
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Zero hardcoded tables. VanForces, TaskForces ERP, and EntAura.AI are 100% versioned database configurations.
-                </p>
+            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '4px' }}>
+                    Product &amp; Engine Configuration Studio
+                  </h1>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                    Zero hardcoded tables. Manage ICP profiles, knock-out rules, deterministic scoring models, and dynamic qualification questionnaires.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className={`btn ${studioView === 'engine' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setStudioView('engine')}
+                    style={{ fontSize: '0.82rem' }}
+                  >
+                    <ShieldCheck size={15} />
+                    Phase 4: ICP &amp; PLD Engine Studio
+                  </button>
+                  <button
+                    className={`btn ${studioView === 'modules' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setStudioView('modules')}
+                    style={{ fontSize: '0.82rem' }}
+                  >
+                    <Layers size={15} />
+                    Modules &amp; Capabilities Catalog
+                  </button>
+                </div>
               </div>
 
-              {products.map(prod => (
-                <div key={prod.id} className="glass-panel" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{prod.name}</h2>
-                        <span className="badge badge-success">Status: {prod.status}</span>
-                        <span className="badge badge-info">Version 1.0 (Published)</span>
-                      </div>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>{prod.category}</div>
-                    </div>
-                  </div>
-
-                  <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '12px' }}>
-                    Configured Modules &amp; Capabilities ({prod.modules?.length || 0})
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
-                    {prod.modules?.map(m => (
-                      <div key={m.id} style={{ padding: '16px', background: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#FFFFFF' }}>{m.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>{m.code}</div>
-                        
-                        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {m.capabilities.map(c => (
-                            <div key={c.id} style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.08)', padding: '4px 8px', borderRadius: '4px' }}>
-                              • {c.name}
-                            </div>
-                          ))}
+              {studioView === 'engine' ? (
+                <AdminEngineStudio products={products} />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {products.map(prod => (
+                    <div key={prod.id} className="glass-panel" style={{ padding: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{prod.name}</h2>
+                            <span className="badge badge-success">Status: {prod.status}</span>
+                            <span className="badge badge-info">Version 1.0 (Published)</span>
+                          </div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>{prod.category}</div>
                         </div>
                       </div>
-                    ))}
-                  </div>
+
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '12px' }}>
+                        Configured Modules &amp; Capabilities ({prod.modules?.length || 0})
+                      </h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+                        {prod.modules?.map(m => (
+                          <div key={m.id} style={{ padding: '16px', background: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#FFFFFF' }}>{m.name}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>{m.code}</div>
+                            
+                            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              {m.capabilities.map(c => (
+                                <div key={c.id} style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.08)', padding: '4px 8px', borderRadius: '4px' }}>
+                                  • {c.name}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
 

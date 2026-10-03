@@ -3,11 +3,14 @@ from apps.pld_assessments.models import AccountProductAssessment, ScoreAssessmen
 
 
 class ScoreAssessmentSerializer(serializers.ModelSerializer):
+    dimension_display = serializers.CharField(source='get_dimension_name_display', read_only=True)
+
     class Meta:
         model = ScoreAssessment
         fields = [
-            'id', 'dimension_name', 'input_value', 'raw_score',
-            'weight_percentage', 'weighted_score', 'evidence_text'
+            'id', 'dimension_name', 'dimension_display', 'input_value', 'raw_score',
+            'weight_percentage', 'weighted_score', 'evidence_text', 'explanation',
+            'rule_version'
         ]
 
 
@@ -24,9 +27,11 @@ class AccountProductAssessmentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'account', 'account_name', 'product', 'product_name', 'product_code',
             'config_version', 'lead',
-            'icp_knockout_passed', 'icp_fit_score',
-            'pld_score', 'score_classification',
-            'is_overridden', 'override_reason', 'overridden_by', 'overridden_by_name',
+            'icp_result', 'icp_knockout_passed', 'icp_fit_score', 'icp_rule_version',
+            'icp_reasons', 'icp_evidence', 'icp_breakdown',
+            'pld_score', 'original_pld_score', 'score_model_version', 'score_classification',
+            'pld_breakdown', 'questionnaire_answers', 'qualification_history',
+            'is_overridden', 'override_reason', 'overridden_by', 'overridden_by_name', 'overridden_at',
             'assessed_at', 'assessed_by', 'assessed_by_name',
             'dimension_breakdown'
         ]

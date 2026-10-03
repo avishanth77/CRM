@@ -80,6 +80,154 @@ export interface Lead {
   created_at: string;
 }
 
+export interface ICPBreakdown {
+  what_we_know: string[];
+  what_is_missing: string[];
+  why_result_occurred: string;
+  what_to_do_next: string;
+}
+
+export interface PLDBreakdown {
+  what_we_know: string[];
+  what_is_missing: string[];
+  why_score_exists: string;
+  what_to_do_next: string;
+}
+
+export interface ScoreAssessmentItem {
+  id: string;
+  dimension: string;
+  score: number;
+  max_score: number;
+  weight_pct: number;
+  weighted_score: number;
+  evidence_notes: string;
+  explanation?: Record<string, any>;
+  rule_version?: string;
+}
+
+export interface AccountProductAssessment {
+  id: string;
+  account: string;
+  account_name: string;
+  product: string;
+  product_name: string;
+  product_code: string;
+  lead?: string;
+  lead_company_name?: string;
+  icp_result: 'PASS' | 'FAIL' | 'PENDING' | 'REVIEW_REQUIRED';
+  icp_fit_score: number;
+  icp_knockout_passed: boolean;
+  icp_rule_version?: string;
+  icp_reasons?: string[];
+  icp_evidence?: Record<string, any>;
+  icp_breakdown?: ICPBreakdown;
+  pld_breakdown?: PLDBreakdown;
+  pld_score: number;
+  original_pld_score?: number;
+  score_classification: 'NURTURE' | 'DEVELOPMENT' | 'QUALIFIED' | 'HIGH_PRIORITY';
+  is_qualified: boolean;
+  qualification_status: string;
+  override_reason?: string;
+  overridden_by_name?: string;
+  overridden_at?: string;
+  qualification_history?: Array<Record<string, any>>;
+  questionnaire_answers?: Record<string, any>;
+  dimension_scores?: ScoreAssessmentItem[];
+  evaluated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionAnswerOption {
+  id: string;
+  code: string;
+  label: string;
+  order: number;
+  score_value: number;
+  knockout_flag: boolean;
+  feeds_dimension: string;
+}
+
+export interface QuestionnaireQuestion {
+  id: string;
+  code: string;
+  question_text: string;
+  question_type: 'SINGLE_SELECT' | 'MULTI_SELECT' | 'TEXT' | 'NUMERIC' | 'BOOLEAN' | 'SLIDER';
+  category: string;
+  order: number;
+  is_required: boolean;
+  help_text?: string;
+  feeds_dimension: string;
+  weight: number;
+  options: QuestionAnswerOption[];
+}
+
+export interface QuestionnaireTemplate {
+  id: string;
+  name: string;
+  code: string;
+  product?: string;
+  product_name?: string;
+  version_number: string;
+  is_active: boolean;
+  stage_code: string;
+  questions: QuestionnaireQuestion[];
+}
+
+export interface ICPProfile {
+  id: string;
+  name: string;
+  code: string;
+  product: string;
+  product_name: string;
+  product_code: string;
+  version_number: string;
+  is_active: boolean;
+  pass_threshold: number;
+  description: string;
+  rules_count?: number;
+}
+
+export interface ICPRule {
+  id: string;
+  profile: string;
+  rule_type: 'KNOCKOUT' | 'FIT_CRITERIA';
+  field_name: string;
+  operator: string;
+  target_value: string;
+  weight: number;
+  is_active: boolean;
+  failure_reason: string;
+  description: string;
+}
+
+export interface ScoreModel {
+  id: string;
+  name: string;
+  code: string;
+  version_number: string;
+  is_active: boolean;
+  weights: Record<string, number>;
+  thresholds: Record<string, number>;
+}
+
+export interface LeadProblemItem {
+  id: string;
+  lead: string;
+  problem: string;
+  problem_name: string;
+  problem_code: string;
+  category: string;
+  severity: string;
+  frequency: string;
+  business_impact: string;
+  affected_users: string;
+  evidence: string;
+  notes: string;
+  created_at: string;
+}
+
 export interface Discovery {
   id: string;
   lead: string;
@@ -352,17 +500,91 @@ export const api = {
       })
     }),
 
-  // ICP & PLD Scoring
+  // Phase 4: ICP Engine
   evaluateICP: (accountId: string, productId: string, leadId?: string) =>
-    request<any>('/configurations/evaluate-icp/', {
+    request<any>('/icp/evaluate/', {
       method: 'POST',
       body: JSON.stringify({ account_id: accountId, product_id: productId, lead_id: leadId })
     }),
+  getICPProfiles: (productId?: string) =>
+    request<ICPProfile[]>(`/icp/profiles/${productId ? `?product=${productId}` : ''}`),
+  getICPRules: (productId?: string) =>
+    request<ICPRule[]>(`/icp/rules/${productId ? `?product=${productId}` : ''}`),
+  saveICPRule: (rule: Partial<ICPRule>) =>
+    rule.id
+      ? request<ICPRule>(`/icp-rules/${rule.id}/`, { method: 'PATCH', body: JSON.stringify(rule) })
+      : request<ICPRule>('/icp-rules/', { method: 'POST', body: JSON.stringify(rule) }),
 
+  // Phase 4: PLD Qualification & Scoring Engine
   evaluatePLDScore: (assessmentId: string, answers: Record<string, any>) =>
-    request<any>('/configurations/evaluate-pld-score/', {
+    request<any>('/pld/score/', {
       method: 'POST',
       body: JSON.stringify({ assessment_id: assessmentId, answers })
+    }),
+  assessPLD: (accountId: string, productId: string, leadId?: string, answers: Record<string, any> = {}) =>
+    request<any>('/pld/assess/', {
+      method: 'POST',
+      body: JSON.stringify({ account_id: accountId, product_id: productId, lead_id: leadId, answers })
+    }),
+  getScoreModels: (productId?: string) =>
+    request<ScoreModel[]>(`/pld/models/${productId ? `?product=${productId}` : ''}`),
+  saveScoreModel: (model: Partial<ScoreModel>) =>
+    model.id
+      ? request<ScoreModel>(`/score-models/${model.id}/`, { method: 'PATCH', body: JSON.stringify(model) })
+      : request<ScoreModel>('/score-models/', { method: 'POST', body: JSON.stringify(model) }),
+
+  // Phase 4: Assessments & Authorized Score Override
+  getAssessments: (params?: { account?: string; product?: string; lead?: string }) => {
+    const q = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+    return request<AccountProductAssessment[]>(`/icp/assessments/${q}`);
+  },
+  getAssessmentById: (assessmentId: string) =>
+    request<AccountProductAssessment>(`/assessments/${assessmentId}/`),
+  overrideAssessment: (assessmentId: string, reason: string, newClassification?: string, newScore?: number) =>
+    request<any>('/pld/override/', {
+      method: 'POST',
+      body: JSON.stringify({
+        assessment_id: assessmentId,
+        override_reason: reason,
+        score_classification: newClassification,
+        pld_score: newScore
+      })
+    }),
+
+  // Phase 4: Dynamic Qualification Questionnaires
+  getQuestionnaireForProduct: (productId: string) =>
+    request<QuestionnaireTemplate>(`/questionnaires/product/${productId}/`),
+  getQuestionnaires: () =>
+    request<{ results: QuestionnaireTemplate[] }>('/questionnaires/'),
+  getQuestionnaireQuestions: (templateId?: string) =>
+    request<{ results: QuestionnaireQuestion[] }>(`/questionnaire-questions/${templateId ? `?template=${templateId}` : ''}`),
+  saveQuestionnaireQuestion: (question: Partial<QuestionnaireQuestion>) =>
+    question.id
+      ? request<QuestionnaireQuestion>(`/questionnaire-questions/${question.id}/`, { method: 'PATCH', body: JSON.stringify(question) })
+      : request<QuestionnaireQuestion>('/questionnaire-questions/', { method: 'POST', body: JSON.stringify(question) }),
+  saveQuestionAnswerOption: (option: Partial<QuestionAnswerOption>) =>
+    option.id
+      ? request<QuestionAnswerOption>(`/question-options/${option.id}/`, { method: 'PATCH', body: JSON.stringify(option) })
+      : request<QuestionAnswerOption>('/question-options/', { method: 'POST', body: JSON.stringify(option) }),
+
+  // Phase 4: Documented Business Problems Capture
+  getLeadProblems: (leadId: string) =>
+    request<LeadProblemItem[]>(`/leads/${leadId}/problems/`),
+  addLeadProblem: (leadId: string, problemData: {
+    problem_name?: string;
+    problem_code?: string;
+    problem_id?: string;
+    category?: string;
+    severity?: string;
+    frequency?: string;
+    business_impact?: string;
+    affected_users?: string;
+    evidence?: string;
+    notes?: string;
+  }) =>
+    request<LeadProblemItem>(`/leads/${leadId}/problems/`, {
+      method: 'POST',
+      body: JSON.stringify(problemData)
     }),
 
   // Accounts & Opportunities
@@ -392,13 +614,6 @@ export const api = {
     request<any>(`/pocs/${id}/mark-not-required/`, {
       method: 'POST',
       body: JSON.stringify({ reason })
-    }),
-
-  // Authorized Assessment Manual Override
-  overrideAssessment: (assessmentId: string, reason: string, newClassification?: string, newScore?: number) =>
-    request<any>(`/assessments/${assessmentId}/override/`, {
-      method: 'POST',
-      body: JSON.stringify({ override_reason: reason, score_classification: newClassification, pld_score: newScore })
     }),
 
   // Activities & Mandatory Next Actions

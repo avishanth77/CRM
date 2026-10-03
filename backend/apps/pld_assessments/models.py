@@ -15,6 +15,13 @@ class ScoreClassification(models.TextChoices):
     HIGH_PRIORITY = 'HIGH_PRIORITY', 'High Priority (81-100)'
 
 
+class ICPResultStatus(models.TextChoices):
+    PASS = 'PASS', 'Pass'
+    FAIL = 'FAIL', 'Fail'
+    PENDING = 'PENDING', 'Pending Information'
+    REVIEW_REQUIRED = 'REVIEW_REQUIRED', 'Review Required'
+
+
 class AccountProductAssessment(BaseModel):
     """
     Stores the exact result of an ICP check and PLD Score evaluation per Account x Product.
@@ -36,19 +43,53 @@ class AccountProductAssessment(BaseModel):
     )
 
     # ICP Evaluation
+    icp_result = models.CharField(
+        max_length=32,
+        choices=ICPResultStatus.choices,
+        default=ICPResultStatus.PENDING,
+        db_index=True
+    )
     icp_knockout_passed = models.BooleanField(default=True)
     icp_fit_score = models.PositiveIntegerField(default=0)
+    icp_rule_version = models.PositiveIntegerField(default=1)
+    icp_reasons = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Detailed reasons for knockout failures or fit score contributions"
+    )
+    icp_evidence = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Snapshot of account attributes evaluated against ICP rules"
+    )
+    icp_breakdown = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Structured breakdown: what_we_know, what_is_missing, why_result_occurred, what_to_do_next"
+    )
 
     # PLD Score Evaluation
     pld_score = models.PositiveIntegerField(default=0)
+    score_model_version = models.PositiveIntegerField(default=1)
     score_classification = models.CharField(
         max_length=32,
         choices=ScoreClassification.choices,
         default=ScoreClassification.NURTURE
     )
+    pld_breakdown = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Structured breakdown: what_is_known, what_is_missing, why_score_exists, what_to_do_next"
+    )
+    questionnaire_answers = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Captured answers from the qualification questionnaire"
+    )
 
     # Override tracking
     is_overridden = models.BooleanField(default=False)
+    original_pld_score = models.PositiveIntegerField(null=True, blank=True)
     override_reason = models.TextField(blank=True, null=True)
     overridden_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -56,6 +97,14 @@ class AccountProductAssessment(BaseModel):
         null=True,
         blank=True,
         related_name="overridden_assessments"
+    )
+    overridden_at = models.DateTimeField(null=True, blank=True)
+
+    # Qualification History
+    qualification_history = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Historical record of all calculations, overrides, and gate checks"
     )
 
     assessed_at = models.DateTimeField(auto_now=True)
@@ -71,7 +120,7 @@ class AccountProductAssessment(BaseModel):
         ordering = ['-assessed_at']
 
     def __str__(self):
-        return f"{self.account.company_name} - {self.product.code} [PLD Score: {self.pld_score}]"
+        return f"{self.account.company_name} - {self.product.code} [ICP: {self.icp_result} | PLD: {self.pld_score}]"
 
 
 class ScoreAssessment(BaseModel):
@@ -93,6 +142,8 @@ class ScoreAssessment(BaseModel):
     weight_percentage = models.PositiveIntegerField(default=0)
     weighted_score = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     evidence_text = models.TextField(blank=True, null=True)
+    explanation = models.CharField(max_length=255, blank=True, null=True)
+    rule_version = models.PositiveIntegerField(default=1)
 
     class Meta:
         unique_together = ('assessment', 'dimension_name')

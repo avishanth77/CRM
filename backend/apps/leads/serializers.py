@@ -39,7 +39,11 @@ class LeadProblemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LeadProblem
-        fields = ['id', 'lead', 'problem', 'problem_detail', 'notes']
+        fields = [
+            'id', 'lead', 'problem', 'problem_detail', 'category',
+            'severity', 'frequency', 'business_impact', 'affected_users',
+            'evidence', 'notes'
+        ]
 
 
 class LeadSerializer(serializers.ModelSerializer):
