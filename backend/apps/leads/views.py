@@ -141,6 +141,24 @@ class LeadViewSet(viewsets.ModelViewSet):
             )
             DiscoveryService.carry_forward_lead_problems(disc)
 
+        # If entering Demo stage, auto-initialize Demo workspace with Discovery use case mappings
+        elif target_stage.stage_code == 'DEMO' or 'Demo' in target_stage.stage_name:
+            from apps.evaluations.services import DemoService
+            DemoService.create_or_init_demo(
+                lead=lead,
+                discovery=lead.discoveries.first(),
+                user=request.user if request.user.is_authenticated else None
+            )
+
+        # If entering POC stage, auto-initialize POC trial with Discovery KPIs & criteria
+        elif target_stage.stage_code == 'POC' or 'POC' in target_stage.stage_name:
+            from apps.evaluations.services import POCService
+            POCService.create_or_init_poc(
+                lead=lead,
+                discovery=lead.discoveries.first(),
+                user=request.user if request.user.is_authenticated else None
+            )
+
         return Response({
             'message': f"Lead successfully progressed to {target_stage.stage_name}",
             'lead': LeadSerializer(lead).data

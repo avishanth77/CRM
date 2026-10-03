@@ -630,6 +630,54 @@ class GateValidator:
                     else:
                         what_we_know.append("Discovery problem-to-capability mapping 100% complete")
 
+            # 6. Require Demo completed (or Not Required if optional)
+            if rules.get("require_demo_completed", False) or (target_stage.stage_code in ['POC', 'SQL_READY'] and rules.get("enforce_demo_gate", False)):
+                from apps.evaluations.services import StageRequirementChecker
+                is_demo_req = StageRequirementChecker.is_demo_required(lead.primary_product)
+                demo = lead.demos.first()
+
+                if is_demo_req:
+                    if not demo or demo.status != 'COMPLETED':
+                        satisfied = False
+                        cur_st = demo.status if demo else "NOT_SCHEDULED"
+                        missing.append(f"Product Demo is MANDATORY for {lead.primary_product.name} and must be COMPLETED before advancing (current status: {cur_st})")
+                        what_is_missing.append("Mandatory Product Demo completion required")
+                    else:
+                        what_we_know.append(f"Product Demo: COMPLETED ({demo.fit_assessment} fit)")
+                else:
+                    if demo and demo.status not in ['COMPLETED', 'NOT_REQUIRED']:
+                        satisfied = False
+                        missing.append(f"Product Demo status must be COMPLETED or explicitly recorded as NOT_REQUIRED with documented reason (current status: {demo.status})")
+                        what_is_missing.append("Demo resolution required")
+                    elif demo and demo.status == 'NOT_REQUIRED':
+                        what_we_know.append(f"Product Demo: Waived as NOT REQUIRED (Reason: {demo.not_required_reason})")
+                    elif demo and demo.status == 'COMPLETED':
+                        what_we_know.append("Product Demo: COMPLETED")
+
+            # 7. Require POC completed (or Not Required if optional)
+            if rules.get("require_poc_completed", False) or (target_stage.stage_code == 'SQL_READY' and rules.get("enforce_poc_gate", False)):
+                from apps.evaluations.services import StageRequirementChecker
+                is_poc_req = StageRequirementChecker.is_poc_required(lead.primary_product)
+                poc = lead.pocs.first()
+
+                if is_poc_req:
+                    if not poc or poc.status != 'COMPLETED':
+                        satisfied = False
+                        cur_st = poc.status if poc else "NOT_INITIATED"
+                        missing.append(f"POC / Pilot trial is MANDATORY for {lead.primary_product.name} and must be COMPLETED before SQL handoff (current status: {cur_st})")
+                        what_is_missing.append("Mandatory POC completion required")
+                    else:
+                        what_we_know.append("POC / Pilot Trial: COMPLETED successfully")
+                else:
+                    if poc and poc.status not in ['COMPLETED', 'NOT_REQUIRED']:
+                        satisfied = False
+                        missing.append(f"POC trial must be COMPLETED or explicitly recorded as NOT_REQUIRED with documented reason before SQL (current status: {poc.status})")
+                        what_is_missing.append("POC resolution required")
+                    elif poc and poc.status == 'NOT_REQUIRED':
+                        what_we_know.append(f"POC Trial: Waived as NOT REQUIRED (Reason: {poc.not_required_reason})")
+                    elif poc and poc.status == 'COMPLETED':
+                        what_we_know.append("POC Trial: COMPLETED successfully")
+
             if not satisfied:
                 all_passed = False
 

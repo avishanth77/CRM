@@ -348,6 +348,175 @@ export interface Discovery {
   updated_at: string;
 }
 
+// Phase 6: Demo & POC Management Interfaces
+export interface DemoParticipant {
+  id: string;
+  demo: string;
+  contact?: string;
+  contact_name?: string;
+  contact_email?: string;
+  user?: string;
+  user_name?: string;
+  name: string;
+  email: string;
+  participant_type: 'CUSTOMER' | 'INTERNAL';
+  role_title: string;
+  attended: boolean;
+  notes: string;
+  created_at: string;
+}
+
+export interface DemoUseCaseMapping {
+  id: string;
+  demo: string;
+  discovery_problem?: string;
+  problem_name?: string;
+  problem_category?: string;
+  lead_problem?: string;
+  module?: string;
+  module_name?: string;
+  module_code?: string;
+  capability?: string;
+  capability_name?: string;
+  capability_code?: string;
+  notes: string;
+  was_demonstrated: boolean;
+  created_at: string;
+}
+
+export interface DemoChecklistItem {
+  gate_code: string;
+  name: string;
+  description: string;
+  status: 'COMPLETED' | 'MISSING' | 'BLOCKED';
+  is_mandatory: boolean;
+  missing_fields: string[];
+}
+
+export interface DemoReadiness {
+  is_ready: boolean;
+  status: 'READY' | 'NOT_READY';
+  checklist: DemoChecklistItem[];
+  missing_fields: string[];
+}
+
+export interface Demo {
+  id: string;
+  lead?: string;
+  account: string;
+  account_name: string;
+  discovery?: string;
+  opportunity?: string;
+  product?: string;
+  product_name?: string;
+  product_code?: string;
+  presenter?: string;
+  presenter_name?: string;
+  scheduled_at: string;
+  conducted_at?: string;
+  participants_notes?: string;
+  demonstrated_use_cases?: any[];
+  customer_feedback?: string;
+  objections_raised?: string;
+  customer_questions?: string;
+  customer_response?: string;
+  fit_assessment: 'STRONG' | 'MODERATE' | 'POOR';
+  status: 'PLANNED' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'NOT_REQUIRED';
+  not_required_reason?: string;
+  next_action_description?: string;
+  next_action_due_at?: string;
+  last_activity_at?: string;
+  participants?: DemoParticipant[];
+  use_cases?: DemoUseCaseMapping[];
+  readiness?: DemoReadiness;
+  is_required_in_pipeline?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface POCParticipant {
+  id: string;
+  poc: string;
+  contact?: string;
+  contact_name?: string;
+  contact_email?: string;
+  user?: string;
+  user_name?: string;
+  name: string;
+  email: string;
+  participant_type: 'CUSTOMER' | 'INTERNAL' | 'PILOT_USER' | 'ENGINEER';
+  role_title: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface POCSuccessCriterion {
+  id: string;
+  poc: string;
+  name: string;
+  category: string;
+  measurement_baseline: string;
+  expected_target: string;
+  actual_result: string;
+  is_met: boolean;
+  notes: string;
+  created_at: string;
+}
+
+export interface POCChecklistItem {
+  gate_code: string;
+  name: string;
+  description: string;
+  status: 'COMPLETED' | 'MISSING' | 'BLOCKED';
+  is_mandatory: boolean;
+  missing_fields: string[];
+}
+
+export interface POCReadiness {
+  is_ready: boolean;
+  status: 'READY' | 'NOT_READY';
+  checklist: POCChecklistItem[];
+  missing_fields: string[];
+}
+
+export interface POC {
+  id: string;
+  lead?: string;
+  account: string;
+  account_name: string;
+  discovery?: string;
+  opportunity?: string;
+  product?: string;
+  product_name?: string;
+  product_code?: string;
+  owner?: string;
+  owner_name?: string;
+  scope_description: string;
+  success_criteria: string;
+  baseline_metrics: Record<string, any>;
+  baseline_notes?: string;
+  result_metrics: Record<string, any>;
+  results_summary?: string;
+  geography_coverage: string;
+  users_count: number;
+  start_date: string;
+  end_date: string;
+  completed_at?: string;
+  status: 'PLANNED' | 'APPROVED' | 'ACTIVE' | 'REVIEW' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'NOT_REQUIRED';
+  not_required_reason?: string;
+  is_successful: boolean;
+  customer_feedback?: string;
+  next_action_description?: string;
+  next_action_due_at?: string;
+  last_activity_at?: string;
+  criteria_items?: POCSuccessCriterion[];
+  participants?: POCParticipant[];
+  readiness?: POCReadiness;
+  is_required_in_pipeline?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SQLHandoff {
   id: string;
   lead: string;
@@ -763,17 +932,94 @@ export const api = {
   rejectDealRegistration: (id: string, reason: string) =>
     request<any>(`/deal-registrations/${id}/reject/`, { method: 'POST', body: JSON.stringify({ reason }) }),
 
-  // Phase 3: POC Trials & KPI Tracking
-  getPOCs: () => request<{ results: any[] }>('/pocs/'),
-  completePOC: (id: string, resultMetrics: Record<string, any>, feedback: string) =>
+  // Phase 6: Product-Configurable Demo Management
+  getDemos: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: Demo[] }>(`/demos/${q}`);
+  },
+  getDemo: (id: string) =>
+    request<Demo>(`/demos/${id}/`),
+  createDemo: (data: Partial<Demo>) =>
+    request<Demo>('/demos/', { method: 'POST', body: JSON.stringify(data) }),
+  updateDemo: (id: string, data: Partial<Demo>) =>
+    request<Demo>(`/demos/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  completeDemo: (id: string, data: { customer_feedback?: string; objections_raised?: string; customer_questions?: string; customer_response?: string; next_action_description?: string; next_action_due_at?: string; fit_assessment?: string }) =>
+    request<any>(`/demos/${id}/complete/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  markDemoNotRequired: (id: string, reason: string) =>
+    request<any>(`/demos/${id}/mark-not-required/`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    }),
+  getDemoReadiness: (id: string) =>
+    request<DemoReadiness>(`/demos/${id}/readiness/`),
+  addDemoParticipant: (demoId: string, data: Partial<DemoParticipant>) =>
+    request<DemoParticipant>(`/demos/${demoId}/add-participant/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  deleteDemoParticipant: (participantId: string) =>
+    request<any>(`/demo-participants/${participantId}/`, {
+      method: 'DELETE'
+    }),
+  mapDemoUseCase: (demoId: string, data: { discovery_problem_id?: string; capability_id?: string; notes?: string; was_demonstrated?: boolean }) =>
+    request<DemoUseCaseMapping>(`/demos/${demoId}/map-use-case/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  unmapDemoUseCase: (demoId: string, mappingId: string) =>
+    request<{ message: string }>(`/demos/${demoId}/unmap-use-case/`, {
+      method: 'POST',
+      body: JSON.stringify({ mapping_id: mappingId })
+    }),
+
+  // Phase 6: Product-Configurable POC/Pilot Management
+  getPOCs: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: POC[] }>(`/pocs/${q}`);
+  },
+  getPOC: (id: string) =>
+    request<POC>(`/pocs/${id}/`),
+  createPOC: (data: Partial<POC>) =>
+    request<POC>('/pocs/', { method: 'POST', body: JSON.stringify(data) }),
+  updatePOC: (id: string, data: Partial<POC>) =>
+    request<POC>(`/pocs/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  completePOC: (id: string, data: { result_metrics?: Record<string, any>; results_summary?: string; customer_feedback?: string; is_successful?: boolean; next_action_description?: string; next_action_due_at?: string }) =>
     request<any>(`/pocs/${id}/complete/`, {
       method: 'POST',
-      body: JSON.stringify({ result_metrics: resultMetrics, customer_feedback: feedback, is_successful: true })
+      body: JSON.stringify(data)
     }),
   markPOCNotRequired: (id: string, reason: string) =>
     request<any>(`/pocs/${id}/mark-not-required/`, {
       method: 'POST',
       body: JSON.stringify({ reason })
+    }),
+  getPOCReadiness: (id: string) =>
+    request<POCReadiness>(`/pocs/${id}/readiness/`),
+  addPOCParticipant: (pocId: string, data: Partial<POCParticipant>) =>
+    request<POCParticipant>(`/pocs/${pocId}/add-participant/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  deletePOCParticipant: (participantId: string) =>
+    request<any>(`/poc-participants/${participantId}/`, {
+      method: 'DELETE'
+    }),
+  addPOCCriterion: (pocId: string, data: Partial<POCSuccessCriterion>) =>
+    request<POCSuccessCriterion>(`/pocs/${pocId}/add-criterion/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  updatePOCCriterion: (criterionId: string, data: Partial<POCSuccessCriterion>) =>
+    request<POCSuccessCriterion>(`/poc-criteria/${criterionId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    }),
+  deletePOCCriterion: (criterionId: string) =>
+    request<any>(`/poc-criteria/${criterionId}/`, {
+      method: 'DELETE'
     }),
 
   // Activities & Mandatory Next Actions

@@ -4,10 +4,10 @@ import {
   ArrowRight, ShieldCheck, Settings, Sparkles, 
   TrendingUp, Clock, Search, PlusCircle, RefreshCw, Briefcase, 
   Check, X, Compass, CheckSquare, Handshake, 
-  FlaskConical, History, Share2, Gauge, Send, Database
+  FlaskConical, History, Share2, Gauge, Send, Database, Monitor
 } from 'lucide-react';
 import { api } from './services/api';
-import type { FunnelData, Lead, Product, Discovery, SQLHandoff, Opportunity } from './services/api';
+import type { FunnelData, Lead, Product, Discovery, SQLHandoff, Opportunity, Demo, POC } from './services/api';
 import { MultiTouchAttributionView } from './components/MultiTouchAttributionView';
 import { FunnelLeakageVelocityView } from './components/FunnelLeakageVelocityView';
 import { OmniChannelCommsView } from './components/OmniChannelCommsView';
@@ -15,18 +15,21 @@ import { ERPSyncGatewayView } from './components/ERPSyncGatewayView';
 import { PLDQualificationWorkspace } from './components/PLDQualificationWorkspace';
 import { AdminEngineStudio } from './components/AdminEngineStudio';
 import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
+import { DemoWorkspace } from './components/DemoWorkspace';
+import { POCWorkspace } from './components/POCWorkspace';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'queue' | 'discovery' | 'poc' | 'sql' | 'opportunities' | 'partners' | 'studio' | 'audit' | 'attribution' | 'leakage' | 'communications' | 'erp'
+    'dashboard' | 'queue' | 'discovery' | 'demo' | 'poc' | 'sql' | 'opportunities' | 'partners' | 'studio' | 'audit' | 'attribution' | 'leakage' | 'communications' | 'erp'
   >('dashboard');
   const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [discoveries, setDiscoveries] = useState<Discovery[]>([]);
+  const [demos, setDemos] = useState<Demo[]>([]);
+  const [pocs, setPocs] = useState<POC[]>([]);
   const [sqlHandoffs, setSqlHandoffs] = useState<SQLHandoff[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [pocs, setPocs] = useState<any[]>([]);
   const [partnerDashboard, setPartnerDashboard] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -58,11 +61,6 @@ export default function App() {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectReturnTarget, setRejectReturnTarget] = useState<'DISCOVERY' | 'PLD' | 'NURTURE'>('DISCOVERY');
 
-  // POC Not Required Modal State
-  const [showPocNotRequiredModal, setShowPocNotRequiredModal] = useState(false);
-  const [skipPocId, setSkipPocId] = useState<string | null>(null);
-  const [skipPocReason, setSkipPocReason] = useState('');
-
   // New Deal Registration State
   const [regCustomerName, setRegCustomerName] = useState('');
   const [regProductCode, setRegProductCode] = useState('VANFORCES');
@@ -76,11 +74,12 @@ export default function App() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [fData, lData, pData, dData, sData, oData, pocData, pDash, aData, accData] = await Promise.all([
+      const [fData, lData, pData, dData, demoData, sData, oData, pocData, pDash, aData, accData] = await Promise.all([
         api.getFunnelAnalytics().catch(() => null),
         api.getLeads().catch(() => ({ results: [] })),
         api.getProducts().catch(() => ({ results: [] })),
         api.getDiscoveries().catch(() => ({ results: [] })),
+        api.getDemos().catch(() => ({ results: [] })),
         api.getSQLHandoffs().catch(() => ({ results: [] })),
         api.getOpportunities().catch(() => ({ results: [] })),
         api.getPOCs().catch(() => ({ results: [] })),
@@ -92,6 +91,7 @@ export default function App() {
       setLeads(lData.results);
       setProducts(pData.results);
       setDiscoveries(dData.results);
+      setDemos(demoData.results);
       setSqlHandoffs(sData.results);
       setOpportunities(oData.results);
       setPocs(pocData.results);
@@ -150,26 +150,7 @@ export default function App() {
     }
   };
 
-  const openSkipPoc = (pocId: string) => {
-    setSkipPocId(pocId);
-    setSkipPocReason('');
-    setShowPocNotRequiredModal(true);
-  };
 
-  const confirmSkipPoc = async () => {
-    if (!skipPocId || !skipPocReason.trim()) {
-      alert('A documented reason is mandatory when marking a POC as Not Required.');
-      return;
-    }
-    try {
-      await api.markPOCNotRequired(skipPocId, skipPocReason);
-      notifySuccess('POC marked as Not Required (Stage Skipped with governance audit).');
-      setShowPocNotRequiredModal(false);
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Action failed');
-    }
-  };
 
   const handleCheckDuplicates = async (name: string, domainStr: string) => {
     if (!name && !domainStr) {
@@ -372,6 +353,16 @@ export default function App() {
             <Compass size={16} />
             Discovery &amp; Mapping
             <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{discoveries.length}</span>
+          </button>
+
+          <button 
+            className={`btn ${activeTab === 'demo' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('demo')}
+            style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
+          >
+            <Monitor size={16} />
+            Demo Workspace
+            <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{demos.length}</span>
           </button>
 
           <button 
@@ -745,7 +736,7 @@ export default function App() {
               onNavigateToDemo={(targetLeadId) => {
                 const found = leads.find(l => l.id === targetLeadId);
                 if (found) setSelectedLead(found);
-                setActiveTab('queue');
+                setActiveTab('demo');
               }}
               onNavigateToSQL={() => {
                 setActiveTab('sql');
@@ -753,90 +744,37 @@ export default function App() {
             />
           )}
 
-          {/* TAB 4: POC PILOT TRIALS & KPI TRACKER (NEW IN PHASE 3) */}
+          {/* TAB 4: DEMO WORKSPACE (PHASE 6) */}
+          {activeTab === 'demo' && (
+            <DemoWorkspace
+              leadId={selectedLead?.id}
+              onDemoCompleted={(completedDemo) => {
+                notifySuccess(`Demo for ${completedDemo.account_name} completed successfully! Verification gates passed.`);
+                loadData();
+              }}
+              onNavigateToPOC={(targetLeadId) => {
+                const found = leads.find(l => l.id === targetLeadId);
+                if (found) setSelectedLead(found);
+                setActiveTab('poc');
+              }}
+              onNavigateToSQL={() => {
+                setActiveTab('sql');
+              }}
+            />
+          )}
+
+          {/* TAB 5: POC PILOT MANAGEMENT WORKSPACE (PHASE 6) */}
           {activeTab === 'poc' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-                  Proof of Concept (POC) &amp; Pilot Trials
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Tracks trial parameters, baseline metrics vs verified result KPIs before commercial commitment.
-                </p>
-              </div>
-
-              {pocs.map(poc => (
-                <div key={poc.id} className="glass-panel" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{poc.account_name}</h2>
-                        <span className={`badge ${poc.status === 'COMPLETED' ? 'badge-success' : poc.status === 'NOT_REQUIRED' ? 'badge-neutral' : 'badge-warning'}`}>
-                          Status: {poc.status}
-                        </span>
-                        {poc.status === 'NOT_REQUIRED' && poc.not_required_reason && (
-                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                            (Reason: {poc.not_required_reason})
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Scope: {poc.scope_description} • {poc.users_count} Vans / Drivers
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span className="badge badge-info">Coverage: {poc.geography_coverage}</span>
-                      {poc.status !== 'COMPLETED' && poc.status !== 'NOT_REQUIRED' && (
-                        <button 
-                          className="btn btn-secondary" 
-                          style={{ fontSize: '0.75rem', padding: '6px 12px' }}
-                          onClick={() => openSkipPoc(poc.id)}
-                        >
-                          Mark as Not Required (Skip Stage)
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* KPI Baseline vs Result Comparison Table */}
-                  <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '14px' }}>
-                    Documented Baseline KPIs vs. Pilot Results
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                    <div style={{ padding: '16px', background: 'var(--bg-surface)', borderRadius: '10px' }}>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ROUTE ADHERENCE</div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginTop: '8px' }}>
-                        <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>58% Baseline</span>
-                        <span style={{ fontSize: '1.7rem', fontWeight: 800, color: 'var(--success)' }}>88% Actual</span>
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--success)', marginTop: '4px' }}>Target was &gt;80% (+30% increase)</div>
-                    </div>
-
-                    <div style={{ padding: '16px', background: 'var(--bg-surface)', borderRadius: '10px' }}>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ORDER PROCESSING TIME</div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginTop: '8px' }}>
-                        <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>45 mins</span>
-                        <span style={{ fontSize: '1.7rem', fontWeight: 800, color: 'var(--accent-cyan)' }}>8 mins</span>
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', marginTop: '4px' }}>-82% time saved per outlet visit</div>
-                    </div>
-
-                    <div style={{ padding: '16px', background: 'var(--bg-surface)', borderRadius: '10px' }}>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>VAN INVENTORY VARIANCE</div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginTop: '8px' }}>
-                        <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>4.2%</span>
-                        <span style={{ fontSize: '1.7rem', fontWeight: 800, color: 'var(--primary)' }}>0.3%</span>
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--primary)', marginTop: '4px' }}>Virtually zero load reconciliation error</div>
-                    </div>
-                  </div>
-
-                  <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '8px', borderLeft: '4px solid var(--success)', fontSize: '0.85rem' }}>
-                    <strong>Customer Trial Feedback:</strong> "{poc.customer_feedback}"
-                  </div>
-                </div>
-              ))}
-            </div>
+            <POCWorkspace
+              leadId={selectedLead?.id}
+              onPOCCompleted={(completedPOC) => {
+                notifySuccess(`POC trial for ${completedPOC.account_name} completed successfully! Trial criteria verified.`);
+                loadData();
+              }}
+              onNavigateToSQL={() => {
+                setActiveTab('sql');
+              }}
+            />
           )}
 
           {/* TAB 5: SQL GATE READINESS & SALES ACCEPTANCE */}
@@ -1575,76 +1513,7 @@ export default function App() {
         </div>
       )}
 
-      {/* POC NOT REQUIRED (SKIP STAGE) MODAL */}
-      {showPocNotRequiredModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '480px', padding: '30px', border: '1px solid var(--border-focus)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>
-                Mark POC as Not Required
-              </h2>
-              <button onClick={() => setShowPocNotRequiredModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              TEXOL Pipeline Rule: An optional stage (Demo or POC) must NOT be skipped silently. A formal business rationale must be recorded.
-            </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Reason POC is Not Required
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="e.g., Client accepts existing customer reference visit in Riyadh; standard deployment without custom telemetry..."
-                  value={skipPocReason}
-                  onChange={(e) => setSkipPocReason(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#FFFFFF',
-                    marginTop: '6px',
-                    outline: 'none',
-                    resize: 'vertical'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-primary" 
-                  style={{ flex: 1, padding: '12px' }}
-                  onClick={confirmSkipPoc}
-                >
-                  Record &amp; Skip Stage
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowPocNotRequiredModal(false)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* DEAL REGISTRATION MODAL */}
       {showDealRegModal && (

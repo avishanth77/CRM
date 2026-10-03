@@ -34,6 +34,20 @@ class Activity(BaseModel):
         blank=True,
         related_name="activities"
     )
+    demo = models.ForeignKey(
+        'evaluations.Demo',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activities"
+    )
+    poc = models.ForeignKey(
+        'evaluations.POC',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activities"
+    )
     opportunity = models.ForeignKey(
         'opportunities.Opportunity',
         on_delete=models.CASCADE,
