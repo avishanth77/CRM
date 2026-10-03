@@ -67,8 +67,16 @@ class Opportunity(BaseModel):
         db_index=True
     )
 
-    # Commercial parameters
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="opportunities"
+    )
     total_contract_value = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    arr = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, help_text="Annual Recurring Revenue")
+    mrr = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, help_text="Monthly Recurring Revenue")
     arr_mrr = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     pricing_plan = models.CharField(max_length=128, blank=True, null=True)
     seat_units_count = models.PositiveIntegerField(default=1)
@@ -120,6 +128,23 @@ class OpportunityProduct(BaseModel):
 
     def __str__(self):
         return f"{self.opportunity}: {self.product.name} ({self.total_amount})"
+
+
+class OpportunityModule(BaseModel):
+    """
+    Product Modules included or configured within this opportunity.
+    Preserves Opportunity -> Product -> Modules relationship per Section 17.
+    """
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name="selected_modules")
+    module = models.ForeignKey('products.ProductModule', on_delete=models.CASCADE, related_name="opportunity_assignments")
+    is_included = models.BooleanField(default=True)
+    notes = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        unique_together = ('opportunity', 'module')
+
+    def __str__(self):
+        return f"{self.opportunity} -> {self.module.name}"
 
 
 class OpportunityCapability(BaseModel):

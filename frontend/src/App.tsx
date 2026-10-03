@@ -17,11 +17,16 @@ import { AdminEngineStudio } from './components/AdminEngineStudio';
 import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
 import { DemoWorkspace } from './components/DemoWorkspace';
 import { POCWorkspace } from './components/POCWorkspace';
+import { SQLReadinessWorkspace } from './components/SQLReadinessWorkspace';
+import { SalesAcceptanceWorkspace } from './components/SalesAcceptanceWorkspace';
+import { OpportunityWorkspace } from './components/OpportunityWorkspace';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'queue' | 'discovery' | 'demo' | 'poc' | 'sql' | 'opportunities' | 'partners' | 'studio' | 'audit' | 'attribution' | 'leakage' | 'communications' | 'erp'
   >('dashboard');
+  const [sqlSubView, setSqlSubView] = useState<'readiness' | 'acceptance'>('readiness');
+  const [selectedOpportunityId, setSelectedOpportunityId] = useState<string>('');
   const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -54,12 +59,6 @@ export default function App() {
   const [newTargetTier, setNewTargetTier] = useState('TIER_1');
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
-
-  // SQL Rejection Modal State
-  const [showSqlRejectModal, setShowSqlRejectModal] = useState(false);
-  const [rejectHandoffId, setRejectHandoffId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejectReturnTarget, setRejectReturnTarget] = useState<'DISCOVERY' | 'PLD' | 'NURTURE'>('DISCOVERY');
 
   // New Deal Registration State
   const [regCustomerName, setRegCustomerName] = useState('');
@@ -116,38 +115,6 @@ export default function App() {
 
   const handleInspectLead = (lead: Lead) => {
     setSelectedLead(lead);
-  };
-
-  const handleAcceptSQL = async (handoffId: string) => {
-    try {
-      const res = await api.acceptSQLHandoff(handoffId);
-      notifySuccess(res.message);
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Acceptance failed');
-    }
-  };
-
-  const openSqlReject = (handoffId: string) => {
-    setRejectHandoffId(handoffId);
-    setRejectReason('');
-    setRejectReturnTarget('DISCOVERY');
-    setShowSqlRejectModal(true);
-  };
-
-  const confirmSqlReject = async () => {
-    if (!rejectHandoffId || !rejectReason.trim()) {
-      alert('A documented rejection reason is mandatory.');
-      return;
-    }
-    try {
-      const res = await api.rejectSQLHandoff(rejectHandoffId, rejectReason, rejectReturnTarget);
-      notifySuccess(res.message);
-      setShowSqlRejectModal(false);
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Rejection failed');
-    }
   };
 
 
@@ -777,179 +744,72 @@ export default function App() {
             />
           )}
 
-          {/* TAB 5: SQL GATE READINESS & SALES ACCEPTANCE */}
+          {/* TAB 5: SQL READINESS & SALES ACCEPTANCE WORKSPACES */}
           {activeTab === 'sql' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-                  SQL Gate Readiness &amp; Sales Acceptance Workspace
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Specification Wireframe 13.7: What We Know, What Is Missing, and formal Sales Acceptance SLA.
-                </p>
+            <div className="space-y-6">
+              {/* Sub-view switcher */}
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold">
+                  <button
+                    onClick={() => setSqlSubView('readiness')}
+                    className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                      sqlSubView === 'readiness'
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <CheckSquare className="w-4 h-4" />
+                    SQL Readiness Gates (9 Gates)
+                  </button>
+                  <button
+                    onClick={() => setSqlSubView('acceptance')}
+                    className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                      sqlSubView === 'acceptance'
+                        ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Sales Acceptance Queue &amp; SLA
+                  </button>
+                </div>
               </div>
 
-              {sqlHandoffs.map(h => (
-                <div key={h.id} className="glass-panel" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{h.company_name}</h2>
-                        <span className="badge badge-info">{h.product_name}</span>
-                        <span className={`badge ${h.status === 'ACCEPTED' ? 'badge-success' : h.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'}`}>
-                          Status: {h.status}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        PLD Submitter: Tariq Al-Mansoor • 48-Hour Sales Acceptance SLA Active
-                      </div>
-                    </div>
-
-                    {h.status === 'PENDING' && (
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <button className="btn btn-primary" onClick={() => handleAcceptSQL(h.id)}>
-                          <Check size={16} />
-                          Accept SQL &amp; Create Opportunity
-                        </button>
-                        <button className="btn btn-secondary" onClick={() => openSqlReject(h.id)} style={{ color: 'var(--danger)' }}>
-                          <X size={16} />
-                          Decline SQL Handoff
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                    <div style={{ padding: '18px', background: 'var(--bg-surface)', borderRadius: '10px' }}>
-                      <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--success)', marginBottom: '14px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <CheckCircle2 size={16} />
-                        What We Know (Gates Verified)
-                      </h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Check size={16} color="var(--success)" /> ICP confirmed (FMCG, 210 employees, Saudi Arabia)
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Check size={16} color="var(--success)" /> Business problems confirmed (Missed orders &amp; SAP re-entry)
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Check size={16} color="var(--success)" /> Problem impact documented ($45,000/mo in lost billing)
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Check size={16} color="var(--success)" /> Solution / capability mapped (Mobile Invoicing &amp; Geofencing)
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Check size={16} color="var(--success)" /> Decision maker identified (Tariq Al-Ghamdi, MD)
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Check size={16} color="var(--success)" /> Timeline documented (Q4 Rollout)
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ padding: '18px', background: 'var(--bg-surface)', borderRadius: '10px' }}>
-                      <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)', marginBottom: '14px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <TrendingUp size={16} />
-                        Commercial Sizing &amp; Next Action
-                      </h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', background: 'var(--bg-primary)', borderRadius: '6px' }}>
-                          <span style={{ color: 'var(--text-muted)' }}>Estimated Deal Value:</span>
-                          <strong style={{ color: '#FFFFFF', fontSize: '1rem' }}>$85,000 USD</strong>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', background: 'var(--bg-primary)', borderRadius: '6px' }}>
-                          <span style={{ color: 'var(--text-muted)' }}>Recommended Next Action:</span>
-                          <strong style={{ color: 'var(--primary)' }}>Commercial proposal presentation</strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              {sqlSubView === 'readiness' ? (
+                <SQLReadinessWorkspace
+                  initialLeadId={selectedLead?.id}
+                  onNavigateToOpportunity={(oppId) => {
+                    setSelectedOpportunityId(oppId);
+                    setActiveTab('opportunities');
+                  }}
+                  onNavigateToSalesAcceptance={() => {
+                    setSqlSubView('acceptance');
+                  }}
+                />
+              ) : (
+                <SalesAcceptanceWorkspace
+                  onNavigateToOpportunity={(oppId) => {
+                    setSelectedOpportunityId(oppId);
+                    setActiveTab('opportunities');
+                  }}
+                  onNavigateToLead={(ldId) => {
+                    const found = leads.find(l => l.id === ldId);
+                    if (found) setSelectedLead(found);
+                    setActiveTab('queue');
+                  }}
+                />
+              )}
             </div>
           )}
 
-          {/* TAB 6: OPPORTUNITIES */}
+          {/* TAB 6: COMMERCIAL OPPORTUNITY WORKSPACE */}
           {activeTab === 'opportunities' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-                  Commercial Opportunities Pipeline
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Multi-product commercial deals with line items, versioned proposals, and conversion tracking.
-                </p>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '18px' }}>
-                {opportunities.map(opp => (
-                  <div key={opp.id} className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <span className="badge badge-info">{opp.opportunity_type}</span>
-                      <span className="badge badge-success">${opp.total_contract_value?.toLocaleString()} {opp.currency}</span>
-                    </div>
-
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginTop: '12px', color: '#FFFFFF' }}>
-                      {opp.account_name}
-                    </h3>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      Owner: {opp.owner_name || 'Sales Team'}
-                    </div>
-
-                    <div style={{ marginTop: '16px', padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>PRODUCT LINES:</div>
-                      {opp.product_lines && opp.product_lines.length > 0 ? (
-                        opp.product_lines.map((pl, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 700, marginTop: '4px' }}>
-                            <span style={{ color: 'var(--accent-purple)' }}>{pl.product_name}</span>
-                            <span>${pl.total_amount?.toLocaleString()}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px' }}>VanForces Base License ($65,000)</div>
-                      )}
-                    </div>
-
-                    <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>
-                        PLD Score: {opp.pld_score ?? 97}
-                      </span>
-                      {opp.sql_date && (
-                        <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
-                          SQL Date: {opp.sql_date}
-                        </span>
-                      )}
-                      <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>
-                        ERP: {opp.erp_system || 'SAP S/4HANA'}
-                      </span>
-                    </div>
-
-                    {opp.decision_maker && (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-                        <strong>Decision Maker:</strong> {opp.decision_maker}
-                      </div>
-                    )}
-
-                    {opp.poc_result && (
-                      <div style={{ fontSize: '0.72rem', color: 'var(--success)', marginTop: '6px', background: 'rgba(16, 185, 129, 0.08)', padding: '6px 8px', borderRadius: '4px' }}>
-                        <strong>POC Outcome:</strong> {opp.poc_result}
-                      </div>
-                    )}
-
-                    {opp.next_action_description && (
-                      <div style={{ fontSize: '0.72rem', color: 'var(--primary)', marginTop: '6px', background: 'rgba(59, 130, 246, 0.08)', padding: '6px 8px', borderRadius: '4px' }}>
-                        <strong>Next Activity:</strong> {opp.next_action_description}
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', fontSize: '0.75rem' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Probability: <strong>{opp.probability_pct}%</strong></span>
-                      <span className="badge badge-neutral">Status: {opp.status}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <OpportunityWorkspace
+              initialOpportunityId={selectedOpportunityId}
+              onNavigateToAccount={() => {
+                setActiveTab('queue');
+              }}
+            />
           )}
 
           {/* TAB 7: PARTNER PORTAL (WIREFRAME 13.4 - NEW IN PHASE 3) */}
@@ -1414,101 +1274,6 @@ export default function App() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* SQL REJECTION & RETURN ROUTING MODAL */}
-      {showSqlRejectModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '500px', padding: '30px', border: '1px solid var(--border-focus)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--danger)' }}>
-                Decline SQL Handoff
-              </h2>
-              <button onClick={() => setShowSqlRejectModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              TEXOL Sales Governance: Declining an SQL handoff requires a documented reason and routing destination for the lead.
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Return Lead Destination
-                </label>
-                <select
-                  value={rejectReturnTarget}
-                  onChange={(e: any) => setRejectReturnTarget(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#FFFFFF',
-                    marginTop: '6px',
-                    outline: 'none'
-                  }}
-                >
-                  <option value="DISCOVERY">Return to Discovery &amp; Product Mapping</option>
-                  <option value="PLD">Return to PLD Qualification Queue</option>
-                  <option value="NURTURE">Return to Marketing Nurture</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Mandatory Rejection Reason
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="Detail why this lead is not currently SQL-ready (e.g., budget unconfirmed, wrong decision-maker, requirements mismatch)..."
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border-subtle)',
-                    color: '#FFFFFF',
-                    marginTop: '6px',
-                    outline: 'none',
-                    resize: 'vertical'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-primary" 
-                  style={{ flex: 1, padding: '12px', background: 'var(--danger)', borderColor: 'var(--danger)' }}
-                  onClick={confirmSqlReject}
-                >
-                  Confirm Rejection &amp; Route Lead
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowSqlRejectModal(false)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

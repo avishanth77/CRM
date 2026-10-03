@@ -77,6 +77,8 @@ export interface Lead {
   is_target_account?: boolean;
   target_tier?: string;
   source?: string;
+  estimated_opportunity_value?: number;
+  timeline_expectation?: string;
   created_at: string;
 }
 
@@ -517,35 +519,113 @@ export interface POC {
   updated_at: string;
 }
 
+export interface SQLReadinessGate {
+  gate_code: string;
+  name: string;
+  status: 'PASS' | 'FAIL' | 'MISSING' | 'BLOCKED';
+  is_mandatory: boolean;
+  description: string;
+  evidence: string;
+}
+
+export interface SQLReadinessData {
+  is_ready: boolean;
+  status: 'READY' | 'NOT_READY';
+  checklist: SQLReadinessGate[];
+  missing_gates: string[];
+  what_we_know: string[];
+  what_is_missing: string[];
+}
+
 export interface SQLHandoff {
   id: string;
   lead: string;
+  account?: string;
   company_name: string;
+  contact_name?: string;
   product: string;
   product_name: string;
+  pld_executive?: string;
   pld_executive_name?: string;
+  assigned_sales_owner?: string;
   sales_owner_name?: string;
-  gate_audit_results: Record<string, any>;
+  previous_owner?: string;
+  previous_owner_name?: string;
+  ownership_transferred_at?: string;
+  estimated_value: number;
+  currency: string;
+  readiness_status: string;
+  qualification_evidence: {
+    what_we_know?: string[];
+    what_is_missing?: string[];
+  };
+  gate_audit_results: SQLReadinessGate[];
+  is_override: boolean;
+  override_reason?: string;
+  override_approved_by?: string;
+  override_approved_by_name?: string;
+  override_approved_at?: string;
+  original_gate_results?: any;
+  sla_duration_hours: number;
+  sql_ready_at?: string;
+  submitted_at?: string;
   sla_expires_at?: string;
-  status: string;
+  is_sla_overdue: boolean;
+  sla_remaining_hours: number;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
   decision_date?: string;
   rejection_reason?: string;
+  opportunity_id?: string;
   is_target_account?: boolean;
   target_tier?: string;
   source?: string;
   created_at: string;
+  updated_at: string;
+}
+
+export interface OpportunityModuleItem {
+  id: string;
+  opportunity: string;
+  module: string;
+  module_name: string;
+  module_code: string;
+  is_included: boolean;
+  notes?: string;
+}
+
+export interface OpportunityCapabilityItem {
+  id: string;
+  opportunity: string;
+  capability: string;
+  capability_name: string;
+  capability_code: string;
+  module_name: string;
 }
 
 export interface Opportunity {
   id: string;
   account: string;
   account_name: string;
+  primary_contact?: string;
   primary_contact_name?: string;
+  owner?: string;
   owner_name?: string;
-  opportunity_type: string;
+  sql_handoff?: string;
+  opportunity_type: 'NEW' | 'EXPANSION' | 'RENEWAL';
+  stage?: string;
   stage_name?: string;
-  status: string;
+  stage_code?: string;
+  status: 'OPEN' | 'WON' | 'LOST';
+  product?: string;
+  product_name?: string;
+  product_code?: string;
   total_contract_value: number;
+  arr: number;
+  mrr: number;
+  arr_mrr: number;
+  pricing_plan?: string;
+  seat_units_count: number;
+  contract_term_months: number;
   currency: string;
   probability_pct: number;
   expected_close_date?: string;
@@ -556,15 +636,24 @@ export interface Opportunity {
   erp_system?: string;
   integration_requirements?: string;
   poc_result?: string;
+  competitor?: string;
+  loss_reason_category?: string;
+  loss_reason_notes?: string;
   last_activity_at?: string;
   next_activity_due_at?: string;
   next_action_description?: string;
   product_lines?: Array<{
+    id?: string;
     product_name: string;
     product_code: string;
     quantity: number;
+    unit_price?: number;
     total_amount: number;
   }>;
+  selected_modules?: OpportunityModuleItem[];
+  required_capabilities?: OpportunityCapabilityItem[];
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface StageGateChecklist {
@@ -800,16 +889,83 @@ export const api = {
       body: JSON.stringify({ capability_id: capabilityId })
     }),
 
-  // SQL Handoffs
-  getSQLHandoffs: () => request<{ results: SQLHandoff[] }>('/sql-handoffs/'),
-  acceptSQLHandoff: (handoffId: string) =>
-    request<{ message: string; opportunity_id: string }>(`/sql-handoffs/${handoffId}/accept/`, {
-      method: 'POST'
+  // Phase 7: SQL Readiness & Sales Acceptance Handoff
+  getSQLReadiness: (leadId: string, estimatedValue?: number) => {
+    const q = estimatedValue !== undefined ? `&estimated_value=${estimatedValue}` : '';
+    return request<SQLReadinessData>(`/sql-handoffs/readiness/?lead_id=${leadId}${q}`);
+  },
+  submitSQLHandoff: (data: {
+    lead_id: string;
+    estimated_value?: number;
+    assigned_sales_owner_id?: string;
+    sla_duration_hours?: number;
+    is_override?: boolean;
+    override_reason?: string;
+  }) =>
+    request<{ message: string; handoff: SQLHandoff }>('/sql-handoffs/submit/', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  overrideSQLHandoff: (handoffId: string, reason: string) =>
+    request<{ message: string; handoff: SQLHandoff }>(`/sql-handoffs/${handoffId}/override/`, {
+      method: 'POST',
+      body: JSON.stringify({ override_reason: reason })
+    }),
+  getPendingSQLHandoffs: () =>
+    request<SQLHandoff[]>('/sql-handoffs/pending/'),
+  getSQLHandoffs: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: SQLHandoff[] }>(`/sql-handoffs/${q}`);
+  },
+  getSQLHandoff: (id: string) =>
+    request<SQLHandoff>(`/sql-handoffs/${id}/`),
+  acceptSQLHandoff: (handoffId: string, data?: { new_sales_owner_id?: string }) =>
+    request<{ message: string; opportunity_id: string; handoff: SQLHandoff }>(`/sql-handoffs/${handoffId}/accept/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
     }),
   rejectSQLHandoff: (handoffId: string, reason: string, returnTarget: string = 'NURTURE') =>
-    request<{ message: string; return_target: string }>(`/sql-handoffs/${handoffId}/reject/`, {
+    request<{ message: string; return_target: string; handoff: SQLHandoff }>(`/sql-handoffs/${handoffId}/reject/`, {
       method: 'POST',
       body: JSON.stringify({ rejection_reason: reason, return_target: returnTarget })
+    }),
+  getSQLHandoffHistory: (handoffId: string) =>
+    request<{ handoff_id: string; gate_audit_results: any; original_gate_results: any; qualification_evidence: any; stage_history: any[] }>(`/sql-handoffs/${handoffId}/history/`),
+
+  // Phase 7: Commercial Opportunity Management
+  getOpportunities: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: Opportunity[] }>(`/opportunities/${q}`);
+  },
+  getOpportunity: (id: string) =>
+    request<Opportunity>(`/opportunities/${id}/`),
+  createOpportunityFromSQL: (sqlHandoffId: string) =>
+    request<{ message: string; opportunity: Opportunity }>('/opportunities/create-from-sql/', {
+      method: 'POST',
+      body: JSON.stringify({ sql_handoff_id: sqlHandoffId })
+    }),
+  updateOpportunityCommercials: (id: string, data: Partial<Opportunity>) =>
+    request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/update-commercials/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  transitionOpportunityStage: (id: string, targetStageId: string, reason?: string) =>
+    request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/transition-stage/`, {
+      method: 'POST',
+      body: JSON.stringify({ target_stage_id: targetStageId, reason })
+    }),
+  getOpportunityActivities: (id: string) =>
+    request<any[]>(`/opportunities/${id}/activities/`),
+  getOpportunityHistory: (id: string) =>
+    request<any[]>(`/opportunities/${id}/history/`),
+  markOpportunityWon: (id: string) =>
+    request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/mark-won/`, {
+      method: 'POST'
+    }),
+  markOpportunityLost: (id: string, category: string, notes?: string) =>
+    request<Opportunity>(`/opportunities/${id}/mark-lost/`, {
+      method: 'POST',
+      body: JSON.stringify({ loss_reason_category: category, loss_reason_notes: notes })
     }),
 
   // Gate & Transitions
@@ -919,7 +1075,6 @@ export const api = {
   // Accounts & Opportunities
   getAccounts: () => request<{ results: any[] }>('/accounts/'),
   createAccount: (data: any) => request<any>('/accounts/', { method: 'POST', body: JSON.stringify(data) }),
-  getOpportunities: () => request<{ results: Opportunity[] }>('/opportunities/'),
 
   // Phase 3: Partner Portal & Deal Registration
   getPartners: () => request<{ results: any[] }>('/partners/'),
@@ -1063,4 +1218,8 @@ export const api = {
     request<any>(`/erp-connectors/${connectorId}/sync-account/`, { method: 'POST', body: JSON.stringify({ account_id: accountId }) }),
   resolveERPConflict: (syncRecordId: string, resolution: string) =>
     request<any>('/erp-connectors/resolve-conflict/', { method: 'POST', body: JSON.stringify({ sync_record_id: syncRecordId, resolution }) }),
+
+  // Pipeline Stages
+  getPipelineStages: () =>
+    request<{ results: any[] }>('/pld-engine/stages/'),
 };

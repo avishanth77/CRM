@@ -84,6 +84,16 @@ class Lead(BaseModel):
     next_activity_due_at = models.DateTimeField(null=True, blank=True)
     next_action_description = models.CharField(max_length=255, blank=True, null=True)
 
+    # Phase 7: Commercial estimation & qualification fields
+    estimated_opportunity_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Estimated deal value required for SQL readiness gate"
+    )
+    timeline_expectation = models.CharField(max_length=128, blank=True, null=True)
+
     class Meta:
         ordering = ['-created_at']
 
