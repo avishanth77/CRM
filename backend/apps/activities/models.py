@@ -27,6 +27,13 @@ class Activity(BaseModel):
     account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True, related_name="activities")
     contact = models.ForeignKey('accounts.Contact', on_delete=models.CASCADE, null=True, blank=True, related_name="activities")
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, null=True, blank=True, related_name="activities")
+    discovery = models.ForeignKey(
+        'discovery.Discovery',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="activities"
+    )
     opportunity = models.ForeignKey(
         'opportunities.Opportunity',
         on_delete=models.CASCADE,

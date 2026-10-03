@@ -14,6 +14,7 @@ import { OmniChannelCommsView } from './components/OmniChannelCommsView';
 import { ERPSyncGatewayView } from './components/ERPSyncGatewayView';
 import { PLDQualificationWorkspace } from './components/PLDQualificationWorkspace';
 import { AdminEngineStudio } from './components/AdminEngineStudio';
+import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
@@ -115,16 +116,6 @@ export default function App() {
 
   const handleInspectLead = (lead: Lead) => {
     setSelectedLead(lead);
-  };
-
-  const handleVerifyDiscoveryMapping = async (discoveryId: string) => {
-    try {
-      const res = await api.completeDiscoveryMapping(discoveryId);
-      notifySuccess(res.message);
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Mapping verification failed');
-    }
   };
 
   const handleAcceptSQL = async (handoffId: string) => {
@@ -743,86 +734,23 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 3: DISCOVERY & MAPPING */}
+          {/* TAB 3: DISCOVERY & PRODUCT CAPABILITY MAPPING WORKSPACE (PHASE 5) */}
           {activeTab === 'discovery' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-                  Discovery &amp; Product Capability Mapping Matrix
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Discovery completion gate: Every documented problem must be mapped to at least one product capability before moving to Demo/SQL.
-                </p>
-              </div>
-
-              {discoveries.map(disc => (
-                <div key={disc.id} className="glass-panel" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{disc.account_name}</h2>
-                        <span className="badge badge-success">
-                          <CheckCircle2 size={13} />
-                          Product Mapping Gate: Verified
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Discovery Workspace #{disc.id.slice(0, 8)} • Conducted by Aslam Khan
-                      </div>
-                    </div>
-
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => handleVerifyDiscoveryMapping(disc.id)}
-                    >
-                      <CheckCircle2 size={16} />
-                      Re-verify Mapping Gate
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                    <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Current Process</div>
-                      <div style={{ fontSize: '0.85rem', marginTop: '6px', color: '#FFFFFF' }}>{disc.current_process_notes || 'Manual receipt issuance'}</div>
-                    </div>
-                    <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Financial / Business Impact</div>
-                      <div style={{ fontSize: '0.85rem', marginTop: '6px', color: 'var(--danger)', fontWeight: 600 }}>{disc.business_impact_summary || '$45,000/mo in lost billing'}</div>
-                    </div>
-                    <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Stakeholders &amp; Timeline</div>
-                      <div style={{ fontSize: '0.85rem', marginTop: '6px', color: '#FFFFFF' }}>{disc.stakeholders_involved_notes} ({disc.timeline_notes})</div>
-                    </div>
-                  </div>
-
-                  <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '14px' }}>
-                    Documented Problems &amp; Solved Product Capabilities
-                  </h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {disc.problems?.map(p => (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'var(--bg-surface)', borderRadius: '10px', borderLeft: '4px solid var(--primary)' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#FFFFFF' }}>{p.problem_detail.name}</span>
-                            <span className="badge badge-danger">{p.severity} Severity</span>
-                            <span className="badge badge-neutral">{p.frequency}</span>
-                          </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>{p.impact_description}</div>
-                        </div>
-
-                        <div style={{ textAlign: 'right', paddingLeft: '20px' }}>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>SOLVED BY CAPABILITY:</div>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent-cyan)', marginTop: '2px' }}>
-                            Instant Mobile Invoicing &amp; Route Geofencing
-                          </div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--success)' }}>Target KPI: +25% order throughput</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <DiscoveryWorkspace
+              leadId={selectedLead?.id}
+              onDiscoveryCompleted={(completedDisc) => {
+                notifySuccess(`Discovery for ${completedDisc.account_name} completed successfully! Verification gates passed.`);
+                loadData();
+              }}
+              onNavigateToDemo={(targetLeadId) => {
+                const found = leads.find(l => l.id === targetLeadId);
+                if (found) setSelectedLead(found);
+                setActiveTab('queue');
+              }}
+              onNavigateToSQL={() => {
+                setActiveTab('sql');
+              }}
+            />
           )}
 
           {/* TAB 4: POC PILOT TRIALS & KPI TRACKER (NEW IN PHASE 3) */}

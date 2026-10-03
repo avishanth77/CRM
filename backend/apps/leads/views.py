@@ -125,6 +125,22 @@ class LeadViewSet(viewsets.ModelViewSet):
             changed_by=request.user if request.user.is_authenticated else None
         )
 
+        # If entering Discovery stage, auto-initialize Discovery workspace and carry forward problems
+        if target_stage.stage_code == 'DISCOVERY' or 'Discovery' in target_stage.stage_name:
+            from apps.discovery.models import Discovery
+            from apps.discovery.services import DiscoveryService
+            disc, _ = Discovery.objects.get_or_create(
+                lead=lead,
+                defaults={
+                    'account': lead.account,
+                    'product': lead.primary_product,
+                    'conducted_by': request.user if request.user.is_authenticated else None,
+                    'next_action_description': lead.next_action_description,
+                    'next_activity_due_at': lead.next_activity_due_at
+                }
+            )
+            DiscoveryService.carry_forward_lead_problems(disc)
+
         return Response({
             'message': f"Lead successfully progressed to {target_stage.stage_name}",
             'lead': LeadSerializer(lead).data

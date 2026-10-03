@@ -612,12 +612,23 @@ class GateValidator:
             # 5. Require discovery product mapping
             if rules.get("require_product_mapping", False):
                 latest_discovery = lead.discoveries.first()
-                if not latest_discovery or not latest_discovery.is_product_mapping_complete:
+                if not latest_discovery:
                     satisfied = False
-                    missing.append("All documented problems must be mapped to product capabilities in Discovery")
-                    what_is_missing.append("Discovery problem-to-capability mapping incomplete")
+                    missing.append("Discovery session must be conducted before progressing")
+                    what_is_missing.append("Discovery record not found")
                 else:
-                    what_we_know.append("Discovery problem-to-capability mapping 100% complete")
+                    from apps.discovery.services import DiscoveryValidator
+                    readiness = DiscoveryValidator.validate_readiness(latest_discovery)
+                    if not readiness["is_ready"] or not latest_discovery.is_product_mapping_complete:
+                        satisfied = False
+                        if readiness["unmapped_problems"]:
+                            unmapped_names = ", ".join([p["problem_name"] for p in readiness["unmapped_problems"]])
+                            missing.append(f"All confirmed problems must map to product capabilities in Discovery ({unmapped_names} unmapped)")
+                        else:
+                            missing.append("Discovery readiness requirements not met")
+                        what_is_missing.append("Discovery problem-to-capability mapping incomplete")
+                    else:
+                        what_we_know.append("Discovery problem-to-capability mapping 100% complete")
 
             if not satisfied:
                 all_passed = False

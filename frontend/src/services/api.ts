@@ -228,35 +228,124 @@ export interface LeadProblemItem {
   created_at: string;
 }
 
+export interface DiscoveryProblemMapping {
+  id: string;
+  discovery_problem: string;
+  capability: string;
+  capability_name: string;
+  capability_code: string;
+  module_id: string;
+  module_name: string;
+  module_code: string;
+  expected_kpi_impact: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface DiscoveryStakeholder {
+  id: string;
+  discovery: string;
+  contact: string;
+  contact_name: string;
+  contact_email?: string;
+  contact_phone?: string;
+  contact_designation?: string;
+  role_name: string;
+  decision_role: 'DECISION_MAKER' | 'ECONOMIC_BUYER' | 'TECHNICAL_EVALUATOR' | 'INFLUENCER' | 'CHAMPION' | 'GATEKEEPER';
+  responsibility?: string;
+  involvement_level: 'HIGH' | 'MEDIUM' | 'LOW';
+  notes?: string;
+  created_at: string;
+}
+
+export interface DiscoveryChecklistItem {
+  gate_code: string;
+  name: string;
+  description: string;
+  status: 'COMPLETED' | 'MISSING' | 'BLOCKED';
+  is_mandatory: boolean;
+  missing_fields: string[];
+}
+
+export interface DiscoveryReadiness {
+  is_ready: boolean;
+  status: 'READY' | 'NOT_READY';
+  missing_count: number;
+  blocked_count: number;
+  checklist: DiscoveryChecklistItem[];
+  unmapped_problems: Array<{ id: string; name: string; severity: string }>;
+}
+
+export interface DiscoveryProblem {
+  id: string;
+  discovery: string;
+  problem: string;
+  problem_detail: {
+    id: string;
+    name: string;
+    code: string;
+    category: string;
+    default_severity: string;
+  };
+  lead_problem?: string;
+  refined_statement: string;
+  category?: string;
+  severity: string;
+  frequency: string;
+  impact_description: string;
+  quantified_loss_value?: number;
+  affected_teams?: string;
+  evidence?: string;
+  notes?: string;
+  is_confirmed: boolean;
+  capability_mappings: DiscoveryProblemMapping[];
+  original_qualification_info?: {
+    source_lead_problem_id: string;
+    original_problem_name: string;
+    original_category: string;
+    original_severity: string;
+    original_frequency: string;
+    original_business_impact: string;
+    original_affected_users: string;
+    original_evidence: string;
+    original_notes: string;
+    qualified_at?: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Discovery {
   id: string;
-  lead: string;
+  lead?: string;
   account: string;
   account_name: string;
+  product?: string;
+  product_name?: string;
+  product_code?: string;
+  conducted_by?: string;
+  conducted_by_name?: string;
+  status: 'IN_PROGRESS' | 'COMPLETED' | 'ON_HOLD';
   current_process_notes: string;
   business_impact_summary: string;
   stakeholders_involved_notes: string;
   decision_process_notes: string;
   timeline_notes: string;
+  expected_decision_date?: string;
+  expected_implementation_date?: string;
+  budget_notes?: string;
+  technical_constraints_notes?: string;
+  evidence_notes?: string;
+  next_action_description?: string;
+  next_activity_due_at?: string;
+  last_activity_at?: string;
   is_product_mapping_complete: boolean;
   completed_at?: string;
-  problems?: Array<{
-    id: string;
-    problem: string;
-    problem_detail: {
-      name: string;
-      category: string;
-      default_severity: string;
-      capability_mappings?: Array<{
-        capability_name: string;
-        module_name: string;
-        expected_kpi_impact: string;
-      }>;
-    };
-    severity: string;
-    frequency: string;
-    impact_description: string;
-  }>;
+  problems?: DiscoveryProblem[];
+  stakeholders?: DiscoveryStakeholder[];
+  readiness?: DiscoveryReadiness;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SQLHandoff {
@@ -463,12 +552,83 @@ export const api = {
       body: JSON.stringify(data)
     }),
 
-  // Discovery
-  getDiscoveries: () => request<{ results: Discovery[] }>('/discoveries/'),
+  // Phase 5: Discovery Workspace & Product Capability Mapping
+  getDiscoveries: (params?: { lead?: string; account?: string; product?: string; status?: string }) => {
+    const q = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+    return request<{ results: Discovery[] }>(`/discoveries/${q}`);
+  },
   getDiscovery: (id: string) => request<Discovery>(`/discoveries/${id}/`),
-  completeDiscoveryMapping: (discoveryId: string) =>
-    request<{ message: string; discovery: Discovery }>(`/discoveries/${discoveryId}/complete-mapping/`, {
+  updateDiscovery: (id: string, data: Partial<Discovery>) =>
+    request<Discovery>(`/discoveries/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    }),
+  getDiscoveryReadiness: (id: string) =>
+    request<DiscoveryReadiness>(`/discoveries/${id}/readiness/`),
+  carryForwardDiscoveryProblems: (id: string) =>
+    request<{ message: string; discovery: Discovery }>(`/discoveries/${id}/carry-forward/`, {
       method: 'POST'
+    }),
+  completeDiscovery: (id: string) =>
+    request<{ message: string; discovery: Discovery }>(`/discoveries/${id}/complete/`, {
+      method: 'POST'
+    }),
+  completeDiscoveryMapping: (discoveryId: string) =>
+    request<{ message: string; discovery: Discovery }>(`/discoveries/${discoveryId}/complete/`, {
+      method: 'POST'
+    }),
+  getDiscoveryAvailableCapabilities: (discoveryId: string) =>
+    request<{
+      product_id: string;
+      product_name: string;
+      product_code: string;
+      modules: any[];
+      capabilities: any[];
+    }>(`/discoveries/${discoveryId}/available-capabilities/`),
+  addDiscoveryStakeholder: (discoveryId: string, data: {
+    contact_id?: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    phone?: string;
+    designation?: string;
+    role_name?: string;
+    decision_role?: string;
+    responsibility?: string;
+    involvement_level?: string;
+    notes?: string;
+  }) =>
+    request<DiscoveryStakeholder>(`/discoveries/${discoveryId}/add-stakeholder/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  deleteDiscoveryStakeholder: (id: string) =>
+    request<any>(`/discovery-stakeholders/${id}/`, {
+      method: 'DELETE'
+    }),
+  updateDiscoveryProblem: (problemId: string, data: Partial<DiscoveryProblem>) =>
+    request<DiscoveryProblem>(`/discovery-problems/${problemId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    }),
+  toggleProblemConfirmed: (problemId: string, isConfirmed?: boolean) =>
+    request<DiscoveryProblem>(`/discovery-problems/${problemId}/toggle-confirm/`, {
+      method: 'POST',
+      body: JSON.stringify({ is_confirmed: isConfirmed })
+    }),
+  mapDiscoveryCapability: (problemId: string, capabilityId: string, expectedKpi: string, notes?: string) =>
+    request<DiscoveryProblemMapping>(`/discovery-problems/${problemId}/map-capability/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        capability_id: capabilityId,
+        expected_kpi_impact: expectedKpi,
+        notes: notes || ''
+      })
+    }),
+  unmapDiscoveryCapability: (problemId: string, capabilityId: string) =>
+    request<{ message: string }>(`/discovery-problems/${problemId}/unmap-capability/`, {
+      method: 'POST',
+      body: JSON.stringify({ capability_id: capabilityId })
     }),
 
   // SQL Handoffs
