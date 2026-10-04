@@ -771,6 +771,608 @@ export interface ApprovalRule {
   created_at: string;
 }
 
+// Phase 9: Unified Activities, Tasks, Notifications, SLA Engine, Work Queue
+export type ActivityType =
+  | 'CALL'
+  | 'EMAIL'
+  | 'WHATSAPP'
+  | 'MEETING'
+  | 'DISCOVERY'
+  | 'DEMO'
+  | 'POC'
+  | 'FOLLOW_UP'
+  | 'SITE_VISIT'
+  | 'PARTNER_MEETING'
+  | 'PROPOSAL_SENT'
+  | 'PROPOSAL_REVIEW'
+  | 'NEGOTIATION'
+  | 'CUSTOM'
+  | (string & {});
+
+export type ActivityStatus = 'PLANNED' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED';
+export type NextActionStatus = 'NO_NEXT_ACTION' | 'OVERDUE' | 'DUE_TODAY' | 'DUE_SOON' | 'SCHEDULED';
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'URGENT';
+export type TaskStatus = 'OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE';
+export type SLAStatus = 'WITHIN_SLA' | 'DUE_SOON' | 'AT_RISK' | 'BREACHED' | 'COMPLETED';
+
+export interface Activity {
+  id: string;
+  account?: string;
+  account_name?: string;
+  contact?: string;
+  contact_name?: string;
+  lead?: string;
+  lead_name?: string;
+  opportunity?: string;
+  opportunity_name?: string;
+  proposal?: string;
+  discovery?: string;
+  demo?: string;
+  poc?: string;
+  activity_type: ActivityType;
+  custom_activity_type?: string;
+  subject: string;
+  description_notes?: string;
+  notes?: string;
+  conducted_at: string;
+  duration_minutes?: number;
+  status: ActivityStatus;
+  priority: TaskPriority;
+  outcome_notes?: string;
+  next_action_description?: string;
+  next_action_due_at?: string;
+  next_activity_due_at?: string;
+  next_action_status?: NextActionStatus;
+  performed_by?: string;
+  performed_by_name?: string;
+  assigned_to?: string;
+  created_at: string;
+}
+
+export interface Task {
+  id: string;
+  assigned_to: string;
+  assigned_to_name: string;
+  created_by?: string;
+  related_lead?: string;
+  related_lead_title?: string;
+  related_opportunity?: string;
+  related_account?: string;
+  related_account_name?: string;
+  related_contact?: string;
+  related_discovery?: string;
+  related_demo?: string;
+  related_poc?: string;
+  related_proposal?: string;
+  related_handoff?: string;
+  source_activity?: string;
+  title: string;
+  description?: string;
+  task_type: string;
+  priority: TaskPriority;
+  due_date: string;
+  status: TaskStatus;
+  is_completed: boolean;
+  is_overdue: boolean;
+  completed_at?: string;
+  created_at: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  recipient: string;
+  recipient_name: string;
+  recipient_email: string;
+  title: string;
+  message: string;
+  notification_type: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  is_read: boolean;
+  read_at?: string;
+  related_entity_type?: string;
+  related_entity_id?: string;
+  action_url?: string;
+  email_dispatched?: boolean;
+  created_at: string;
+}
+
+export interface SLADefinition {
+  id: string;
+  name: string;
+  entity_type: string;
+  target_duration_hours: number;
+  warning_threshold_pct: number;
+  escalation_role: string;
+  escalation_action: string;
+  is_active: boolean;
+  description?: string;
+  created_at: string;
+}
+
+export interface SLATracker {
+  id: string;
+  definition: string;
+  definition_name: string;
+  entity_type: string;
+  entity_id: string;
+  assigned_user?: string;
+  assigned_user_name?: string;
+  start_time: string;
+  due_time: string;
+  completed_time?: string;
+  status: SLAStatus;
+  remaining_hours: number;
+  is_escalated: boolean;
+  escalated_at?: string;
+  created_at: string;
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  trigger_type: string;
+  is_active: boolean;
+  conditions_json: Record<string, any>;
+  action_type: string;
+  action_config_json: Record<string, any>;
+  last_run_at?: string;
+  execution_count: number;
+  created_at: string;
+}
+
+export interface WorkQueueData {
+  role_view?: string;
+  today?: {
+    tasks: Task[];
+    follow_ups_leads: Array<{
+      id: string;
+      account_id?: string | null;
+      account_name: string;
+      product_name: string;
+      owner_name: string;
+      status: string;
+      next_action?: string;
+      next_action_due?: string | null;
+      created_at: string;
+    }>;
+    follow_ups_opps: Array<{
+      id: string;
+      account_id?: string | null;
+      account_name: string;
+      product_name: string;
+      value: string;
+      total_contract_value: number;
+      owner_name: string;
+      stage_name: string;
+      status: string;
+      next_action?: string;
+      next_action_due?: string | null;
+      created_at: string;
+    }>;
+    sql_acceptance: Array<{
+      id: string;
+      account_name: string;
+      product_name: string;
+      sales_owner: string;
+      status: string;
+      sla_expires_at?: string | null;
+      is_sla_overdue: boolean;
+      sla_remaining_hours: number;
+      estimated_value: number;
+    }>;
+    scheduled_activities: Activity[];
+    count: number;
+  };
+  overdue?: {
+    tasks: Task[];
+    follow_ups_leads: any[];
+    follow_ups_opps: any[];
+    sla_breaches: SLATracker[];
+    count: number;
+  };
+  at_risk?: {
+    slas_at_risk: SLATracker[];
+    inactive_opportunities: any[];
+    proposals_expiring: any[];
+    count: number;
+  };
+  no_next_action?: {
+    leads: any[];
+    opportunities: any[];
+    count: number;
+  };
+  upcoming?: {
+    tasks: Task[];
+    activities: Activity[];
+    nurture_reengagement: any[];
+    count: number;
+  };
+  overdue_tasks: Task[];
+  due_today_tasks: Task[];
+  upcoming_tasks: Task[];
+  leads_missing_next_action: Array<{
+    id: string;
+    account_name: string;
+    product_name: string;
+    owner_name: string;
+    status: string;
+    created_at: string;
+  }>;
+  opportunities_missing_next_action: Array<{
+    id: string;
+    account_name: string;
+    value: string;
+    owner_name: string;
+    status: string;
+    created_at: string;
+  }>;
+  slas_at_risk: SLATracker[];
+  counts: {
+    today?: number;
+    overdue: number;
+    due_today: number;
+    upcoming: number;
+    no_next_action: number;
+    sla_alerts: number;
+  };
+}
+
+export interface ExecutiveAnalyticsData {
+  period?: any;
+  kpis: {
+    target_accounts: number;
+    total_leads: number;
+    pld_qualified: number;
+    sqls?: number;
+    sql_count?: number;
+    sales_accepted: number;
+    opportunities?: number;
+    opportunities_count?: number;
+    open_opportunities?: number;
+    won_opportunities?: number;
+    lost_opportunities?: number;
+    pipeline_value: number;
+    weighted_pipeline: number;
+    won_value: number;
+    win_rate?: number;
+    average_deal_size?: number;
+    average_funnel_duration_days?: number;
+    qualification_rate?: number;
+    acceptance_rate?: number;
+    currency?: string;
+  };
+  rates?: {
+    lead_to_pld_rate?: number;
+    pld_to_sql_rate?: number;
+    sql_to_accepted_rate?: number;
+    win_rate?: number;
+    avg_funnel_duration_days?: number;
+  };
+  funnel?: Array<{
+    stage_key: string;
+    stage_name: string;
+    sequence?: number;
+    count: number;
+    conversion_rate: number;
+    drop_off_rate?: number;
+    avg_days_in_stage?: number;
+    dwell_days?: number;
+  }>;
+  funnel_stages?: Array<{
+    stage_name: string;
+    code: string;
+    count: number;
+    conversion_rate: number;
+  }>;
+  pipeline_by_stage?: Array<{ stage: string; value: number; count: number }>;
+  pipeline_by_owner?: Array<{ owner: string; value: number; count: number }>;
+  pipeline_by_product?: Array<{ product_name: string; product_code?: string; value?: number; count?: number; open_pipeline_value?: number; opportunities_count?: number }>;
+  product_breakdown?: Array<{
+    product_id?: string;
+    product_code: string;
+    product_name: string;
+    leads_count: number;
+    opportunities_count: number;
+    open_pipeline_value: number;
+    won_revenue: number;
+  }>;
+  pipeline_by_type?: Array<{ type: string; type_code?: string; value: number; count: number }>;
+  activity_health?: {
+    activities_today: number;
+    activities_this_week: number;
+    total_activities?: number;
+    completed_activities?: number;
+    completion_rate?: number;
+    overdue_tasks: number;
+  };
+  sla_health?: {
+    total?: number;
+    total_slas?: number;
+    met?: number;
+    within_sla?: number;
+    due_soon?: number;
+    at_risk?: number;
+    breached?: number;
+    breached_sla?: number;
+    compliance_rate?: number;
+    sla_adherence_rate?: number;
+  };
+}
+
+export interface PLDAnalyticsData {
+  kpis: {
+    total_leads: number;
+    icp_pass_count: number;
+    icp_fail_count: number;
+    icp_pass_rate: number;
+    qualified_count: number;
+    qualification_rate: number;
+    average_pld_score: number;
+    nurture_count: number;
+    disqualified_count: number;
+  };
+  score_distribution: Array<{
+    range: string;
+    label: string;
+    count: number;
+  }>;
+  alerts: {
+    leads_without_problems: number;
+    leads_without_next_action: number;
+  };
+  stage_distribution: Array<{
+    stage: string;
+    count: number;
+    avg_days_in_stage: number;
+  }>;
+  high_score_leads: Array<{
+    id: string;
+    company_name: string;
+    product_name: string;
+    stage: string;
+    score: number;
+    problems_count: number;
+  }>;
+}
+
+export interface SalesAnalyticsData {
+  kpis: {
+    active_opportunities: number;
+    pipeline_value: number;
+    weighted_pipeline: number;
+    won_count: number;
+    lost_count: number;
+    won_value: number;
+    win_rate: number;
+    arr: number;
+    mrr: number;
+    average_deal_size: number;
+    average_sales_cycle_days: number;
+  };
+  by_stage: Array<{
+    stage: string;
+    value: number;
+    weighted_value: number;
+    count: number;
+  }>;
+  by_owner: Array<{
+    owner: string;
+    value: number;
+    count: number;
+  }>;
+  by_product: Array<{
+    product: string;
+    value: number;
+    count: number;
+  }>;
+  by_type: Array<{
+    type: string;
+    value: number;
+    count: number;
+  }>;
+  by_close_month: Array<{
+    month: string;
+    value: number;
+    count: number;
+  }>;
+  attention: {
+    inactive_opportunities_count: number;
+    inactive_opportunities: Array<{
+      id: string;
+      name: string;
+      stage: string;
+      value: number;
+      owner: string;
+      days_inactive: number;
+    }>;
+    overdue_activities: number;
+    upcoming_activities: number;
+    pending_proposals: number;
+    sqls_awaiting_acceptance: number;
+  };
+}
+
+export interface MarketingAnalyticsData {
+  kpis: {
+    total_leads: number;
+    icp_pass_rate: number;
+    qualification_rate: number;
+    pipeline_value: number;
+    won_value: number;
+  };
+  sources: Array<{
+    source: string;
+    leads: number;
+    icp_pass_rate: number;
+    qualification_rate: number;
+    sqls: number;
+    opportunities: number;
+    pipeline: number;
+    won_value: number;
+  }>;
+  campaigns: Array<{
+    name: string;
+    leads: number;
+    budget: number;
+    pipeline: number;
+    won_value: number;
+  }>;
+}
+
+export interface ProductAnalyticsData {
+  products: Array<{
+    id: string;
+    name: string;
+    code: string;
+    leads: number;
+    pld_qualified: number;
+    sqls: number;
+    opportunities: number;
+    pipeline: number;
+    won_count: number;
+    won_value: number;
+    conversion_rate: number;
+    average_pld_score: number;
+  }>;
+  module_interest: Array<{
+    name: string;
+    product: string;
+    count: number;
+  }>;
+  capability_demand: Array<{
+    name: string;
+    demand_count: number;
+  }>;
+}
+
+export interface PartnerAnalyticsData {
+  kpis: {
+    total_partners: number;
+    deal_registrations: number;
+    approved_registrations: number;
+    pending_registrations: number;
+    partner_pipeline_value: number;
+    partner_won_value: number;
+    commissions_earned: number;
+  };
+  partner_list: Array<{
+    id: string;
+    name: string;
+    tier: string;
+    territory: string;
+    deals: number;
+    commission_pct: number;
+  }>;
+}
+
+export interface ActivitySLAAnalyticsData {
+  activities: {
+    today: number;
+    this_week: number;
+    total: number;
+    by_type: Array<{ type: string; count: number }>;
+    by_owner: Array<{ owner: string; count: number }>;
+  };
+  tasks: {
+    completed: number;
+    overdue: number;
+    upcoming: number;
+  };
+  sla: {
+    within_sla: number;
+    due_soon: number;
+    at_risk: number;
+    breached: number;
+    compliance_rate: number;
+    average_response_time_hours: number;
+    average_acceptance_time_hours: number;
+    overdue_records: Array<{
+      id: string;
+      rule_name: string;
+      entity_type: string;
+      entity_name: string;
+      due_at: string;
+      breached_by_hours: number;
+      status: string;
+    }>;
+  };
+  governance: {
+    no_next_action_records: number;
+  };
+  bottlenecks: {
+    highest_dropoff_stages: Array<{ stage: string; dropoff_rate: number }>;
+    longest_duration_stages: Array<{ stage: string; avg_days: number }>;
+    stuck_opportunities_count: number;
+  };
+}
+
+export interface FunnelConversionData {
+  stages: Array<{
+    stage_key: string;
+    stage_name: string;
+    sequence: number;
+    count: number;
+    conversion_rate: number;
+    drop_off_rate: number;
+    avg_days_in_stage: number;
+    dwell_days: number;
+  }>;
+  conversions: {
+    lead_to_pld_qual: number;
+    pld_to_sql: number;
+    sql_to_sales_accepted: number;
+    accepted_to_opportunity: number;
+    opportunity_to_won: number;
+    win_rate: number;
+    loss_rate: number;
+  };
+  velocity: {
+    avg_sales_cycle_days: number;
+    avg_time_to_sql_days: number;
+    avg_time_to_acceptance_days: number;
+    avg_time_to_opportunity_days: number;
+    avg_time_to_won_days: number;
+  };
+}
+
+export interface OwnerPerformanceData {
+  owners: Array<{
+    id: string;
+    name: string;
+    leads: number;
+    pld_qualified: number;
+    sqls: number;
+    sales_accepted: number;
+    opportunities: number;
+    pipeline: number;
+    wins: number;
+    won_value: number;
+    activities: number;
+    overdue_tasks: number;
+  }>;
+}
+
+export interface ReportTableData {
+  report_name: string;
+  total_rows: number;
+  current_page: number;
+  total_pages: number;
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<Record<string, any>>;
+}
+
+export interface OperationalMetrics {
+  activities_today: number;
+  overdue_tasks: number;
+  tasks_due_today: number;
+  leads_no_next_action: number;
+  opportunities_inactive: number;
+  sla_at_risk: number;
+  sla_breached: number;
+  sql_acceptance_pending: number;
+  proposal_expiry_alerts: number;
+}
+
 export interface StageGateChecklist {
   all_passed: boolean;
   target_stage: string;
@@ -1360,14 +1962,124 @@ export const api = {
   // Activities & Mandatory Next Actions
   getActivities: (params?: Record<string, string>) => {
     const q = params ? '?' + new URLSearchParams(params).toString() : '';
-    return request<{ results: any[] }>(`/activities/${q}`);
+    return request<{ results: Activity[] }>(`/activities/${q}`);
   },
-  createActivity: (data: any) =>
-    request<any>('/activities/', { method: 'POST', body: JSON.stringify(data) }),
+  createActivity: (data: Partial<Activity>) =>
+    request<Activity>('/activities/', { method: 'POST', body: JSON.stringify(data) }),
+  completeActivity: (id: string, data?: any) =>
+    request<Activity>(`/activities/${id}/complete/`, { method: 'POST', body: JSON.stringify(data || {}) }),
+  cancelActivity: (id: string) =>
+    request<Activity>(`/activities/${id}/cancel/`, { method: 'POST' }),
   getRecordsMissingNextAction: () =>
     request<{ leads_missing_future_action: any[]; leads_overdue_action: any[]; opportunities_missing_future_action: any[]; total_alerts: number }>(
       '/activities/records-missing-next-action/'
     ),
+
+  // Tasks Management
+  getTasks: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: Task[] }>(`/tasks/${q}`);
+  },
+  createTask: (data: Partial<Task>) =>
+    request<Task>('/tasks/', { method: 'POST', body: JSON.stringify(data) }),
+  completeTask: (id: string) =>
+    request<Task>(`/tasks/${id}/complete/`, { method: 'POST' }),
+  cancelTask: (id: string) =>
+    request<Task>(`/tasks/${id}/cancel/`, { method: 'POST' }),
+
+  // Centralized Notifications
+  getNotifications: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: NotificationItem[] }>(`/notifications/${q}`);
+  },
+  markNotificationRead: (id: string) =>
+    request<any>(`/notifications/${id}/mark-read/`, { method: 'POST' }),
+  markAllNotificationsRead: () =>
+    request<any>('/notifications/mark-all-read/', { method: 'POST' }),
+  getUnreadNotificationCount: () =>
+    request<{ unread_count: number }>('/notifications/unread-count/'),
+
+  // Configurable SLA Engine
+  getSLADefinitions: () =>
+    request<{ results: SLADefinition[] }>('/sla-definitions/'),
+  getSLATrackers: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: SLATracker[] }>(`/sla-trackers/${q}`);
+  },
+  evaluateSLAs: () =>
+    request<any>('/sla-trackers/evaluate-all/', { method: 'POST' }),
+
+  // Configurable Automation Rules
+  getAutomationRules: () =>
+    request<{ results: AutomationRule[] }>('/automation-rules/'),
+  runAutomations: () =>
+    request<any>('/automation-rules/run-all/', { method: 'POST' }),
+
+  // Operational Work Queue & Dashboard Metrics
+  getWorkQueue: (roleView?: string) => {
+    const q = roleView ? `?role_view=${encodeURIComponent(roleView)}` : '';
+    return request<WorkQueueData>(`/work-queue/${q}`);
+  },
+  rescheduleWorkQueueTask: (taskId: string, newDueDate: string, reason?: string) =>
+    request<any>('/work-queue/action/reschedule-task/', {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId, new_due_date: newDueDate, reason })
+    }),
+  scheduleWorkQueueNextAction: (data: { entity_type: 'LEAD' | 'OPPORTUNITY'; entity_id: string; description: string; due_date: string; activity_type?: string }) =>
+    request<any>('/work-queue/action/schedule-next-action/', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  getOperationalMetrics: () =>
+    request<OperationalMetrics>('/operational-metrics/'),
+
+  // Phase 10: Dedicated Analytics Dashboards
+  getExecutiveAnalytics: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<ExecutiveAnalyticsData>(`/analytics/executive/${q}`);
+  },
+  getPLDAnalytics: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<PLDAnalyticsData>(`/analytics/pld/${q}`);
+  },
+  getSalesAnalytics: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<SalesAnalyticsData>(`/analytics/sales/${q}`);
+  },
+  getMarketingAnalytics: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<MarketingAnalyticsData>(`/analytics/marketing/${q}`);
+  },
+  getProductAnalytics: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<ProductAnalyticsData>(`/analytics/product/${q}`);
+  },
+  getPartnerAnalytics: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<PartnerAnalyticsData>(`/analytics/partner/${q}`);
+  },
+  getActivitySLAAnalytics: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<ActivitySLAAnalyticsData>(`/analytics/activity-sla/${q}`);
+  },
+  getFunnelConversions: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<FunnelConversionData>(`/analytics/funnel-conversions/${q}`);
+  },
+  getOwnerPerformance: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<OwnerPerformanceData>(`/analytics/owners/${q}`);
+  },
+
+  // Phase 10: Standard Reports & CSV Export
+  getReportTable: (params: Record<string, any>) => {
+    const q = '?' + new URLSearchParams(params as Record<string, string>).toString();
+    return request<ReportTableData>(`/analytics/reports/${q}`);
+  },
+  getReportCSVDownloadUrl: (params: Record<string, any>) => {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    return `${API_BASE}/analytics/reports/export/?${query}`;
+  },
 
   // Phase 3: Governance & Audit Trail
   getAuditLogs: () => request<{ results: any[] }>('/audit-logs/'),

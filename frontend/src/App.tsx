@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  BarChart3, Layers, Target, CheckCircle2, 
-  ArrowRight, ShieldCheck, Settings, Sparkles, 
-  TrendingUp, Clock, Search, PlusCircle, RefreshCw, Briefcase, 
+  BarChart3, Layers, CheckCircle2, 
+  ShieldCheck, Settings, Sparkles, 
+  Search, PlusCircle, RefreshCw, Briefcase, 
   Check, X, Compass, CheckSquare, Handshake, 
-  FlaskConical, History, Share2, Gauge, Send, Database, Monitor, FileText
+  FlaskConical, History, Share2, Gauge, Send, Database, Monitor, FileText,
+  Building2, ListTodo
 } from 'lucide-react';
 import { api } from './services/api';
-import type { FunnelData, Lead, Product, Discovery, SQLHandoff, Opportunity, Demo, POC } from './services/api';
+import type { 
+  Lead, Product, Discovery, SQLHandoff, Opportunity, Demo, POC, OperationalMetrics 
+} from './services/api';
 import { MultiTouchAttributionView } from './components/MultiTouchAttributionView';
 import { FunnelLeakageVelocityView } from './components/FunnelLeakageVelocityView';
 import { OmniChannelCommsView } from './components/OmniChannelCommsView';
@@ -21,14 +24,18 @@ import { SQLReadinessWorkspace } from './components/SQLReadinessWorkspace';
 import { SalesAcceptanceWorkspace } from './components/SalesAcceptanceWorkspace';
 import { OpportunityWorkspace } from './components/OpportunityWorkspace';
 import { ProposalWorkspace } from './components/ProposalWorkspace';
+import { NotificationCenter } from './components/NotificationCenter';
+import { MyWorkQueueWorkspace } from './components/MyWorkQueueWorkspace';
+import { Account360Workspace } from './components/Account360Workspace';
+import { AnalyticsHubView } from './components/AnalyticsHubView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'queue' | 'discovery' | 'demo' | 'poc' | 'sql' | 'opportunities' | 'proposals' | 'partners' | 'studio' | 'audit' | 'attribution' | 'leakage' | 'communications' | 'erp'
+    'dashboard' | 'work-queue' | 'account-360' | 'queue' | 'discovery' | 'demo' | 'poc' | 'sql' | 'opportunities' | 'proposals' | 'partners' | 'studio' | 'audit' | 'attribution' | 'leakage' | 'communications' | 'erp'
   >('dashboard');
   const [sqlSubView, setSqlSubView] = useState<'readiness' | 'acceptance'>('readiness');
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string>('');
-  const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
+  const [_funnelData, setFunnelData] = useState<any>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [discoveries, setDiscoveries] = useState<Discovery[]>([]);
@@ -39,6 +46,8 @@ export default function App() {
   const [partnerDashboard, setPartnerDashboard] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [operationalMetrics, setOperationalMetrics] = useState<OperationalMetrics | null>(null);
+  const [selectedAccount360Id, setSelectedAccount360Id] = useState<string>('');
   
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   
@@ -74,7 +83,7 @@ export default function App() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [fData, lData, pData, dData, demoData, sData, oData, pocData, pDash, aData, accData] = await Promise.all([
+      const [fData, lData, pData, dData, demoData, sData, oData, pocData, pDash, aData, accData, opMetrics] = await Promise.all([
         api.getFunnelAnalytics().catch(() => null),
         api.getLeads().catch(() => ({ results: [] })),
         api.getProducts().catch(() => ({ results: [] })),
@@ -85,7 +94,8 @@ export default function App() {
         api.getPOCs().catch(() => ({ results: [] })),
         api.getPartnerPortalDashboard().catch(() => null),
         api.getAuditLogs().catch(() => ({ results: [] })),
-        api.getAccounts().catch(() => ({ results: [] }))
+        api.getAccounts().catch(() => ({ results: [] })),
+        api.getOperationalMetrics().catch(() => null)
       ]);
       setFunnelData(fData);
       setLeads(lData.results);
@@ -98,6 +108,7 @@ export default function App() {
       setPartnerDashboard(pDash);
       setAuditLogs(aData.results);
       setAccounts(accData.results || []);
+      setOperationalMetrics(opMetrics);
 
       if (lData.results.length > 0 && !selectedLead) {
         setSelectedLead(lData.results[0]);
@@ -300,7 +311,31 @@ export default function App() {
             style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
           >
             <BarChart3 size={16} />
-            Executive Funnel
+            Analytics &amp; Dashboards
+          </button>
+
+          <button 
+            className={`btn ${activeTab === 'work-queue' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('work-queue')}
+            style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem', borderColor: activeTab === 'work-queue' ? undefined : 'rgba(59, 130, 246, 0.4)' }}
+          >
+            <ListTodo size={16} color="var(--primary)" />
+            My Work Queue
+            {((operationalMetrics?.overdue_tasks ?? 0) + (operationalMetrics?.tasks_due_today ?? 0)) > 0 && (
+              <span className="badge badge-danger" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>
+                {(operationalMetrics?.overdue_tasks ?? 0) + (operationalMetrics?.tasks_due_today ?? 0)}
+              </span>
+            )}
+          </button>
+
+          <button 
+            className={`btn ${activeTab === 'account-360' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('account-360')}
+            style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
+          >
+            <Building2 size={16} />
+            Account 360
+            <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{accounts.length}</span>
           </button>
 
           <button 
@@ -309,7 +344,7 @@ export default function App() {
             style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
           >
             <Layers size={16} />
-            PLD Work Queue
+            PLD Lead Queue
             <span className="badge badge-info" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{leads.length}</span>
           </button>
 
@@ -505,6 +540,21 @@ export default function App() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <NotificationCenter onNavigateToEntity={(type, id) => {
+              if (type === 'lead') {
+                const found = leads.find(l => l.id === id);
+                if (found) setSelectedLead(found);
+                setActiveTab('queue');
+              } else if (type === 'opportunity') {
+                setSelectedOpportunityId(id);
+                setActiveTab('opportunities');
+              } else if (type === 'account') {
+                setSelectedAccount360Id(id);
+                setActiveTab('account-360');
+              } else {
+                setActiveTab('work-queue');
+              }
+            }} />
             <button className="btn btn-secondary" onClick={loadData} title="Refresh data">
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
               Sync
@@ -518,101 +568,29 @@ export default function App() {
 
         {/* Content Area */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
-          {/* TAB 1: EXECUTIVE DASHBOARD */}
+          {/* TAB 1: PHASE 10 ANALYTICS & DASHBOARDS HUB */}
           {activeTab === 'dashboard' && (
-            <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-              <div>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-                  Executive PLD Revenue Funnel
-                </h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Real-time pipeline metrics, conversion rates, and stage leakage across all configured products.
-                </p>
-              </div>
-
-              {/* Top KPI Metric Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '18px' }}>
-                <div className="glass-panel" style={{ padding: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700 }}>
-                    TOTAL WON REVENUE
-                    <TrendingUp size={16} color="var(--success)" />
-                  </div>
-                  <div style={{ fontSize: '1.9rem', fontWeight: 800, marginTop: '10px', color: '#FFFFFF' }}>
-                    ${funnelData?.metrics?.total_won_revenue?.toLocaleString() || '65,000'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--success)', marginTop: '4px', fontWeight: 600 }}>
-                    Win Rate: {funnelData?.rates?.win_rate || 50}%
-                  </div>
-                </div>
-
-                <div className="glass-panel" style={{ padding: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700 }}>
-                    OPEN PIPELINE VALUE
-                    <Clock size={16} color="var(--primary)" />
-                  </div>
-                  <div style={{ fontSize: '1.9rem', fontWeight: 800, marginTop: '10px', color: '#FFFFFF' }}>
-                    ${funnelData?.metrics?.total_pipeline_value?.toLocaleString() || '140,000'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    {funnelData?.metrics?.total_opportunities || 2} active commercial opportunities
-                  </div>
-                </div>
-
-                <div className="glass-panel" style={{ padding: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700 }}>
-                    PLD QUALIFIED RATE
-                    <Target size={16} color="var(--accent-cyan)" />
-                  </div>
-                  <div style={{ fontSize: '1.9rem', fontWeight: 800, marginTop: '10px', color: '#FFFFFF' }}>
-                    {funnelData?.rates?.pld_rate || 100}%
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--info)', marginTop: '4px' }}>
-                    High conversion across VanForces &amp; TaskForces
-                  </div>
-                </div>
-
-                <div className="glass-panel" style={{ padding: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700 }}>
-                    PARTNER CONTRIBUTION
-                    <Handshake size={16} color="var(--warning)" />
-                  </div>
-                  <div style={{ fontSize: '1.9rem', fontWeight: 800, marginTop: '10px', color: '#FFFFFF' }}>
-                    $65,000
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--warning)', marginTop: '4px' }}>
-                    KAT IT Solutions ($9,750 commission)
-                  </div>
-                </div>
-              </div>
-
-              {/* Visual PLD Funnel & Leakage */}
-              <div className="glass-panel" style={{ padding: '24px' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '20px' }}>
-                  End-to-End Product-Led Development Funnel
-                </h3>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '16px', background: 'var(--bg-surface)', borderRadius: '10px' }}>
-                  {[
-                    { label: 'Leads Ingested', count: funnelData?.metrics?.total_leads || 2, color: '#3B82F6' },
-                    { label: 'ICP Knockout Passed', count: funnelData?.metrics?.icp_passed || 2, color: '#06B6D4' },
-                    { label: 'PLD Qualified', count: funnelData?.metrics?.pld_qualified || 2, color: '#10B981' },
-                    { label: 'Discovery Mapped', count: discoveries.length || 1, color: '#8B5CF6' },
-                    { label: 'POC Trials', count: pocs.length || 1, color: '#EC4899' },
-                    { label: 'SQL Ready Gate', count: sqlHandoffs.length || 1, color: '#F59E0B' },
-                    { label: 'Won Deal', count: 1, color: '#10B981' },
-                  ].map((step, idx, arr) => (
-                    <React.Fragment key={idx}>
-                      <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: step.color }}>{step.count}</div>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: '4px' }}>{step.label}</div>
-                      </div>
-                      {idx < arr.length - 1 && (
-                        <ArrowRight size={18} color="var(--border-subtle)" />
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <AnalyticsHubView
+              products={products}
+              onNavigateToLead={(leadId) => {
+                const found = leads.find(l => l.id === leadId);
+                if (found) setSelectedLead(found);
+                setActiveTab('queue');
+              }}
+              onNavigateToOpportunity={(oppId) => {
+                setSelectedOpportunityId(oppId);
+                setActiveTab('opportunities');
+              }}
+              onNavigateToProposal={() => {
+                setActiveTab('proposals');
+              }}
+              onNavigateToSQL={() => {
+                setActiveTab('sql');
+              }}
+              onNavigateToTab={(tab) => {
+                setActiveTab(tab as any);
+              }}
+            />
           )}
 
           {/* TAB 2: PLD WORK QUEUE & QUALIFICATION WORKSPACE */}
@@ -812,12 +790,43 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB: MY WORK QUEUE (PHASE 9) */}
+          {activeTab === 'work-queue' && (
+            <MyWorkQueueWorkspace
+              onNavigateToLead={(leadId) => {
+                const found = leads.find(l => l.id === leadId);
+                if (found) setSelectedLead(found);
+                setActiveTab('queue');
+              }}
+              onNavigateToOpportunity={(oppId) => {
+                setSelectedOpportunityId(oppId);
+                setActiveTab('opportunities');
+              }}
+              onNavigateToAccount={(accId) => {
+                setSelectedAccount360Id(accId);
+                setActiveTab('account-360');
+              }}
+            />
+          )}
+
+          {/* TAB: ACCOUNT 360 (PHASE 9) */}
+          {activeTab === 'account-360' && (
+            <Account360Workspace
+              initialAccountId={selectedAccount360Id}
+              onNavigateToOpportunity={(oppId) => {
+                setSelectedOpportunityId(oppId);
+                setActiveTab('opportunities');
+              }}
+            />
+          )}
+
           {/* TAB 6: COMMERCIAL OPPORTUNITY WORKSPACE */}
           {activeTab === 'opportunities' && (
             <OpportunityWorkspace
               initialOpportunityId={selectedOpportunityId}
-              onNavigateToAccount={() => {
-                setActiveTab('queue');
+              onNavigateToAccount={(accId) => {
+                setSelectedAccount360Id(accId);
+                setActiveTab('account-360');
               }}
               onNavigateToProposal={(oppId) => {
                 setSelectedOpportunityId(oppId);

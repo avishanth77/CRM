@@ -18,6 +18,12 @@ class AuditAction(models.TextChoices):
     PROPOSAL_REJECT = 'PROPOSAL_REJECT', 'Reject Proposal'
     PROPOSAL_SEND = 'PROPOSAL_SEND', 'Send Proposal'
     STAGE_CHANGE = 'STAGE_CHANGE', 'Stage Transition'
+    ACTIVITY_LOG = 'ACTIVITY_LOG', 'Log Activity'
+    TASK_CREATE = 'TASK_CREATE', 'Create Task'
+    TASK_COMPLETE = 'TASK_COMPLETE', 'Complete Task'
+    SLA_BREACH = 'SLA_BREACH', 'SLA Breached'
+    ESCALATION = 'ESCALATION', 'Escalation Triggered'
+    AUTOMATION_EXECUTE = 'AUTOMATION_EXECUTE', 'Automation Rule Executed'
 
 
 class AuditLog(models.Model):

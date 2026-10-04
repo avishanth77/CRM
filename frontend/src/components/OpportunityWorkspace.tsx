@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   User, TrendingUp, CheckCircle2, Clock, ShieldCheck, RefreshCw,
-  Plus, Edit3, X, Activity as ActivityIcon, AlertCircle, Layers, History, Award, FileText
+  Edit3, X, Activity as ActivityIcon, AlertCircle, Layers, History, Award, FileText
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Opportunity } from '../services/api';
+import { UnifiedActivityTimeline } from './UnifiedActivityTimeline';
 
 interface OpportunityWorkspaceProps {
   initialOpportunityId?: string;
@@ -574,54 +575,14 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
 
           {/* TAB 2: ACTIVITIES */}
           {activeTab === 'ACTIVITIES' && (
-            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  Opportunity Activity Stream
-                </h3>
-                <button
-                  onClick={() => setShowActivityModal(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Log Commercial Activity
-                </button>
-              </div>
-
-              {activities.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-xs">
-                  No commercial activities recorded yet for this opportunity.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {activities.map((act) => (
-                    <div
-                      key={act.id}
-                      className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-xs space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">
-                          [{act.activity_type}] {act.subject}
-                        </span>
-                        <span className="text-slate-400">
-                          {new Date(act.conducted_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      {act.outcome_notes && (
-                        <p className="text-slate-600 dark:text-slate-300">{act.outcome_notes}</p>
-                      )}
-                      {act.next_action_description && (
-                        <div className="pt-2 text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1.5">
-                          <Clock className="w-3 h-3" />
-                          Next Action: {act.next_action_description} (Due:{' '}
-                          {act.next_action_due_at ? new Date(act.next_action_due_at).toLocaleDateString() : 'Pending'})
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <UnifiedActivityTimeline
+              entityType="opportunity"
+              entityId={selectedOpportunity.id}
+              entityName={selectedOpportunity.account_name}
+              onActivityLogged={() => {
+                fetchOpportunities();
+              }}
+            />
           )}
 
           {/* TAB 3: STAGE HISTORY & AUDIT */}

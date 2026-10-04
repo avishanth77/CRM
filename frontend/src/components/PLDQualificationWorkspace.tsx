@@ -9,6 +9,7 @@ import type {
   Lead, AccountProductAssessment, QuestionnaireTemplate, 
   LeadProblemItem, StageGateChecklist 
 } from '../services/api';
+import { UnifiedActivityTimeline } from './UnifiedActivityTimeline';
 
 interface PLDQualificationWorkspaceProps {
   lead: Lead;
@@ -57,7 +58,7 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
   const [transitioning, setTransitioning] = useState(false);
 
   // Active view toggle
-  const [activeSection, setActiveSection] = useState<'icp' | 'questionnaire' | 'problems' | 'score' | 'history'>('questionnaire');
+  const [activeSection, setActiveSection] = useState<'icp' | 'questionnaire' | 'problems' | 'score' | 'history' | 'timeline'>('questionnaire');
 
   useEffect(() => {
     loadWorkspaceData();
@@ -397,6 +398,62 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
               Lead ID: #{lead.id.slice(0, 8)} • Stage: <strong style={{ color: 'var(--text-primary)' }}>{lead.current_stage_name || 'PLD Qualified'}</strong> • Rule Ver: {assessment?.icp_rule_version || 'v1.0'}
             </div>
+
+            {/* Last & Next Activity Visual Card (Phase 9 Requirement) */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              marginTop: '10px',
+              padding: '8px 12px',
+              background: 'var(--bg-surface)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-subtle)',
+              flexWrap: 'wrap'
+            }}>
+              <div>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>LAST ACTIVITY</span>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#FFFFFF' }}>
+                  {lead.last_activity_at ? new Date(lead.last_activity_at).toLocaleDateString() : 'None Recorded'}
+                </div>
+              </div>
+              <div style={{ width: '1px', height: '22px', background: 'var(--border-subtle)' }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>NEXT ACTIVITY</span>
+                  {(() => {
+                    if (!lead.next_action_description && !lead.next_activity_due_at) {
+                      return <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>No Next Action</span>;
+                    }
+                    if (lead.next_activity_due_at) {
+                      const due = new Date(lead.next_activity_due_at).getTime();
+                      const diffHours = (due - Date.now()) / (1000 * 3600);
+                      if (diffHours < 0) return <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>Overdue</span>;
+                      if (diffHours <= 24) return <span className="badge badge-warning" style={{ fontSize: '0.65rem' }}>Due Today</span>;
+                      if (diffHours <= 72) return <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>Due Soon</span>;
+                    }
+                    return <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>Scheduled</span>;
+                  })()}
+                </div>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#FFFFFF', marginTop: '2px' }}>
+                  {lead.next_action_description || 'No future action scheduled'}
+                  {lead.next_activity_due_at && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                      (Due: {new Date(lead.next_activity_due_at).toLocaleDateString()})
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button 
+                type="button"
+                className="btn btn-secondary" 
+                onClick={() => setActiveSection('timeline')}
+                style={{ fontSize: '0.72rem', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Clock size={12} />
+                Manage Activities
+              </button>
+            </div>
           </div>
 
           {/* Right Header Status Widget */}
@@ -525,6 +582,14 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
         >
           <History size={14} />
           Audit & History
+        </button>
+        <button
+          onClick={() => setActiveSection('timeline')}
+          className={`btn ${activeSection === 'timeline' ? 'btn-primary' : 'btn-outline'}`}
+          style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+        >
+          <Clock size={14} />
+          Activities &amp; Timeline
         </button>
       </div>
 
@@ -1025,6 +1090,21 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
             </div>
           )}
         </div>
+      )}
+
+      {/* TAB 6: UNIFIED ACTIVITY TIMELINE (PHASE 9) */}
+      {activeSection === 'timeline' && (
+        <UnifiedActivityTimeline
+          relatedEntity={{
+            type: 'lead',
+            id: lead.id,
+            name: lead.account_name,
+            accountId: lead.account
+          }}
+          onActivityLogged={() => {
+            if (onLeadUpdated) onLeadUpdated();
+          }}
+        />
       )}
 
       {/* BOTTOM ACTION & GATE READINESS BAR */}
