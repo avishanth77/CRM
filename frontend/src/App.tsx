@@ -4,7 +4,7 @@ import {
   ArrowRight, ShieldCheck, Settings, Sparkles, 
   TrendingUp, Clock, Search, PlusCircle, RefreshCw, Briefcase, 
   Check, X, Compass, CheckSquare, Handshake, 
-  FlaskConical, History, Share2, Gauge, Send, Database, Monitor
+  FlaskConical, History, Share2, Gauge, Send, Database, Monitor, FileText
 } from 'lucide-react';
 import { api } from './services/api';
 import type { FunnelData, Lead, Product, Discovery, SQLHandoff, Opportunity, Demo, POC } from './services/api';
@@ -20,10 +20,11 @@ import { POCWorkspace } from './components/POCWorkspace';
 import { SQLReadinessWorkspace } from './components/SQLReadinessWorkspace';
 import { SalesAcceptanceWorkspace } from './components/SalesAcceptanceWorkspace';
 import { OpportunityWorkspace } from './components/OpportunityWorkspace';
+import { ProposalWorkspace } from './components/ProposalWorkspace';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'queue' | 'discovery' | 'demo' | 'poc' | 'sql' | 'opportunities' | 'partners' | 'studio' | 'audit' | 'attribution' | 'leakage' | 'communications' | 'erp'
+    'dashboard' | 'queue' | 'discovery' | 'demo' | 'poc' | 'sql' | 'opportunities' | 'proposals' | 'partners' | 'studio' | 'audit' | 'attribution' | 'leakage' | 'communications' | 'erp'
   >('dashboard');
   const [sqlSubView, setSqlSubView] = useState<'readiness' | 'acceptance'>('readiness');
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string>('');
@@ -360,6 +361,15 @@ export default function App() {
             <Briefcase size={16} />
             Opportunities
             <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{opportunities.length}</span>
+          </button>
+
+          <button 
+            className={`btn ${activeTab === 'proposals' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('proposals')}
+            style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
+          >
+            <FileText size={16} />
+            Commercial Proposals
           </button>
 
           {/* Phase 3 Tabs */}
@@ -808,6 +818,21 @@ export default function App() {
               initialOpportunityId={selectedOpportunityId}
               onNavigateToAccount={() => {
                 setActiveTab('queue');
+              }}
+              onNavigateToProposal={(oppId) => {
+                setSelectedOpportunityId(oppId);
+                setActiveTab('proposals');
+              }}
+            />
+          )}
+
+          {/* TAB 6.5: COMMERCIAL PROPOSALS WORKSPACE (PHASE 8) */}
+          {activeTab === 'proposals' && (
+            <ProposalWorkspace
+              initialOpportunityId={selectedOpportunityId}
+              onNavigateToOpportunity={(oppId) => {
+                setSelectedOpportunityId(oppId);
+                setActiveTab('opportunities');
               }}
             />
           )}

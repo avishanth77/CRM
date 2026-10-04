@@ -55,6 +55,8 @@ class ApprovalType(models.TextChoices):
     STAGE_GATE_OVERRIDE = 'STAGE_GATE_OVERRIDE', 'Stage Gate Override'
     DISCOUNT_EXCEPTION = 'DISCOUNT_EXCEPTION', 'Commercial Discount Exception'
     SCORE_OVERRIDE = 'SCORE_OVERRIDE', 'PLD Score Override'
+    PROPOSAL_APPROVAL = 'PROPOSAL_APPROVAL', 'Commercial Proposal Approval'
+    COMMERCIAL_EXCEPTION = 'COMMERCIAL_EXCEPTION', 'Commercial Exception Approval'
 
 
 class ApprovalStatus(models.TextChoices):

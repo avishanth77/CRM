@@ -12,6 +12,12 @@ class AuditAction(models.TextChoices):
     SALES_ACCEPT = 'SALES_ACCEPT', 'Sales Accepted SQL'
     SALES_REJECT = 'SALES_REJECT', 'Sales Rejected SQL'
     LOGIN = 'LOGIN', 'User Login'
+    PROPOSAL_CREATE = 'PROPOSAL_CREATE', 'Create Proposal'
+    PROPOSAL_VERSION = 'PROPOSAL_VERSION', 'Create Proposal Version'
+    PROPOSAL_APPROVE = 'PROPOSAL_APPROVE', 'Approve Proposal'
+    PROPOSAL_REJECT = 'PROPOSAL_REJECT', 'Reject Proposal'
+    PROPOSAL_SEND = 'PROPOSAL_SEND', 'Send Proposal'
+    STAGE_CHANGE = 'STAGE_CHANGE', 'Stage Transition'
 
 
 class AuditLog(models.Model):

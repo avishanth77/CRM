@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   User, TrendingUp, CheckCircle2, Clock, ShieldCheck, RefreshCw,
-  Plus, Edit3, X, Activity as ActivityIcon, AlertCircle, Layers, History, Award
+  Plus, Edit3, X, Activity as ActivityIcon, AlertCircle, Layers, History, Award, FileText
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Opportunity } from '../services/api';
@@ -9,11 +9,13 @@ import type { Opportunity } from '../services/api';
 interface OpportunityWorkspaceProps {
   initialOpportunityId?: string;
   onNavigateToAccount?: (accountId: string) => void;
+  onNavigateToProposal?: (oppId: string) => void;
 }
 
 export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
   initialOpportunityId,
-  onNavigateToAccount
+  onNavigateToAccount,
+  onNavigateToProposal
 }) => {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
@@ -342,6 +344,16 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
                   <Clock className="w-3.5 h-3.5" />
                   Advance Stage
                 </button>
+
+                {onNavigateToProposal && (
+                  <button
+                    onClick={() => onNavigateToProposal(selectedOpportunity.id)}
+                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    Commercial Proposal &amp; Approvals
+                  </button>
+                )}
 
                 {selectedOpportunity.status === 'OPEN' && (
                   <button

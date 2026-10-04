@@ -17,11 +17,14 @@ class ActivityType(models.TextChoices):
     FOLLOW_UP = 'FOLLOW_UP', 'Follow-up'
     SITE_VISIT = 'SITE_VISIT', 'Site Visit'
     PARTNER_MEETING = 'PARTNER_MEETING', 'Partner Meeting'
+    PROPOSAL_SENT = 'PROPOSAL_SENT', 'Proposal Sent'
+    PROPOSAL_REVIEW = 'PROPOSAL_REVIEW', 'Proposal Review'
+    NEGOTIATION = 'NEGOTIATION', 'Commercial Negotiation'
 
 
 class Activity(BaseModel):
     """
-    Unified activity stream across Account, Lead, and Opportunity.
+    Unified activity stream across Account, Lead, Opportunity, and Proposal.
     Every active record requires documented outcome and next action.
     """
     account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True, related_name="activities")
@@ -51,6 +54,13 @@ class Activity(BaseModel):
     opportunity = models.ForeignKey(
         'opportunities.Opportunity',
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="activities"
+    )
+    proposal = models.ForeignKey(
+        'opportunities.Proposal',
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="activities"

@@ -1,24 +1,28 @@
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, PermissionDenied
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.opportunities.models import (
     Opportunity, OpportunityProduct, OpportunityModule,
-    OpportunityCapability, Proposal, OpportunityStatus
+    OpportunityCapability, Proposal, ProposalVersion, ProposalItem,
+    ApprovalRule, OpportunityStatus, ProposalStatus
 )
 from apps.opportunities.serializers import (
     OpportunitySerializer, OpportunityProductSerializer,
     OpportunityModuleSerializer, OpportunityCapabilitySerializer,
-    ProposalSerializer
+    ProposalSerializer, ProposalVersionSerializer, ProposalItemSerializer,
+    ApprovalRuleSerializer
 )
-from apps.opportunities.services import OpportunityService
+from apps.opportunities.services import OpportunityService, ProposalService
 from apps.sales_handoff.models import SQLHandoff, HandoffStatus
 from apps.pld_engine.models import PipelineStage
 from apps.accounts.models import AccountProduct, AccountProductStatus
 from apps.activities.models import Activity
 from apps.activities.serializers import ActivitySerializer
 from apps.workflows.models import StageHistory
+from apps.audit_logging.models import AuditLog
+from apps.audit_logging.serializers import AuditLogSerializer
 
 
 class OpportunityViewSet(viewsets.ModelViewSet):
@@ -182,6 +186,44 @@ class OpportunityViewSet(viewsets.ModelViewSet):
 
         return Response(OpportunitySerializer(opp).data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='to-negotiation')
+    def to_negotiation(self, request, pk=None):
+        opp = self.get_object()
+        reason = request.data.get('reason', '')
+        try:
+            opp = ProposalService.transition_to_negotiation(
+                opportunity=opp,
+                user=request.user if request.user.is_authenticated else None,
+                reason=reason
+            )
+            return Response({
+                'message': 'Opportunity transitioned to Negotiation stage.',
+                'opportunity': OpportunitySerializer(opp).data
+            }, status=status.HTTP_200_OK)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get', 'post'], url_path='proposals')
+    def opportunity_proposals(self, request, pk=None):
+        opp = self.get_object()
+        if request.method == 'GET':
+            proposals = opp.proposals.all().order_by('-created_at')
+            return Response(ProposalSerializer(proposals, many=True).data, status=status.HTTP_200_OK)
+        elif request.method == 'POST':
+            try:
+                proposal = ProposalService.create_proposal(
+                    opportunity=opp,
+                    data=request.data,
+                    user=request.user if request.user.is_authenticated else None
+                )
+                return Response(ProposalSerializer(proposal).data, status=status.HTTP_201_CREATED)
+            except ValidationError as ve:
+                return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as ex:
+                return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 class OpportunityProductViewSet(viewsets.ModelViewSet):
     queryset = OpportunityProduct.objects.all()
@@ -202,6 +244,187 @@ class OpportunityCapabilityViewSet(viewsets.ModelViewSet):
 
 
 class ProposalViewSet(viewsets.ModelViewSet):
-    queryset = Proposal.objects.all()
+    queryset = Proposal.objects.all().prefetch_related('versions__items')
     serializer_class = ProposalSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        opp_id = request.data.get('opportunity')
+        if not opp_id:
+            return Response({'error': 'Opportunity ID is required to generate a proposal.'}, status=status.HTTP_400_BAD_REQUEST)
+        opp = Opportunity.objects.filter(id=opp_id).first()
+        if not opp:
+            return Response({'error': f'Opportunity {opp_id} not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            proposal = ProposalService.create_proposal(
+                opportunity=opp,
+                data=request.data,
+                user=request.user if request.user.is_authenticated else None
+            )
+            return Response(ProposalSerializer(proposal).data, status=status.HTTP_201_CREATED)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='create-version')
+    def create_version(self, request, pk=None):
+        proposal = self.get_object()
+        try:
+            new_version = ProposalService.create_new_version(
+                proposal=proposal,
+                data=request.data,
+                user=request.user if request.user.is_authenticated else None
+            )
+            return Response({
+                'message': f"Proposal version {new_version.version_number} created successfully.",
+                'proposal': ProposalSerializer(proposal).data,
+                'version': ProposalVersionSerializer(new_version).data
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='send')
+    def send_proposal(self, request, pk=None):
+        proposal = self.get_object()
+        version_num = request.data.get('version_number', proposal.version_number)
+        version = proposal.versions.filter(version_number=version_num).first()
+        if not version:
+            return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            version = ProposalService.send_proposal(
+                proposal_version=version,
+                user=request.user if request.user.is_authenticated else None,
+                recipient_email=request.data.get('recipient_email'),
+                next_action_description=request.data.get('next_action_description'),
+                next_action_due_at=request.data.get('next_activity_due_at')
+            )
+            return Response({
+                'message': f"Proposal {proposal.proposal_number} v{version.version_number} sent successfully to client.",
+                'proposal': ProposalSerializer(proposal).data
+            }, status=status.HTTP_200_OK)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='request-approval')
+    def request_approval(self, request, pk=None):
+        proposal = self.get_object()
+        version_num = request.data.get('version_number', proposal.version_number)
+        version = proposal.versions.filter(version_number=version_num).first()
+        if not version:
+            return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        reason = request.data.get('reason', '')
+        version = ProposalService.request_approval(
+            proposal_version=version,
+            reason=reason,
+            user=request.user if request.user.is_authenticated else None
+        )
+        return Response({
+            'message': 'Proposal submitted for commercial management approval.',
+            'proposal': ProposalSerializer(proposal).data
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve(self, request, pk=None):
+        proposal = self.get_object()
+        version_num = request.data.get('version_number', proposal.version_number)
+        version = proposal.versions.filter(version_number=version_num).first()
+        if not version:
+            return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            version = ProposalService.approve_proposal(
+                proposal_version=version,
+                user=request.user,
+                comments=request.data.get('comments', '')
+            )
+            return Response({
+                'message': f"Proposal version {version.version_number} approved successfully.",
+                'proposal': ProposalSerializer(proposal).data
+            }, status=status.HTTP_200_OK)
+        except PermissionDenied as pd:
+            return Response({'error': str(pd)}, status=status.HTTP_403_FORBIDDEN)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='reject')
+    def reject(self, request, pk=None):
+        proposal = self.get_object()
+        version_num = request.data.get('version_number', proposal.version_number)
+        version = proposal.versions.filter(version_number=version_num).first()
+        if not version:
+            return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        reason = request.data.get('rejection_reason')
+        try:
+            version = ProposalService.reject_proposal(
+                proposal_version=version,
+                user=request.user,
+                rejection_reason=reason
+            )
+            return Response({
+                'message': f"Proposal version {version.version_number} rejected.",
+                'proposal': ProposalSerializer(proposal).data
+            }, status=status.HTTP_200_OK)
+        except PermissionDenied as pd:
+            return Response({'error': str(pd)}, status=status.HTTP_403_FORBIDDEN)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='expire')
+    def expire(self, request, pk=None):
+        proposal = self.get_object()
+        version_num = request.data.get('version_number', proposal.version_number)
+        version = proposal.versions.filter(version_number=version_num).first()
+        if not version:
+            return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            version = ProposalService.mark_expired(
+                proposal_version=version,
+                user=request.user if request.user.is_authenticated else None
+            )
+            return Response({
+                'message': f"Proposal version {version.version_number} marked as expired.",
+                'proposal': ProposalSerializer(proposal).data
+            }, status=status.HTTP_200_OK)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path='history')
+    def history(self, request, pk=None):
+        proposal = self.get_object()
+        v_ids = list(proposal.versions.values_list('id', flat=True))
+        logs = AuditLog.objects.filter(
+            entity_id__in=[proposal.id] + v_ids
+        ).order_by('-timestamp')
+        return Response(AuditLogSerializer(logs, many=True).data, status=status.HTTP_200_OK)
+
+
+class ProposalVersionViewSet(viewsets.ModelViewSet):
+    queryset = ProposalVersion.objects.all().prefetch_related('items')
+    serializer_class = ProposalVersionSerializer
+    permission_classes = [permissions.AllowAny]
+
+
+class ProposalItemViewSet(viewsets.ModelViewSet):
+    queryset = ProposalItem.objects.all()
+    serializer_class = ProposalItemSerializer
+    permission_classes = [permissions.AllowAny]
+
+
+class ApprovalRuleViewSet(viewsets.ModelViewSet):
+    queryset = ApprovalRule.objects.all().order_by('approval_sequence', '-created_at')
+    serializer_class = ApprovalRuleSerializer
     permission_classes = [permissions.AllowAny]

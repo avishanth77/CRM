@@ -656,6 +656,121 @@ export interface Opportunity {
   updated_at?: string;
 }
 
+// Phase 8: Proposal / Quote, Approvals, & Negotiation
+export interface ProposalItem {
+  id: string;
+  product: string;
+  product_name: string;
+  module?: string;
+  module_name?: string;
+  capability?: string;
+  capability_name?: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  discount_pct: number;
+  discount_amount: number;
+  line_total: number;
+}
+
+export interface ProposalVersion {
+  id: string;
+  proposal: string;
+  version_number: number;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'SENT' | 'ACCEPTED' | 'EXPIRED' | 'SUPERSEDED';
+  currency: string;
+  valid_from?: string;
+  valid_until?: string;
+  gross_amount: number;
+  discount_pct: number;
+  discount_amount: number;
+  discount_reason?: string;
+  tax_pct: number;
+  tax_amount: number;
+  net_amount: number;
+  contract_term_months: number;
+  payment_terms: string;
+  approval_required_flag: boolean;
+  approval_request?: {
+    id: string;
+    approval_type: string;
+    status: string;
+    requested_by_name?: string;
+    approver_name?: string;
+    justification_notes?: string;
+    decision_notes?: string;
+    created_at: string;
+    decision_date?: string;
+  };
+  proposal_document_url?: string;
+  created_by?: string;
+  created_by_name?: string;
+  sent_at?: string;
+  sent_by_name?: string;
+  sent_to?: string;
+  approved_at?: string;
+  rejected_at?: string;
+  notes?: string;
+  items: ProposalItem[];
+  is_expired?: boolean;
+  created_at: string;
+}
+
+export interface Proposal {
+  id: string;
+  opportunity: string;
+  account?: string;
+  account_name?: string;
+  primary_contact?: string;
+  primary_contact_name?: string;
+  product?: string;
+  product_name?: string;
+  proposal_number: string;
+  title: string;
+  owner?: string;
+  owner_name?: string;
+  version_number: number;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'SENT' | 'ACCEPTED' | 'EXPIRED' | 'SUPERSEDED';
+  currency: string;
+  valid_from?: string;
+  valid_until?: string;
+  gross_amount: number;
+  discount_pct: number;
+  discount_amount: number;
+  discount_reason?: string;
+  tax_pct: number;
+  tax_amount: number;
+  net_amount: number;
+  contract_term_months: number;
+  payment_terms: string;
+  approval_required_flag: boolean;
+  proposal_document_url?: string;
+  sent_at?: string;
+  sent_by_name?: string;
+  sent_to?: string;
+  approved_at?: string;
+  rejected_at?: string;
+  notes?: string;
+  current_version_details?: ProposalVersion;
+  versions: ProposalVersion[];
+  is_expired?: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface ApprovalRule {
+  id: string;
+  rule_name: string;
+  product?: string;
+  product_name?: string;
+  rule_type: 'DISCOUNT_PERCENT' | 'TOTAL_VALUE' | 'PRICING_EXCEPTION' | 'COMMERCIAL_EXCEPTION';
+  threshold_value: number;
+  approver_role: string;
+  approval_sequence: number;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface StageGateChecklist {
   all_passed: boolean;
   target_stage: string;
@@ -966,6 +1081,71 @@ export const api = {
     request<Opportunity>(`/opportunities/${id}/mark-lost/`, {
       method: 'POST',
       body: JSON.stringify({ loss_reason_category: category, loss_reason_notes: notes })
+    }),
+  transitionOpportunityToNegotiation: (id: string, reason?: string) =>
+    request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/to-negotiation/`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    }),
+
+  // Phase 8: Commercial Proposal / Quote & Approvals
+  getProposals: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: Proposal[] }>(`/proposals/${q}`);
+  },
+  getProposal: (id: string) =>
+    request<Proposal>(`/proposals/${id}/`),
+  createProposal: (data: any) =>
+    request<Proposal>('/proposals/', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  createProposalVersion: (proposalId: string, data: any) =>
+    request<{ message: string; proposal: Proposal; version: ProposalVersion }>(`/proposals/${proposalId}/create-version/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  sendProposal: (
+    proposalId: string,
+    data?: {
+      version_number?: number;
+      recipient_email?: string;
+      next_action_description?: string;
+      next_activity_due_at?: string;
+    }
+  ) =>
+    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/send/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    }),
+  requestProposalApproval: (proposalId: string, data?: { version_number?: number; reason?: string }) =>
+    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/request-approval/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    }),
+  approveProposal: (proposalId: string, data?: { version_number?: number; comments?: string }) =>
+    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/approve/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    }),
+  rejectProposal: (proposalId: string, data: { rejection_reason: string; version_number?: number }) =>
+    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/reject/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  expireProposal: (proposalId: string, versionNumber?: number) =>
+    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/expire/`, {
+      method: 'POST',
+      body: JSON.stringify({ version_number: versionNumber })
+    }),
+  getProposalHistory: (proposalId: string) =>
+    request<any[]>(`/proposals/${proposalId}/history/`),
+  getApprovalRules: () =>
+    request<{ results: ApprovalRule[] }>('/approval-rules/'),
+  createApprovalRule: (data: Partial<ApprovalRule>) =>
+    request<ApprovalRule>('/approval-rules/', {
+      method: 'POST',
+      body: JSON.stringify(data)
     }),
 
   // Gate & Transitions
