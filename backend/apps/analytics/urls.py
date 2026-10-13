@@ -11,6 +11,7 @@ from apps.analytics.views import (
     OwnerPerformanceAnalyticsView,
     ReportTableView,
     ReportCSVExportView,
+    AttributionReportView,
     FunnelAnalyticsView,
     FunnelLeakageVelocityView
 )
@@ -30,6 +31,7 @@ urlpatterns = [
     # Phase 10 Reporting & CSV Export
     path('analytics/reports/', ReportTableView.as_view(), name='reports-table'),
     path('analytics/reports/export/', ReportCSVExportView.as_view(), name='reports-csv-export'),
+    path('analytics/attribution-report/', AttributionReportView.as_view(), name='attribution-report'),
 
     # Backward compatibility
     path('analytics/funnel/', FunnelAnalyticsView.as_view(), name='funnel-analytics'),

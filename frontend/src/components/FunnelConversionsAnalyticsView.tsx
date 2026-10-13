@@ -133,118 +133,128 @@ export const FunnelConversionsAnalyticsView: React.FC<FunnelConversionsAnalytics
       )}
 
       {/* Row 1: Key Conversion Rates */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px'
-      }}>
-        <KPICard
-          title="Lead → PLD Qual"
-          value={`${data?.conversions.lead_to_pld_qual ?? 0}%`}
-          subtitle="Passed assessment"
-          badge="Gate 1"
-          badgeType="success"
-          icon={<Percent size={18} />}
-        />
-        <KPICard
-          title="PLD Qual → SQL"
-          value={`${data?.conversions.pld_to_sql ?? 0}%`}
-          subtitle="Passed SQL readiness"
-          badge="Gate 2"
-          badgeType="info"
-          icon={<Percent size={18} />}
-        />
-        <KPICard
-          title="SQL → Accepted"
-          value={`${data?.conversions.sql_to_sales_accepted ?? 0}%`}
-          subtitle="Sales accepted handoff"
-          badge="Gate 3"
-          badgeType="warning"
-          icon={<CheckCircle2 size={18} />}
-        />
-        <KPICard
-          title="Accepted → Opp"
-          value={`${data?.conversions.accepted_to_opportunity ?? 0}%`}
-          subtitle="Deal created"
-          badge="Gate 4"
-          badgeType="info"
-          icon={<Percent size={18} />}
-        />
-        <KPICard
-          title="Opportunity → Won"
-          value={`${data?.conversions.opportunity_to_won ?? 0}%`}
-          subtitle="Closed won revenue"
-          badge="Win Rate"
-          badgeType="success"
-          icon={<DollarSign size={18} />}
-        />
-      </div>
+      {(() => {
+        const conv = data?.conversions as any;
+        const vel = (data?.velocity || (data as any)?.durations) as any;
+        const funnelStages = data?.stages || (data as any)?.funnel_stages || [];
 
-      {/* Row 2: Average Velocity Durations */}
-      <div className="glass-panel" style={{ padding: '22px' }}>
-        <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-            Funnel Velocity &amp; Stage Transition Times
-          </h3>
-          <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            Average days taken for accounts and opportunities to reach each lifecycle milestone
-          </p>
-        </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: '14px'
-        }}>
-          <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to SQL</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
-              {data?.velocity.avg_time_to_sql_days ?? 0} d
+        return (
+          <>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px'
+            }}>
+              <KPICard
+                title="Lead → PLD Qual"
+                value={`${conv?.lead_to_pld_qual ?? conv?.lead_to_pld_pct ?? 0}%`}
+                subtitle="Passed assessment"
+                badge="Gate 1"
+                badgeType="success"
+                icon={<Percent size={18} />}
+              />
+              <KPICard
+                title="PLD Qual → SQL"
+                value={`${conv?.pld_to_sql ?? conv?.pld_to_sql_pct ?? 0}%`}
+                subtitle="Passed SQL readiness"
+                badge="Gate 2"
+                badgeType="info"
+                icon={<Percent size={18} />}
+              />
+              <KPICard
+                title="SQL → Accepted"
+                value={`${conv?.sql_to_sales_accepted ?? conv?.sql_to_accepted_pct ?? 0}%`}
+                subtitle="Sales accepted handoff"
+                badge="Gate 3"
+                badgeType="warning"
+                icon={<CheckCircle2 size={18} />}
+              />
+              <KPICard
+                title="Accepted → Opp"
+                value={`${conv?.accepted_to_opportunity ?? conv?.accepted_to_opp_pct ?? 0}%`}
+                subtitle="Deal created"
+                badge="Gate 4"
+                badgeType="info"
+                icon={<Percent size={18} />}
+              />
+              <KPICard
+                title="Opportunity → Won"
+                value={`${conv?.opportunity_to_won ?? conv?.opp_to_won_pct ?? 0}%`}
+                subtitle="Closed won revenue"
+                badge="Win Rate"
+                badgeType="success"
+                icon={<DollarSign size={18} />}
+              />
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From Lead Creation</div>
-          </div>
 
-          <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to Sales Acceptance</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
-              {data?.velocity.avg_time_to_acceptance_days ?? 0} d
+            {/* Row 2: Average Velocity Durations */}
+            <div className="glass-panel" style={{ padding: '22px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                  Funnel Velocity &amp; Stage Transition Times
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Average days taken for accounts and opportunities to reach each lifecycle milestone
+                </p>
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '14px'
+              }}>
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to SQL</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
+                    {vel?.avg_time_to_sql_days ?? 0} d
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From Lead Creation</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to Sales Acceptance</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
+                    {vel?.avg_time_to_acceptance_days ?? 0} d
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From SQL Gate</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to Opportunity</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
+                    {vel?.avg_time_to_opportunity_days ?? 0} d
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From Acceptance</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to Closed Won</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success)', marginTop: '4px' }}>
+                    {vel?.avg_time_to_won_days ?? 0} d
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From Deal Inception</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Sales Cycle</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', marginTop: '4px' }}>
+                    {vel?.avg_sales_cycle_days ?? 0} d
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>End-to-End Velocity</div>
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From SQL Gate</div>
-          </div>
 
-          <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to Opportunity</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>
-              {data?.velocity.avg_time_to_opportunity_days ?? 0} d
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From Acceptance</div>
-          </div>
-
-          <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Time to Closed Won</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success)', marginTop: '4px' }}>
-              {data?.velocity.avg_time_to_won_days ?? 0} d
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>From Deal Inception</div>
-          </div>
-
-          <div style={{ background: 'var(--bg-surface-elevated)', padding: '14px', borderRadius: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Sales Cycle</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', marginTop: '4px' }}>
-              {data?.velocity.avg_sales_cycle_days ?? 0} d
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>End-to-End Velocity</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: 11-Stage Waterfall Funnel */}
-      <FunnelChartWidget
-        title="Complete 11-Stage Pipeline Waterfall"
-        subtitle="Lifecycle stage transitions derived from historical StageHistory log entries."
-        stages={data?.stages || []}
-        loading={loading}
-      />
+            {/* Row 3: 11-Stage Waterfall Funnel */}
+            <FunnelChartWidget
+              title="Complete 11-Stage Pipeline Waterfall"
+              subtitle="Lifecycle stage transitions derived from historical StageHistory log entries."
+              stages={funnelStages}
+              loading={loading}
+            />
+          </>
+        );
+      })()}
     </div>
   );
 };

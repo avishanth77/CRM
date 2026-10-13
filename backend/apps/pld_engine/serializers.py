@@ -29,6 +29,36 @@ class ICPRuleSerializer(serializers.ModelSerializer):
             'is_active', 'description', 'failure_reason'
         ]
 
+    def to_internal_value(self, data):
+        data = data.copy() if hasattr(data, 'copy') else dict(data)
+        if data.get('rule_type') == 'FIT_CRITERIA':
+            data['rule_type'] = 'FIT'
+        if data.get('operator') == 'EXACT':
+            data['operator'] = 'EQ'
+        if 'weight' in data and 'points' not in data:
+            data['points'] = data['weight']
+        if not data.get('config_version') and data.get('profile'):
+            try:
+                prof = ICPProfile.objects.get(id=data['profile'])
+                if prof.config_version_id:
+                    data['config_version'] = str(prof.config_version_id)
+                elif prof.product:
+                    cfg = prof.product.configurations.first()
+                    if cfg:
+                        data['config_version'] = str(cfg.id)
+            except Exception:
+                pass
+        elif not data.get('config_version') and data.get('product'):
+            try:
+                from apps.products.models import Product
+                prod = Product.objects.get(id=data['product'])
+                cfg = prod.configurations.first()
+                if cfg:
+                    data['config_version'] = str(cfg.id)
+            except Exception:
+                pass
+        return super().to_internal_value(data)
+
 
 class ICPProfileSerializer(serializers.ModelSerializer):
     rules = ICPRuleSerializer(many=True, read_only=True)
@@ -55,9 +85,24 @@ class ScoreModelSerializer(serializers.ModelSerializer):
 
 
 class QuestionAnswerOptionSerializer(serializers.ModelSerializer):
+    score_value = serializers.IntegerField(source='points', required=False)
+    code = serializers.CharField(source='value', required=False)
+
     class Meta:
         model = QuestionAnswerOption
-        fields = ['id', 'question', 'label', 'value', 'points', 'order', 'is_active']
+        fields = ['id', 'question', 'label', 'value', 'code', 'points', 'score_value', 'order', 'is_active']
+
+    def to_internal_value(self, data):
+        data = data.copy() if hasattr(data, 'copy') else dict(data)
+        if 'score_value' in data and 'points' not in data:
+            data['points'] = data['score_value']
+        if 'code' in data and 'value' not in data:
+            data['value'] = data['code']
+        if 'value' not in data and 'label' in data:
+            data['value'] = data['label']
+        if 'points' not in data:
+            data['points'] = 50
+        return super().to_internal_value(data)
 
 
 class QuestionnaireQuestionSerializer(serializers.ModelSerializer):

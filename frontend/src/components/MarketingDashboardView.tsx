@@ -146,7 +146,7 @@ export const MarketingDashboardView: React.FC<MarketingDashboardViewProps> = ({
       }}>
         <KPICard
           title="Generated Leads"
-          value={data?.kpis.total_leads ?? 0}
+          value={data?.kpis?.total_leads ?? 0}
           subtitle="All recorded channels"
           badge="Inbound/Outbound"
           badgeType="info"
@@ -154,7 +154,7 @@ export const MarketingDashboardView: React.FC<MarketingDashboardViewProps> = ({
         />
         <KPICard
           title="Overall ICP Pass"
-          value={`${data?.kpis.icp_pass_rate ?? 0}%`}
+          value={`${data?.kpis?.icp_pass_rate ?? 0}%`}
           subtitle="Meets Ideal Customer Profile"
           badge="Quality"
           badgeType="success"
@@ -162,7 +162,7 @@ export const MarketingDashboardView: React.FC<MarketingDashboardViewProps> = ({
         />
         <KPICard
           title="PLD Qualification"
-          value={`${data?.kpis.qualification_rate ?? 0}%`}
+          value={`${data?.kpis?.qualification_rate ?? 0}%`}
           subtitle="Achieved PLD Qual threshold"
           badge="Conversion"
           badgeType="success"
@@ -170,8 +170,8 @@ export const MarketingDashboardView: React.FC<MarketingDashboardViewProps> = ({
         />
         <KPICard
           title="Marketing Pipeline"
-          value={data ? formatCurrency(data.kpis.pipeline_value) : '$0'}
-          subtitle={`Won Value: ${data ? formatCurrency(data.kpis.won_value) : '$0'}`}
+          value={formatCurrency(data?.kpis?.pipeline_value)}
+          subtitle={`Won Value: ${formatCurrency(data?.kpis?.won_value)}`}
           badge="Attributed Value"
           badgeType="info"
           icon={<DollarSign size={18} />}
@@ -214,7 +214,7 @@ export const MarketingDashboardView: React.FC<MarketingDashboardViewProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {data.sources.map((s, idx) => (
+                {(data?.sources || []).map((s, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       {s.source}

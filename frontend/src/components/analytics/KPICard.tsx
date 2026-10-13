@@ -69,7 +69,7 @@ export const KPICard: React.FC<KPICardProps> = ({
         </div>
       </div>
 
-      <div style={{ fontSize: '1.9rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+      <div style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
         {value}
       </div>
 

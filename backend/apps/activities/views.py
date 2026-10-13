@@ -20,9 +20,13 @@ from apps.activities.services import (
     ActivityService, TaskService, NotificationService,
     SLAService, AutomationService, WorkQueueService
 )
+from apps.authentication.models import User, UserRole
 from apps.leads.models import Lead, LeadStatus
 from apps.opportunities.models import Opportunity
 from apps.accounts.models import Account
+
+
+from apps.authentication.backends import get_request_user, is_management_or_admin, is_sales_staff
 
 
 class ActivityViewSet(viewsets.ModelViewSet):
@@ -46,9 +50,24 @@ class ActivityViewSet(viewsets.ModelViewSet):
         discovery_id = self.request.query_params.get('discovery')
         demo_id = self.request.query_params.get('demo')
         poc_id = self.request.query_params.get('poc')
+        partner_id = self.request.query_params.get('partner')
+        deal_reg_id = self.request.query_params.get('deal_registration')
         activity_type = self.request.query_params.get('activity_type')
         activity_status = self.request.query_params.get('status')
         performed_by_id = self.request.query_params.get('performed_by')
+
+        user = get_request_user(self.request)
+        if user and (getattr(user, 'is_partner_user', False) or getattr(user, 'role', None) == 'PARTNER_USER'):
+            partner_prof = getattr(user, 'partner_profile', None)
+            if partner_prof:
+                qs = qs.filter(Q(partner=partner_prof.partner) | Q(deal_registration__partner=partner_prof.partner))
+        elif is_sales_staff(user):
+            qs = qs.filter(Q(lead__owner=user) | Q(opportunity__owner=user) | Q(performed_by=user))
+
+        if partner_id:
+            qs = qs.filter(partner_id=partner_id)
+        if deal_reg_id:
+            qs = qs.filter(deal_registration_id=deal_reg_id)
 
         if account_id:
             qs = qs.filter(account_id=account_id)
@@ -75,33 +94,46 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        output_serializer = self.get_serializer(serializer.instance)
+        headers = self.get_success_headers(output_serializer.data)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
-        user = self.request.user if self.request.user.is_authenticated else None
+        user = get_request_user(self.request)
         data = serializer.validated_data
 
-        activity = ActivityService.log_activity(
-            subject=data.get('subject'),
-            activity_type=data.get('activity_type'),
-            performed_by=user,
-            account=data.get('account'),
-            contact=data.get('contact'),
-            lead=data.get('lead'),
-            opportunity=data.get('opportunity'),
-            proposal=data.get('proposal'),
-            discovery=data.get('discovery'),
-            demo=data.get('demo'),
-            poc=data.get('poc'),
-            description_notes=data.get('description_notes', ''),
-            outcome_notes=data.get('outcome_notes', ''),
-            conducted_at=data.get('conducted_at') or timezone.now(),
-            duration_minutes=data.get('duration_minutes', 30),
-            status=data.get('status', ActivityStatus.COMPLETED),
-            priority=data.get('priority', 'MEDIUM'),
-            next_action_description=data.get('next_action_description'),
-            next_action_due_at=data.get('next_action_due_at'),
-            create_next_task=bool(data.get('next_action_due_at'))
-        )
-        return activity
+        try:
+            activity = ActivityService.log_activity(
+                subject=data.get('subject'),
+                activity_type=data.get('activity_type'),
+                performed_by=user,
+                account=data.get('account'),
+                contact=data.get('contact'),
+                lead=data.get('lead'),
+                opportunity=data.get('opportunity'),
+                proposal=data.get('proposal'),
+                discovery=data.get('discovery'),
+                demo=data.get('demo'),
+                poc=data.get('poc'),
+                description_notes=data.get('description_notes', ''),
+                outcome_notes=data.get('outcome_notes', ''),
+                conducted_at=data.get('conducted_at') or timezone.now(),
+                duration_minutes=data.get('duration_minutes', 30),
+                status=data.get('status', ActivityStatus.COMPLETED),
+                priority=data.get('priority', 'MEDIUM'),
+                next_action_description=data.get('next_action_description'),
+                next_action_due_at=data.get('next_action_due_at'),
+                create_next_task=bool(data.get('next_action_due_at'))
+            )
+            serializer.instance = activity
+            return activity
+        except Exception as e:
+            from rest_framework.exceptions import ValidationError as DRFValidationError
+            raise DRFValidationError({'detail': str(e)})
 
     @action(detail=True, methods=['post'], url_path='complete')
     def complete(self, request, pk=None):
@@ -158,19 +190,23 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='records-missing-next-action')
     def records_missing_next_action(self, request):
+        user = get_request_user(request)
         now = timezone.now()
-        leads_missing = Lead.objects.filter(
-            status=LeadStatus.ACTIVE,
+        leads_qs = Lead.objects.filter(status=LeadStatus.ACTIVE)
+        opps_qs = Opportunity.objects.filter(status='OPEN')
+        if is_sales_staff(user):
+            leads_qs = leads_qs.filter(owner=user)
+            opps_qs = opps_qs.filter(owner=user)
+
+        leads_missing = leads_qs.filter(
             next_activity_due_at__isnull=True
         ).values('id', 'account__company_name', 'primary_product__code', 'status', 'created_at')
 
-        leads_overdue = Lead.objects.filter(
-            status=LeadStatus.ACTIVE,
+        leads_overdue = leads_qs.filter(
             next_activity_due_at__lt=now
         ).values('id', 'account__company_name', 'primary_product__code', 'status', 'next_activity_due_at', 'next_action_description')
 
-        opps_missing = Opportunity.objects.filter(
-            status='OPEN',
+        opps_missing = opps_qs.filter(
             next_activity_due_at__isnull=True
         ).values('id', 'account__company_name', 'total_contract_value', 'currency', 'expected_close_date')
 
@@ -201,6 +237,10 @@ class TaskViewSet(viewsets.ModelViewSet):
         opp_id = self.request.query_params.get('opportunity')
         account_id = self.request.query_params.get('account')
 
+        user = get_request_user(self.request)
+        if is_sales_staff(user):
+            qs = qs.filter(Q(assigned_to=user) | Q(related_lead__owner=user))
+
         if assigned_to_id:
             qs = qs.filter(assigned_to_id=assigned_to_id)
         if task_status:
@@ -219,28 +259,42 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        output_serializer = self.get_serializer(serializer.instance)
+        headers = self.get_success_headers(output_serializer.data)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
         data = serializer.validated_data
-        TaskService.create_task(
-            title=data.get('title'),
-            assigned_to=data.get('assigned_to'),
-            due_date=data.get('due_date'),
-            created_by=user,
-            description=data.get('description', ''),
-            task_type=data.get('task_type', 'FOLLOW_UP'),
-            priority=data.get('priority', 'MEDIUM'),
-            related_lead=data.get('related_lead'),
-            related_opportunity=data.get('related_opportunity'),
-            related_account=data.get('related_account'),
-            related_contact=data.get('related_contact'),
-            related_discovery=data.get('related_discovery'),
-            related_demo=data.get('related_demo'),
-            related_poc=data.get('related_poc'),
-            related_proposal=data.get('related_proposal'),
-            related_handoff=data.get('related_handoff'),
-            source_activity=data.get('source_activity')
-        )
+        try:
+            task = TaskService.create_task(
+                title=data.get('title'),
+                assigned_to=data.get('assigned_to'),
+                due_date=data.get('due_date'),
+                created_by=user,
+                description=data.get('description', ''),
+                task_type=data.get('task_type', 'FOLLOW_UP'),
+                priority=data.get('priority', 'MEDIUM'),
+                related_lead=data.get('related_lead'),
+                related_opportunity=data.get('related_opportunity'),
+                related_account=data.get('related_account'),
+                related_contact=data.get('related_contact'),
+                related_discovery=data.get('related_discovery'),
+                related_demo=data.get('related_demo'),
+                related_poc=data.get('related_poc'),
+                related_proposal=data.get('related_proposal'),
+                related_handoff=data.get('related_handoff'),
+                source_activity=data.get('source_activity')
+            )
+            serializer.instance = task
+            return task
+        except Exception as e:
+            from rest_framework.exceptions import ValidationError as DRFValidationError
+            raise DRFValidationError({'detail': str(e)})
 
     @action(detail=True, methods=['post'], url_path='complete')
     def complete(self, request, pk=None):
@@ -271,8 +325,9 @@ class NotificationViewSet(viewsets.ModelViewSet):
         is_read = self.request.query_params.get('is_read')
         notif_type = self.request.query_params.get('notification_type')
 
-        if self.request.user.is_authenticated and not self.request.user.is_superuser:
-            qs = qs.filter(recipient=self.request.user)
+        user = get_request_user(self.request)
+        if user and not user.is_superuser:
+            qs = qs.filter(recipient=user)
         elif recipient_id:
             qs = qs.filter(recipient_id=recipient_id)
 
@@ -361,7 +416,7 @@ class WorkQueueView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         role_view = request.query_params.get('role_view')
         data = WorkQueueService.get_work_queue_data(user=user, role_view=role_view)
 

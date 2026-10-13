@@ -3,9 +3,10 @@ import {
   FlaskConical, CheckCircle2, AlertTriangle, XCircle, Clock,
   ArrowRight, RefreshCw, Plus, Trash2,
   Building2, Users, Target,
-  MapPin, BarChart3, Edit3
+  MapPin, BarChart3, Edit3, AlertCircle
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Modal } from './common/Modal';
 import type { POC, POCSuccessCriterion, POCReadiness } from '../services/api';
 
 interface POCWorkspaceProps {
@@ -31,7 +32,7 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
   // Scope & Operational Parameters State
   const [scopeDesc, setScopeDesc] = useState('');
   const [geography, setGeography] = useState('');
-  const [usersCount, setUsersCount] = useState(15);
+  const [usersCount, setUsersCount] = useState<number>(0);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [savingScope, setSavingScope] = useState(false);
@@ -80,30 +81,67 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
   // Complete POC Action
   const [completingPOC, setCompletingPOC] = useState(false);
 
+  // Initialize New POC Pilot Trial
+  const [showInitModal, setShowInitModal] = useState(false);
+  const [availableLeads, setAvailableLeads] = useState<any[]>([]);
+  const [initLeadId, setInitLeadId] = useState(leadId || '');
+  const [initializingPOC, setInitializingPOC] = useState(false);
+
   const showNotify = (type: 'success' | 'error', text: string) => {
     setFeedbackMsg({ type, text });
     setTimeout(() => setFeedbackMsg(null), 5000);
   };
 
   useEffect(() => {
+    if (leadId) setInitLeadId(leadId);
     loadPOCs();
+    loadAvailableLeads();
   }, [leadId, initialPOCId]);
+
+  const loadAvailableLeads = async () => {
+    try {
+      const res = await api.getLeads();
+      const list = Array.isArray(res) ? res : (res.results || []);
+      setAvailableLeads(list);
+    } catch (e) {
+      console.warn('Could not load leads for POC selection:', e);
+    }
+  };
 
   const loadPOCs = async () => {
     setLoading(true);
     try {
-      const res = await api.getPOCs(leadId ? { lead: leadId } : undefined);
-      setPocs(res.results);
+      const res = await api.getPOCs();
+      let list = res.results || [];
+
+      // If a leadId is provided and no POC exists in the list for this lead, auto-initialize it
+      if (leadId && !list.some(p => p.lead === leadId)) {
+        try {
+          const initRes = await api.initPOC(leadId);
+          if (initRes && initRes.id) {
+            list = [initRes, ...list.filter(p => p.id !== initRes.id)];
+          }
+        } catch (initErr) {
+          console.warn('Auto init POC warning in loadPOCs:', initErr);
+        }
+      }
+
+      setPocs(list);
 
       let active: POC | null = null;
       if (initialPOCId) {
-        active = res.results.find(p => p.id === initialPOCId) || null;
+        active = list.find(p => p.id === initialPOCId) || null;
       }
-      if (!active && res.results.length > 0) {
-        active = res.results[0];
+      if (!active && leadId) {
+        active = list.find(p => p.lead === leadId) || null;
+      }
+      if (!active && list.length > 0) {
+        active = list[0];
       }
       if (active) {
         selectPOCRecord(active);
+      } else {
+        setSelectedPOC(null);
       }
     } catch (err: any) {
       showNotify('error', err.message || 'Failed to load POC trials');
@@ -112,11 +150,31 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
     }
   };
 
+  const handleInitPOC = async (targetLeadId?: string) => {
+    const lid = targetLeadId || initLeadId || leadId;
+    if (!lid) {
+      showNotify('error', 'Please select an account / lead to initialize a POC pilot trial.');
+      return;
+    }
+    setInitializingPOC(true);
+    try {
+      const created = await api.initPOC(lid);
+      setPocs(prev => [created, ...prev.filter(p => p.id !== created.id)]);
+      selectPOCRecord(created);
+      setShowInitModal(false);
+      showNotify('success', `POC Pilot Trial initialized successfully for ${created.account_name || 'selected lead'}!`);
+    } catch (err: any) {
+      showNotify('error', err.message || 'Failed to initialize POC pilot trial');
+    } finally {
+      setInitializingPOC(false);
+    }
+  };
+
   const selectPOCRecord = async (poc: POC) => {
     setSelectedPOC(poc);
     setScopeDesc(poc.scope_description || '');
     setGeography(poc.geography_coverage || '');
-    setUsersCount(poc.users_count || 15);
+    setUsersCount(poc.users_count || 0);
     setStartDate(poc.start_date || '');
     setEndDate(poc.end_date || '');
     setBaselineNotes(poc.baseline_notes || '');
@@ -381,29 +439,67 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
     );
   }
 
+  const scrollToSection = (sectionId: string, focusSelector?: string) => {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('highlight-section-pulse');
+      setTimeout(() => el.classList.remove('highlight-section-pulse'), 2500);
+      if (focusSelector) {
+        const input = el.querySelector(focusSelector) as HTMLElement;
+        if (input) setTimeout(() => input.focus(), 400);
+      }
+    }
+  };
+
+  const getTargetSectionForGate = (gateCodeOrText: string) => {
+    const text = (gateCodeOrText || '').toUpperCase();
+    if (text.includes('SCOPE') || text.includes('OWNER') || text.includes('DATES') || text.includes('TIMELINE') || text.includes('BOUNDARIES')) {
+      return { id: 'poc-section-scope', selector: 'textarea', label: 'Pilot Scope & Timeline' };
+    }
+    if (text.includes('CRITERIA')) {
+      return { id: 'poc-section-criteria', selector: undefined, label: 'Success Criteria' };
+    }
+    if (text.includes('PARTICIPANT') || text.includes('USER')) {
+      return { id: 'poc-section-participants', selector: undefined, label: 'Trial Participants' };
+    }
+    if (text.includes('RESULT') || text.includes('FEEDBACK') || text.includes('METRIC') || text.includes('SIGN-OFF')) {
+      return { id: 'poc-section-results', selector: 'textarea', label: 'Results & Sign-off' };
+    }
+    if (text.includes('ACTION') || text.includes('ACTIVITY')) {
+      return { id: 'poc-section-next-action', selector: 'input', label: 'Next Action' };
+    }
+    return { id: 'poc-section-scope', selector: undefined, label: 'Missing Section' };
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Toast Alert */}
       {feedbackMsg && (
-        <div style={{
-          position: 'fixed',
-          top: '24px',
-          right: '24px',
-          zIndex: 9999,
-          background: feedbackMsg.type === 'success'
-            ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
-            : 'linear-gradient(135deg, #DC2626 0%, #EF4444 100%)',
-          color: '#FFFFFF',
-          padding: '14px 20px',
-          borderRadius: '10px',
-          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          fontSize: '0.88rem',
-          fontWeight: 600,
-          border: '1px solid rgba(255, 255, 255, 0.2)'
-        }}>
+        <div
+          className="in-app-alert-item"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 99999,
+            background: feedbackMsg.type === 'success'
+              ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
+              : 'linear-gradient(135deg, #DC2626 0%, #EF4444 100%)',
+            color: '#FFFFFF',
+            padding: '14px 20px',
+            borderRadius: '10px',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none'
+          }}
+        >
           {feedbackMsg.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
           {feedbackMsg.text}
         </div>
@@ -418,7 +514,6 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
               <h1 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>
                 POC / Pilot Management Workspace
               </h1>
-              <span className="badge badge-info" style={{ fontSize: '0.72rem' }}>Phase 6</span>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
               Proof of Concept Operational Pilots • Configurable Success Criteria • Baseline vs. Verified Results &amp; Customer Sign-Off
@@ -434,6 +529,22 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
             >
               <RefreshCw size={14} className={refreshing ? 'spin-animation' : ''} />
               Refresh
+            </button>
+
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                if (leadId && (!selectedPOC || selectedPOC.lead !== leadId)) {
+                  handleInitPOC(leadId);
+                } else {
+                  setShowInitModal(true);
+                }
+              }}
+              disabled={initializingPOC}
+              style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Plus size={14} />
+              <span>{initializingPOC ? 'Initializing...' : 'New Pilot Trial'}</span>
             </button>
 
             {selectedPOC && selectedPOC.status !== 'COMPLETED' && selectedPOC.status !== 'NOT_REQUIRED' && (
@@ -497,13 +608,38 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
 
       {!selectedPOC ? (
         <div className="glass-panel" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-          <FlaskConical size={48} style={{ opacity: 0.3, margin: '0 auto 16px' }} />
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
-            No POC Pilot Record Selected
+          <FlaskConical size={48} color="var(--accent-cyan)" style={{ opacity: 0.6, margin: '0 auto 16px' }} />
+          <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>
+            No Active POC Pilot Trial Selected
           </h3>
-          <p style={{ maxWidth: '500px', margin: '0 auto', fontSize: '0.9rem' }}>
-            Please select an existing POC record above or progress a Demo session to begin pilot trial onboarding.
+          <p style={{ maxWidth: '520px', margin: '0 auto 24px', fontSize: '0.9rem', lineHeight: 1.5 }}>
+            {leadId
+              ? 'A POC Pilot Trial has not been initialized yet for this lead. Initialize now to begin a 30-day operational trial with pre-seeded success criteria.'
+              : 'There are no active POC pilot trials selected. Select an existing trial from above or initialize a new pilot trial for any account.'}
           </p>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+            {leadId ? (
+              <button
+                className="btn btn-primary"
+                onClick={() => handleInitPOC(leadId)}
+                disabled={initializingPOC}
+                style={{ padding: '10px 24px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <Plus size={16} />
+                <span>{initializingPOC ? 'Initializing Pilot Trial...' : 'Initialize Pilot Trial for Current Lead'}</span>
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowInitModal(true)}
+                style={{ padding: '10px 24px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <Plus size={16} />
+                <span>Initialize New POC Pilot Trial</span>
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
@@ -511,7 +647,7 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
             {/* CARD 1: Core Context & Operational Scope */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="poc-section-scope" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <MapPin size={18} color="var(--accent-cyan)" />
@@ -621,7 +757,7 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
             </div>
 
             {/* CARD 2: CONFIGURABLE SUCCESS CRITERIA */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="poc-section-criteria" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -729,7 +865,7 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
             </div>
 
             {/* CARD 3: PILOT PARTICIPANTS & USERS */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="poc-section-participants" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -793,7 +929,7 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
             </div>
 
             {/* CARD 4: BASELINE, VERIFIED RESULTS & CUSTOMER FEEDBACK */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="poc-section-results" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <BarChart3 size={18} color="var(--success)" />
@@ -868,7 +1004,7 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
             </div>
 
             {/* CARD 5: NEXT ACTION */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="poc-section-next-action" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ marginBottom: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Clock size={18} color="var(--primary)" />
@@ -934,9 +1070,20 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
                 {readiness?.checklist.map(item => {
                   const isDone = item.status === 'COMPLETED';
+                  const target = getTargetSectionForGate(item.gate_code);
+
                   return (
                     <div
                       key={item.gate_code}
+                      onClick={() => {
+                        if (!isDone) {
+                          if (item.gate_code === 'POC_CRITERIA' && (!selectedPOC.criteria_items || selectedPOC.criteria_items.length === 0)) {
+                            setShowAddCritModal(true);
+                          } else {
+                            scrollToSection(target.id, target.selector);
+                          }
+                        }
+                      }}
                       style={{
                         padding: '10px 12px',
                         background: 'var(--bg-surface)',
@@ -944,8 +1091,17 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        borderLeft: isDone ? '3px solid var(--success)' : '3px solid var(--danger)'
+                        borderLeft: isDone ? '3px solid var(--success)' : '3px solid var(--danger)',
+                        cursor: isDone ? 'default' : 'pointer',
+                        transition: 'all 0.15s ease'
                       }}
+                      onMouseEnter={(e) => {
+                        if (!isDone) e.currentTarget.style.borderColor = 'var(--primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isDone) e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                      }}
+                      title={!isDone ? `Click to jump to ${target.label} and fill missing data` : undefined}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {isDone ? (
@@ -959,13 +1115,18 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
                         </div>
                       </div>
 
-                      <span style={{
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        color: isDone ? 'var(--success)' : 'var(--danger)'
-                      }}>
-                        {isDone ? 'READY' : 'MISSING'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          color: isDone ? 'var(--success)' : 'var(--danger)'
+                        }}>
+                          {isDone ? 'READY' : 'MISSING'}
+                        </span>
+                        {!isDone && (
+                          <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 700 }}>➔</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -973,16 +1134,51 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
 
               {/* Missing Fields Explanations */}
               {readiness && !readiness.is_ready && readiness.missing_fields.length > 0 && (
-                <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', marginBottom: '20px' }}>
+                <div style={{ padding: '14px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', marginBottom: '20px' }}>
                   <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--danger)', marginBottom: '4px' }}>
-                    POC cannot be completed.
+                    POC cannot be completed:
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Missing items:</div>
-                  <ul style={{ margin: '4px 0 0 16px', padding: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                    {readiness.missing_fields.map((mf, i) => (
-                      <li key={i}>{mf}</li>
-                    ))}
-                  </ul>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Click any missing item below to jump directly to it:</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {readiness.missing_fields.map((mf, i) => {
+                      const target = getTargetSectionForGate(mf);
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => {
+                            if (mf.toLowerCase().includes('criteria') && (!selectedPOC.criteria_items || selectedPOC.criteria_items.length === 0)) {
+                              setShowAddCritModal(true);
+                            } else {
+                              scrollToSection(target.id, target.selector);
+                            }
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            background: 'var(--bg-surface)',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            color: 'var(--text-primary)',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <AlertCircle size={13} color="var(--danger)" />
+                            {mf}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 700 }}>
+                            Fill In ➔
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -1023,311 +1219,355 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
       )}
 
       {/* MODAL 1: ADD SUCCESS CRITERION */}
-      {showAddCritModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '500px', padding: '24px', background: 'var(--bg-surface-elevated)' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '16px' }}>Define POC Success Criterion</h3>
-            <form onSubmit={handleAddCriterion}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Criterion Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Daily Van Invoicing & Reconciliation Latency"
-                    value={critName}
-                    onChange={(e) => setCritName(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Category</label>
-                  <select
-                    value={critCategory}
-                    onChange={(e) => setCritCategory(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  >
-                    <option value="OPERATIONAL_EFFICIENCY">Operational Efficiency</option>
-                    <option value="FINANCIAL_REVENUE">Financial & Revenue Reconciliation</option>
-                    <option value="COMPLIANCE">Regulatory & ZATCA Compliance</option>
-                    <option value="USER_ADOPTION">Driver / User Adoption</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Customer Baseline Measurement *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 4.5 hours manual depot cash reconciliation every evening"
-                    value={critBaseline}
-                    onChange={(e) => setCritBaseline(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Expected Target *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. < 25 minutes automated end-of-day van settlement"
-                    value={critTarget}
-                    onChange={(e) => setCritTarget(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Notes / Testing Procedure</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Measured via automated cloud sync telemetry across all 15 vans"
-                    value={critNotes}
-                    onChange={(e) => setCritNotes(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowAddCritModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={savingCrit}
-                >
-                  {savingCrit ? 'Saving...' : 'Add Criterion'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showAddCritModal}
+        onClose={() => setShowAddCritModal(false)}
+        title="Define POC Success Criterion"
+        subtitle="Add measurable customer operational or compliance test criteria."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Target size={20} />
           </div>
-        </div>
-      )}
+        }
+        maxWidth="520px"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowAddCritModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="add-criterion-form"
+              className="btn btn-primary"
+              disabled={savingCrit}
+            >
+              {savingCrit ? 'Saving...' : 'Add Criterion'}
+            </button>
+          </>
+        }
+      >
+        <form id="add-criterion-form" onSubmit={handleAddCriterion}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Criterion Name *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Daily Van Invoicing & Reconciliation Latency"
+                value={critName}
+                onChange={(e) => setCritName(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Category</label>
+              <select
+                value={critCategory}
+                onChange={(e) => setCritCategory(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              >
+                <option value="OPERATIONAL_EFFICIENCY">Operational Efficiency</option>
+                <option value="FINANCIAL_REVENUE">Financial & Revenue Reconciliation</option>
+                <option value="COMPLIANCE">Regulatory & ZATCA Compliance</option>
+                <option value="USER_ADOPTION">Driver / User Adoption</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Customer Baseline Measurement *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. 4.5 hours manual depot cash reconciliation every evening"
+                value={critBaseline}
+                onChange={(e) => setCritBaseline(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Expected Target *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. < 25 minutes automated end-of-day van settlement"
+                value={critTarget}
+                onChange={(e) => setCritTarget(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Notes / Testing Procedure</label>
+              <input
+                type="text"
+                placeholder="e.g. Measured via automated cloud sync telemetry across all 15 vans"
+                value={critNotes}
+                onChange={(e) => setCritNotes(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL 2: UPDATE CRITERION RESULT */}
-      {editingCrit && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '480px', padding: '24px', background: 'var(--bg-surface-elevated)' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '8px' }}>Record Actual Result</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              Criterion: <strong>{editingCrit.name}</strong> (Target: {editingCrit.expected_target})
-            </p>
-
-            <form onSubmit={handleSaveCritResult}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Actual Measured Result *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 18 minutes average daily settlement across 15 vans"
-                    value={editActualResult}
-                    onChange={(e) => setEditActualResult(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={editIsMet}
-                    onChange={(e) => setEditIsMet(e.target.checked)}
-                    style={{ width: '16px', height: '16px', accentColor: 'var(--success)' }}
-                  />
-                  <span>Target Successfully Met</span>
-                </label>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setEditingCrit(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={updatingCrit}
-                >
-                  {updatingCrit ? 'Saving...' : 'Save Result'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={!!editingCrit}
+        onClose={() => setEditingCrit(null)}
+        title="Record Actual Result"
+        subtitle={editingCrit ? `Criterion: ${editingCrit.name} (Target: ${editingCrit.expected_target})` : undefined}
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckCircle2 size={20} />
           </div>
-        </div>
-      )}
+        }
+        maxWidth="480px"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setEditingCrit(null)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="save-crit-result-form"
+              className="btn btn-primary"
+              disabled={updatingCrit}
+            >
+              {updatingCrit ? 'Saving...' : 'Save Result'}
+            </button>
+          </>
+        }
+      >
+        <form id="save-crit-result-form" onSubmit={handleSaveCritResult}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Actual Measured Result *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. 18 minutes average daily settlement across 15 vans"
+                value={editActualResult}
+                onChange={(e) => setEditActualResult(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
+              <input
+                type="checkbox"
+                checked={editIsMet}
+                onChange={(e) => setEditIsMet(e.target.checked)}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--success)' }}
+              />
+              <span style={{ fontWeight: 600 }}>Target Successfully Met</span>
+            </label>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL 3: ADD PARTICIPANT */}
-      {showAddPartModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '460px', padding: '24px', background: 'var(--bg-surface-elevated)' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '16px' }}>Add Trial Participant</h3>
-            <form onSubmit={handleAddParticipant}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Participant Type *</label>
-                  <select
-                    value={partType}
-                    onChange={(e: any) => setPartType(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  >
-                    <option value="PILOT_USER">Pilot Field User / Driver</option>
-                    <option value="ENGINEER">Technical Deployment Engineer</option>
-                    <option value="CUSTOMER">Customer Stakeholder / Manager</option>
-                    <option value="INTERNAL">Internal Team</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Tariq Al-Ghamdi"
-                    value={partName}
-                    onChange={(e) => setPartName(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Email Address *</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="e.g. tariq@distribution.sa"
-                    value={partEmail}
-                    onChange={(e) => setPartEmail(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Role / Title</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Senior Fleet Van Driver"
-                    value={partRole}
-                    onChange={(e) => setPartRole(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowAddPartModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={savingPart}
-                >
-                  {savingPart ? 'Adding...' : 'Add Participant'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showAddPartModal}
+        onClose={() => setShowAddPartModal(false)}
+        title="Add Trial Participant"
+        subtitle="Record stakeholder, pilot user, or deployment engineer."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Users size={20} />
           </div>
-        </div>
-      )}
+        }
+        maxWidth="480px"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowAddPartModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="add-participant-form"
+              className="btn btn-primary"
+              disabled={savingPart}
+            >
+              {savingPart ? 'Adding...' : 'Add Participant'}
+            </button>
+          </>
+        }
+      >
+        <form id="add-participant-form" onSubmit={handleAddParticipant}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Participant Type *</label>
+              <select
+                value={partType}
+                onChange={(e: any) => setPartType(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              >
+                <option value="PILOT_USER">Pilot Field User / Driver</option>
+                <option value="ENGINEER">Technical Deployment Engineer</option>
+                <option value="CUSTOMER">Customer Stakeholder / Manager</option>
+                <option value="INTERNAL">Internal Team</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Full Name *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Tariq Al-Ghamdi"
+                value={partName}
+                onChange={(e) => setPartName(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Email Address *</label>
+              <input
+                type="email"
+                required
+                placeholder="e.g. tariq@distribution.sa"
+                value={partEmail}
+                onChange={(e) => setPartEmail(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Role / Title</label>
+              <input
+                type="text"
+                placeholder="e.g. Senior Fleet Van Driver"
+                value={partRole}
+                onChange={(e) => setPartRole(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL 4: STAGE NOT REQUIRED (OPTIONAL PIPELINE BYPASS) */}
-      {showNotRequiredModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '480px', padding: '24px', background: 'var(--bg-surface-elevated)' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '8px', color: 'var(--warning)' }}>
-              Mark POC Pilot as NOT REQUIRED
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              If POC is configured as OPTIONAL in the product pipeline, you may waive the trial stage. You must record an auditable business reason.
-            </p>
-
-            <form onSubmit={handleMarkNotRequired}>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
-                  Auditable Waiver Reason *
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="e.g. Customer waived 30-day POC trial after reviewing on-site reference architecture at Al-Munajem distribution hub; proceeding directly to SQL."
-                  value={notRequiredReason}
-                  onChange={(e) => setNotRequiredReason(e.target.value)}
-                  style={{ width: '100%', padding: '10px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowNotRequiredModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={savingNotRequired}
-                  style={{ background: 'var(--warning)', borderColor: 'var(--warning)', color: '#000000', fontWeight: 800 }}
-                >
-                  {savingNotRequired ? 'Recording...' : 'Confirm Waiver & Skip Stage'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showNotRequiredModal}
+        onClose={() => setShowNotRequiredModal(false)}
+        title="Mark POC Pilot as NOT REQUIRED"
+        subtitle="If POC is configured as OPTIONAL in the product pipeline, you may waive the trial stage. You must record an auditable business reason."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AlertTriangle size={20} />
           </div>
+        }
+        maxWidth="500px"
+        accentGradient="linear-gradient(90deg, #F59E0B 0%, #D97706 100%)"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowNotRequiredModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="mark-not-required-form"
+              className="btn btn-primary"
+              disabled={savingNotRequired}
+              style={{ background: 'var(--warning)', borderColor: 'var(--warning)', color: '#000000', fontWeight: 800 }}
+            >
+              {savingNotRequired ? 'Recording...' : 'Confirm Waiver & Skip Stage'}
+            </button>
+          </>
+        }
+      >
+        <form id="mark-not-required-form" onSubmit={handleMarkNotRequired}>
+          <div>
+            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+              Auditable Waiver Reason *
+            </label>
+            <textarea
+              rows={4}
+              required
+              placeholder="e.g. Customer waived 30-day POC trial after reviewing on-site reference architecture at Al-Munajem distribution hub; proceeding directly to SQL."
+              value={notRequiredReason}
+              onChange={(e) => setNotRequiredReason(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.85rem' }}
+            />
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL 5: INITIALIZE POC PILOT TRIAL */}
+      <Modal
+        isOpen={showInitModal}
+        onClose={() => setShowInitModal(false)}
+        title="Initialize POC Pilot Trial"
+        subtitle="Establish a structured 30-day operational trial workspace with baseline KPIs and evaluation gates."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <FlaskConical size={20} />
+          </div>
+        }
+        maxWidth="520px"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowInitModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => handleInitPOC(initLeadId)}
+              disabled={initializingPOC || !initLeadId}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Plus size={14} />
+              <span>{initializingPOC ? 'Initializing...' : 'Initialize Pilot Trial'}</span>
+            </button>
+          </>
+        }
+      >
+        <div>
+          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            TARGET ACCOUNT / LEAD
+          </label>
+          <select
+            className="input-field"
+            value={initLeadId}
+            onChange={(e) => setInitLeadId(e.target.value)}
+            style={{ width: '100%', padding: '10px', fontSize: '0.85rem', background: 'var(--bg-surface)' }}
+          >
+            <option value="">-- Choose an Account / Lead --</option>
+            {availableLeads.map(l => (
+              <option key={l.id} value={l.id}>
+                {l.account_name || 'Account'} ({l.primary_product_name || 'Product'}) - Stage: {l.current_stage_name || l.status}
+              </option>
+            ))}
+          </select>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+            Success criteria will be automatically populated from confirmed Discovery problems and product solution capabilities.
+          </p>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

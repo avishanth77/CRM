@@ -1,0 +1,705 @@
+================================================================================
+            TEXOL CRM - PRODUCT LED DEAL (PLD) QUALIFICATION QUESTIONS           
+================================================================================
+
+This document contains ONLY the authoritative PLD Qualification Questionnaires,
+dimensions, weightings, and answer scoring options across all products.
+
+SUMMARY:
+- Total Products Configured: 5
+- Total PLD Qualification Questions: 47
+
+  1. AL Mawasil (AL_MAWASIL): 9 Questions
+  2. EntAura.AI (ENTAURA): 8 Questions
+  3. SpeakOrder (SPEAKORDER): 8 Questions
+  4. TaskForces ERP (TASKFORCES): 8 Questions
+  5. VanForces (VANFORCES): 14 Questions
+
+================================================================================
+
+================================================================================
+PRODUCT 1: AL MAWASIL (AL_MAWASIL)
+Questionnaire: AL Mawasil™ ZATCA E-Invoicing & Tax Compliance Qualification Questionnaire
+Stage: PLD_QUALIFICATION | Version: 1 | Total Questions: 9
+================================================================================
+
+--------------------------------------------------------------------------------
+Q1. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: Is the organization a VAT-registered enterprise in Saudi Arabia subject to ZATCA regulations?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Yes, Large Taxpayer (>SAR 50M Turnover - Phase 2 Wave 1-5)
+             (Value Code: LARGE_TAXPAYER)
+  [ 85 pts]  Yes, Medium Taxpayer (SAR 10M-50M - Phase 2 Wave 6-10)
+             (Value Code: MEDIUM_TAXPAYER)
+  [ 65 pts]  Yes, Small Enterprise (<SAR 10M - Standard Phase 2)
+             (Value Code: SMALL_TAXPAYER)
+  [  0 pts]  Non-Saudi or Non-VAT Registered Business
+             (Value Code: NON_VAT)
+
+--------------------------------------------------------------------------------
+Q2. [COMMERCIAL_POTENTIAL] (Type: CHOICE, Weight: 10 pts)
+Question: What is the average monthly volume of B2B and B2C tax invoices generated?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  50,000+ Invoices/month (High-Volume Enterprise Clearance)
+             (Value Code: VOL_50K_PLUS)
+  [ 85 pts]  10,000 to 49,999 Invoices/month
+             (Value Code: VOL_10K_50K)
+  [ 65 pts]  2,000 to 9,999 Invoices/month
+             (Value Code: VOL_2K_10K)
+  [ 35 pts]  Fewer than 2,000 Invoices/month
+             (Value Code: VOL_UNDER_2K)
+
+--------------------------------------------------------------------------------
+Q3. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: Which primary ERP or core accounting system currently generates sales invoices?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [ 95 pts]  SAP ERP (ECC / S4HANA Direct RFC / REST)
+             (Value Code: SAP)
+  [ 90 pts]  Oracle Fusion / NetSuite / E-Business Suite
+             (Value Code: ORACLE)
+  [ 85 pts]  Microsoft Dynamics 365 (F&O / Business Central)
+             (Value Code: DYNAMICS)
+  [ 60 pts]  Odoo / Custom In-house Legacy ERP
+             (Value Code: ODOO_CUSTOM)
+  [ 30 pts]  Manual Excel / Standalone Desktop Invoicing
+             (Value Code: MANUAL_EXCEL)
+
+--------------------------------------------------------------------------------
+Q4. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: What is the current ZATCA Fatoorah Phase 2 integration status?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Impending Deadline: Active ZATCA notification with pending penalties
+             (Value Code: PENALTIES_IMPENDING)
+  [ 85 pts]  Approaching integration wave deadline within 60 days
+             (Value Code: DEADLINE_60_DAYS)
+  [ 70 pts]  Using fragile custom scripts with recurring rejection errors
+             (Value Code: CUSTOM_SCRIPTS_FAILING)
+  [ 50 pts]  Phase 1 Only (QR code without cryptographic stamping)
+             (Value Code: PHASE_1_ONLY)
+
+--------------------------------------------------------------------------------
+Q5. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: Does the business issue Standard Tax Invoices (B2B) or Simplified Invoices (B2C)?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Both B2B Clearance API and B2C Reporting API within 24h
+             (Value Code: BOTH_B2B_B2C)
+  [ 80 pts]  B2B Standard Tax Invoices Only (Pre-clearance before dispatch)
+             (Value Code: B2B_ONLY)
+  [ 60 pts]  B2C Simplified Invoices with Cryptographic QR Code Only
+             (Value Code: B2C_ONLY)
+  [ 20 pts]  Internal Nominal Invoices Only
+             (Value Code: NOMINAL_ONLY)
+
+--------------------------------------------------------------------------------
+Q6. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: Has the company experienced ZATCA invoice rejections or tax audit notices?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Active fines or audit notice received from tax authority
+             (Value Code: ACTIVE_FINES)
+  [ 80 pts]  Frequent XML schema rejection / CSID certificate renewal failures
+             (Value Code: XML_REJECTIONS)
+  [ 55 pts]  Heavy manual rework during monthly VAT filing cycles
+             (Value Code: MANUAL_REWORK)
+  [ 30 pts]  No prior penalties, seeking proactive regulatory compliance
+             (Value Code: PROACTIVE)
+
+--------------------------------------------------------------------------------
+Q7. [BUSINESS_VALUE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the estimated financial and commercial exposure from non-compliance?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Severe Risk: Commercial shipment stop / statutory fines (>=SAR 500k)
+             (Value Code: IMPACT_HIGH)
+  [ 75 pts]  High Risk: Customer payment withholding & clearance friction (SAR 100k-500k)
+             (Value Code: IMPACT_MED)
+  [ 45 pts]  Moderate: Heavy manual IT maintenance overhead (<SAR 100k)
+             (Value Code: IMPACT_LOW)
+  [ 15 pts]  Negligible direct financial exposure
+             (Value Code: IMPACT_NEGLIGIBLE)
+
+--------------------------------------------------------------------------------
+Q8. [DECISION_ACCESS] (Type: CHOICE, Weight: 10 pts)
+Question: Who is leading the compliance vendor selection and holds final sign-off authority?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  CFO / Chief Financial Officer / Board of Directors (Direct Authority)
+             (Value Code: CFO_DIRECT)
+  [ 85 pts]  Head of Tax & Compliance with Authorized Budget
+             (Value Code: TAX_DIRECTOR)
+  [ 60 pts]  CIO / IT Applications Director without Dedicated Budget
+             (Value Code: IT_DIRECTOR)
+  [ 25 pts]  Junior Tax Accountant / Evaluator without authority
+             (Value Code: ACCOUNTANT)
+
+--------------------------------------------------------------------------------
+Q9. [TIMELINE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the required go-live timeline for live ZATCA sandbox & production onboarding?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Immediate (within 30 days - urgent statutory wave deadline)
+             (Value Code: IMMEDIATE_30D)
+  [ 80 pts]  Within 60 to 90 days (next scheduled integration wave)
+             (Value Code: WAVE_60_90D)
+  [ 50 pts]  Within 6 months (fiscal half-year)
+             (Value Code: HALF_YEAR)
+  [ 20 pts]  Exploratory / Greater than 6 months
+             (Value Code: EXPLORATORY)
+
+
+================================================================================
+PRODUCT 2: ENTAURA.AI (ENTAURA)
+Questionnaire: EntAura.AI™ Enterprise Context & Decision Intelligence Qualification Questionnaire
+Stage: PLD_QUALIFICATION | Version: 1 | Total Questions: 8
+================================================================================
+
+--------------------------------------------------------------------------------
+Q1. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: How many distinct enterprise data repositories does the organization operate?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  5+ Systems (ERP, CRM, SharePoint/DMS, Data Lake, HRIS)
+             (Value Code: REPOS_5_PLUS)
+  [ 80 pts]  3 to 4 Disparate Enterprise Applications
+             (Value Code: REPOS_3_4)
+  [ 50 pts]  1 to 2 Core Platforms
+             (Value Code: REPOS_1_2)
+  [ 20 pts]  Single Isolated Database / Monolith
+             (Value Code: REPOS_SINGLE)
+
+--------------------------------------------------------------------------------
+Q2. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: Has the organization experienced LLM hallucinations or lack of enterprise context in AI pilots?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Critical: AI pilots blocked due to hallucinations and untrusted outputs
+             (Value Code: HALLUCINATIONS_BLOCKING)
+  [ 85 pts]  High Friction: Generic ChatGPT/Copilot lacks proprietary business context
+             (Value Code: GENERIC_COPILOT_FAILS)
+  [ 60 pts]  Moderate: Manual copy-pasting of context required for every query
+             (Value Code: MANUAL_CONTEXT)
+  [ 35 pts]  No previous AI pilots, starting fresh context architecture
+             (Value Code: NEW_EXPLORATION)
+
+--------------------------------------------------------------------------------
+Q3. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: How much time do executives and knowledge workers spend searching for cross-silo data?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  8+ Hours/week per knowledge worker across disconnected systems
+             (Value Code: HOURS_8_PLUS)
+  [ 75 pts]  4 to 7 Hours/week searching through SharePoint and ERP reports
+             (Value Code: HOURS_4_7)
+  [ 45 pts]  1 to 3 Hours/week
+             (Value Code: HOURS_1_3)
+  [ 20 pts]  Minimal search friction reported
+             (Value Code: HOURS_MINIMAL)
+
+--------------------------------------------------------------------------------
+Q4. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: What are the organization's data privacy and residency requirements?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Strict On-Premises / Private Cloud in Saudi Arabia (SDAIA / NCA compliant)
+             (Value Code: SOVEREIGN_ONPREM)
+  [ 85 pts]  Regional Dedicated Cloud VPC (Oracle/AWS/Azure Saudi Regions)
+             (Value Code: SOVEREIGN_REGIONAL)
+  [ 60 pts]  Standard Public Multi-Tenant Cloud with encryption
+             (Value Code: SOVEREIGN_PUBLIC)
+  [ 30 pts]  No specific data residency restrictions
+             (Value Code: SOVEREIGN_NONE)
+
+--------------------------------------------------------------------------------
+Q5. [COMMERCIAL_POTENTIAL] (Type: CHOICE, Weight: 10 pts)
+Question: How many knowledge workers, managers, and analysts will use EntAura.AI?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  500+ Enterprise Knowledge Workers
+             (Value Code: USERS_500_PLUS)
+  [ 80 pts]  150 to 499 Users
+             (Value Code: USERS_150_499)
+  [ 60 pts]  50 to 149 Users
+             (Value Code: USERS_50_149)
+  [ 30 pts]  Fewer than 50 Users
+             (Value Code: USERS_UNDER_50)
+
+--------------------------------------------------------------------------------
+Q6. [BUSINESS_VALUE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the quantified annual financial return expected from autonomous decision intelligence?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Over SAR 1,000,000 annual productivity savings & faster revenue actions
+             (Value Code: SAVINGS_1M_PLUS)
+  [ 75 pts]  SAR 300,000 to SAR 1,000,000 annual productivity gain
+             (Value Code: SAVINGS_300K_1M)
+  [ 45 pts]  Under SAR 300,000
+             (Value Code: SAVINGS_UNDER_300K)
+  [ 20 pts]  Non-quantified innovation initiative
+             (Value Code: SAVINGS_UNQUANTIFIED)
+
+--------------------------------------------------------------------------------
+Q7. [DECISION_ACCESS] (Type: CHOICE, Weight: 10 pts)
+Question: Who is sponsoring and championing the enterprise context AI initiative?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  CEO / Chief Digital Officer / CIO (Direct Executive Sponsorship)
+             (Value Code: EXECUTIVE_SPONSOR)
+  [ 80 pts]  Head of Enterprise Architecture / Head of Analytics
+             (Value Code: ARCHITECT_SPONSOR)
+  [ 40 pts]  Innovation Manager without discretionary budget
+             (Value Code: INNOVATION_MGR)
+  [ 20 pts]  Individual Data Scientist / Developer
+             (Value Code: DEV_EVALUATOR)
+
+--------------------------------------------------------------------------------
+Q8. [TIMELINE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the target deployment timeline for the Enterprise Context Layer?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Immediate production pilot within 60-90 days
+             (Value Code: PILOT_60_90D)
+  [ 75 pts]  Within 3 to 6 months
+             (Value Code: TIMELINE_3_6M)
+  [ 45 pts]  Strategic roadmap (6 to 12 months)
+             (Value Code: TIMELINE_6_12M)
+  [ 15 pts]  Unscheduled exploratory evaluation (>12 months)
+             (Value Code: TIMELINE_UNSCHEDULED)
+
+
+================================================================================
+PRODUCT 3: SPEAKORDER (SPEAKORDER)
+Questionnaire: SpeakOrder™ Multilingual Voice & WhatsApp Order Automation Qualification Questionnaire
+Stage: PLD_QUALIFICATION | Version: 1 | Total Questions: 8
+================================================================================
+
+--------------------------------------------------------------------------------
+Q1. [COMMERCIAL_POTENTIAL] (Type: CHOICE, Weight: 10 pts)
+Question: What is the daily B2B sales order volume received from dealers, outlets, or merchants?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  500+ Orders daily (Large FMCG / Wholesale Distribution Hub)
+             (Value Code: ORDERS_500_PLUS)
+  [ 80 pts]  150 to 499 Orders daily (Regional Wholesaler / Distributor)
+             (Value Code: ORDERS_150_499)
+  [ 60 pts]  50 to 149 Orders daily
+             (Value Code: ORDERS_50_149)
+  [ 30 pts]  Fewer than 50 Orders daily
+             (Value Code: ORDERS_UNDER_50)
+
+--------------------------------------------------------------------------------
+Q2. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: How do customer merchants and branch operators currently transmit purchase orders?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Chaotic WhatsApp voice notes & photos of handwritten paper order lists
+             (Value Code: WHATSAPP_VOICE_HANDWRITTEN)
+  [ 85 pts]  Incoming phone calls to order desk / call center clerks
+             (Value Code: PHONE_CALLS)
+  [ 65 pts]  Unstructured text WhatsApp messages requiring manual ERP typing
+             (Value Code: WHATSAPP_TEXT)
+  [ 45 pts]  Existing B2B Web Portal (suffering from low merchant adoption)
+             (Value Code: PORTAL_LOW_ADOPTION)
+
+--------------------------------------------------------------------------------
+Q3. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: What is the frequency of order entry mistakes, wrong SKUs, or dispatch delays?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  High (>10% order error rate, causing expensive returns and customer friction)
+             (Value Code: ERRORS_HIGH_10)
+  [ 75 pts]  Moderate (5% to 10% errors, frequent order confirmation callbacks)
+             (Value Code: ERRORS_MED_5_10)
+  [ 40 pts]  Low (2% to 5% errors)
+             (Value Code: ERRORS_LOW_2_5)
+  [ 15 pts]  Negligible error rate (<2%)
+             (Value Code: ERRORS_NEGLIGIBLE)
+
+--------------------------------------------------------------------------------
+Q4. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: What languages and spoken dialects do ordering merchants and sales agents use?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Multilingual: Saudi/Gulf Arabic, Egyptian, Urdu, Hindi, English
+             (Value Code: MULTILINGUAL_ARABIC_URDU_EN)
+  [ 85 pts]  Spoken Arabic dialects only (Najdi, Hejazi, Egyptian)
+             (Value Code: ARABIC_DIALECTS_ONLY)
+  [ 70 pts]  Standard Arabic and English only
+             (Value Code: ARABIC_ENGLISH_ONLY)
+  [ 40 pts]  English only
+             (Value Code: ENGLISH_ONLY)
+
+--------------------------------------------------------------------------------
+Q5. [BUSINESS_VALUE] (Type: CHOICE, Weight: 10 pts)
+Question: How many dedicated data entry operators or call desk agents manually type orders?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  10+ Full-time Order Entry Clerks
+             (Value Code: CLERKS_10_PLUS)
+  [ 80 pts]  5 to 9 Full-time Clerks
+             (Value Code: CLERKS_5_9)
+  [ 55 pts]  2 to 4 Clerks
+             (Value Code: CLERKS_2_4)
+  [ 25 pts]  1 Clerk or part-time staff
+             (Value Code: CLERKS_1_PARTTIME)
+
+--------------------------------------------------------------------------------
+Q6. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: Which ERP or accounting system should SpeakOrder post confirmed sales orders into?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  SAP / Oracle / Microsoft Dynamics / VanForces API
+             (Value Code: TIER1_ERP)
+  [ 80 pts]  Odoo / QuickBooks / Zoho Books
+             (Value Code: MID_ERP)
+  [ 60 pts]  Custom SQL Database / Local ERP
+             (Value Code: CUSTOM_SQL)
+  [ 30 pts]  No ERP (Export to Excel / CSV)
+             (Value Code: NO_ERP_EXCEL)
+
+--------------------------------------------------------------------------------
+Q7. [DECISION_ACCESS] (Type: CHOICE, Weight: 10 pts)
+Question: Who is evaluating the voice and conversational order capture automation?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Managing Director / VP Sales / Chief Commercial Officer (Direct Sign-off)
+             (Value Code: CCO_MD_DIRECT)
+  [ 80 pts]  Customer Service / Operations Director
+             (Value Code: OPS_DIRECTOR)
+  [ 50 pts]  Warehouse Dispatch Manager
+             (Value Code: WAREHOUSE_MGR)
+  [ 25 pts]  Order Desk Supervisor without budget
+             (Value Code: SUPERVISOR)
+
+--------------------------------------------------------------------------------
+Q8. [TIMELINE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the target rollout timeline for merchant voice ordering?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Immediate pilot launch within 30-45 days
+             (Value Code: PILOT_30_45D)
+  [ 80 pts]  Within 90 days (next sales quarter)
+             (Value Code: QUARTER_90D)
+  [ 50 pts]  Within 6 months
+             (Value Code: HALF_YEAR)
+  [ 20 pts]  Exploratory (>6 months)
+             (Value Code: EXPLORATORY)
+
+
+================================================================================
+PRODUCT 4: TASKFORCES ERP (TASKFORCES)
+Questionnaire: TaskForces™ Enterprise HR, Payroll & Workforce Automation Qualification Questionnaire
+Stage: PLD_QUALIFICATION | Version: 1 | Total Questions: 8
+================================================================================
+
+--------------------------------------------------------------------------------
+Q1. [COMMERCIAL_POTENTIAL] (Type: CHOICE, Weight: 10 pts)
+Question: What is the total active employee headcount across all entities and branches?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  1,000+ Employees across multi-entity enterprise
+             (Value Code: EMPLOYEES_1000_PLUS)
+  [ 85 pts]  300 to 999 Employees (Medium Enterprise)
+             (Value Code: EMPLOYEES_300_999)
+  [ 65 pts]  100 to 299 Employees
+             (Value Code: EMPLOYEES_100_299)
+  [ 35 pts]  Fewer than 100 Employees
+             (Value Code: EMPLOYEES_UNDER_100)
+
+--------------------------------------------------------------------------------
+Q2. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: How many legal entities, multi-tier pay structures, and rotating shifts are managed?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Multiple CRs/Entities, complex shift premiums, commissions & deductions
+             (Value Code: COMPLEX_MULTI_ENTITY)
+  [ 80 pts]  Single Company with 3+ Rotating Shift Patterns & Overtime
+             (Value Code: SINGLE_SHIFT_PATTERNS)
+  [ 50 pts]  Single Company with Standard Fixed Hours
+             (Value Code: SINGLE_STANDARD)
+  [ 25 pts]  Flat Hourly / Daily Wage without Complex Rules
+             (Value Code: FLAT_WAGE)
+
+--------------------------------------------------------------------------------
+Q3. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: How is monthly WPS (Wage Protection System) and Mudad payroll compliance handled?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Manual Excel generation with frequent bank SIF rejections and Mudad warnings
+             (Value Code: WPS_EXCEL_FAILURES)
+  [ 80 pts]  High monthly stress reconciling biometric punches with payroll bank file
+             (Value Code: WPS_STRESS_RECONCILE)
+  [ 60 pts]  Semi-automated through outsourced payroll bureau
+             (Value Code: WPS_OUTSOURCED)
+  [ 25 pts]  Fully automated compliant ERP pipeline
+             (Value Code: WPS_AUTOMATED)
+
+--------------------------------------------------------------------------------
+Q4. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: How are Muqeem, Qiwa, GOSI, and Iqama expiry renewals tracked?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Manual spreadsheets resulting in expired documents and Ministry of Labor fines
+             (Value Code: DOC_SPREADSHEETS_FINES)
+  [ 75 pts]  Dedicated HR officer manually logging into government portals daily
+             (Value Code: DOC_MANUAL_LOGINS)
+  [ 50 pts]  Basic calendar reminders without automated workflow
+             (Value Code: DOC_CALENDAR_REMINDERS)
+  [ 20 pts]  Centralized proactive automated compliance alerts
+             (Value Code: DOC_AUTOMATED_ALERTS)
+
+--------------------------------------------------------------------------------
+Q5. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: What biometric or time-attendance hardware is currently deployed?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Multiple ZKTeco / Facial Recognition devices across distributed sites
+             (Value Code: BIO_MULTI_DEVICE_ZK)
+  [ 90 pts]  Mobile GPS Geofenced Clock-in for field technicians & drivers
+             (Value Code: BIO_MOBILE_GPS)
+  [ 60 pts]  Single head-office fingerprint scanner
+             (Value Code: BIO_SINGLE_OFFICE)
+  [ 35 pts]  Paper sign-in sheets / Manual attendance registers
+             (Value Code: BIO_PAPER_SHEETS)
+
+--------------------------------------------------------------------------------
+Q6. [BUSINESS_VALUE] (Type: CHOICE, Weight: 10 pts)
+Question: How is Saudi Labor Law End of Service Benefit (EOSB) calculated and accrued?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Complex manual calculation with high dispute risk on resignation/termination
+             (Value Code: EOSB_MANUAL_DISPUTES)
+  [ 75 pts]  Spreadsheet formula with manual adjustments for unutilized leave balance
+             (Value Code: EOSB_SPREADSHEET)
+  [ 45 pts]  Basic standalone accounting module
+             (Value Code: EOSB_ACCOUNTING_MODULE)
+  [ 20 pts]  Fully automated compliant ledger accrual
+             (Value Code: EOSB_COMPLIANT_LEDGER)
+
+--------------------------------------------------------------------------------
+Q7. [DECISION_ACCESS] (Type: CHOICE, Weight: 10 pts)
+Question: Who is championing and evaluating the enterprise HR & payroll transformation?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Group HR Director / Chief Human Resources Officer / CFO (Direct Authority)
+             (Value Code: CHRO_CFO_DIRECT)
+  [ 80 pts]  Senior HR Operations Manager / Payroll Controller
+             (Value Code: HR_OPS_MGR)
+  [ 60 pts]  IT Manager supporting HR systems
+             (Value Code: IT_MGR_SUPPORT)
+  [ 30 pts]  HR Specialist / Payroll Clerk without budget
+             (Value Code: HR_CLERK)
+
+--------------------------------------------------------------------------------
+Q8. [TIMELINE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the implementation and payroll cutoff target date?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Next Payroll Cycle (<60 days - Urgent cutover)
+             (Value Code: CUTOVER_60D)
+  [ 80 pts]  Next Fiscal Quarter
+             (Value Code: NEXT_QUARTER)
+  [ 45 pts]  Next Fiscal Year
+             (Value Code: NEXT_YEAR)
+  [ 20 pts]  Exploratory evaluation (>12 months)
+             (Value Code: EXPLORATORY)
+
+
+================================================================================
+PRODUCT 5: VANFORCES (VANFORCES)
+Questionnaire: VanForces™ PLD Qualification Questionnaire (15-Dimension)
+Stage: PLD_QUALIFICATION | Version: 1 | Total Questions: 14
+================================================================================
+
+--------------------------------------------------------------------------------
+Q1. [TECHNICAL_FIT] (Type: BOOLEAN, Weight: 10 pts)
+Question: Is this an active distribution or wholesale trading business?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [  0 pts]  No, Retail Only / Non-Distribution
+             (Value Code: false)
+  [ 50 pts]  yes
+             (Value Code: y)
+
+--------------------------------------------------------------------------------
+Q2. [TECHNICAL_FIT] (Type: BOOLEAN, Weight: 10 pts)
+Question: Does the company deploy field sales representatives or van delivery drivers?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Yes, Dedicated Field Sales / Delivery Fleet
+             (Value Code: true)
+  [  0 pts]  No, In-store / Showroom Only
+             (Value Code: false)
+
+--------------------------------------------------------------------------------
+Q3. [COMMERCIAL_POTENTIAL] (Type: CHOICE, Weight: 10 pts)
+Question: How many active salesmen and delivery vans operate on routes daily?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  50+ Active Vans & Salesmen
+             (Value Code: >=50 vans)
+  [ 80 pts]  20 to 49 Vans
+             (Value Code: 20-49 vans)
+  [ 60 pts]  10 to 19 Vans
+             (Value Code: 10-19 vans)
+  [ 40 pts]  5 to 9 Vans
+             (Value Code: 5-9 vans)
+  [ 20 pts]  Fewer than 5 Vans
+             (Value Code: <5 vans)
+
+--------------------------------------------------------------------------------
+Q4. [COMMERCIAL_POTENTIAL] (Type: CHOICE, Weight: 10 pts)
+Question: How many active retail customer outlets are serviced per month?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  2,000+ Retail Outlets
+             (Value Code: >=2000 outlets)
+  [ 80 pts]  500 to 1,999 Outlets
+             (Value Code: 500-1999 outlets)
+  [ 60 pts]  100 to 499 Outlets
+             (Value Code: 100-499 outlets)
+  [ 30 pts]  Fewer than 100 Outlets
+             (Value Code: <100 outlets)
+
+--------------------------------------------------------------------------------
+Q5. [TECHNICAL_FIT] (Type: CHOICE, Weight: 10 pts)
+Question: How are customer sales orders currently captured in the field?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [ 90 pts]  Mobile Handheld Terminal / Sales App
+             (Value Code: MOBILE_APP)
+  [ 60 pts]  Phone Calls / WhatsApp Messages
+             (Value Code: WHATSAPP)
+  [ 40 pts]  Paper Carbon-Copy Order Books
+             (Value Code: PAPER)
+  [ 20 pts]  Driver End-of-Day Memory / Unrecorded
+             (Value Code: NONE)
+
+--------------------------------------------------------------------------------
+Q6. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: How are delivery routes planned and assigned to drivers?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Driver Discretion / No Structured Route
+             (Value Code: DRIVER_CHOICE)
+  [ 70 pts]  Static Fixed Excel Route Lists
+             (Value Code: EXCEL)
+  [ 50 pts]  Basic Weekly Paper Sequence
+             (Value Code: PAPER_SEQUENCE)
+  [ 20 pts]  Automated Dynamic Route Optimizer
+             (Value Code: DYNAMIC_OPTIMIZER)
+
+--------------------------------------------------------------------------------
+Q7. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: How is van inventory and physical mobile stock reconciled?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  No Formal Stock Check (Driver replenishes blindly)
+             (Value Code: NO_STOCK_CHECK)
+  [ 80 pts]  Weekly / Monthly Manual Inventory Count
+             (Value Code: WEEKLY_MANUAL)
+  [ 50 pts]  Daily Morning / Evening Tally Sheet
+             (Value Code: DAILY_TALLY)
+  [ 20 pts]  Real-time Mobile Barcode Scanning & Live Sync
+             (Value Code: REALTIME_BARCODE)
+
+--------------------------------------------------------------------------------
+Q8. [BUSINESS_VALUE] (Type: CHOICE, Weight: 10 pts)
+Question: How are customer invoices and payment collections handled on routes?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Driver Cash with Delayed Bank Reconciliation
+             (Value Code: CASH_DELAYED)
+  [ 80 pts]  Handwritten Manual Invoices & Carbon Receipts
+             (Value Code: MANUAL_RECEIPTS)
+  [ 60 pts]  Customer Credit Accounts / Invoiced by Backoffice
+             (Value Code: BACKOFFICE_CREDIT)
+  [ 20 pts]  Real-time Mobile Invoicing with Bluetooth Printing
+             (Value Code: MOBILE_POS)
+
+--------------------------------------------------------------------------------
+Q9. [PROBLEM_SEVERITY] (Type: CHOICE, Weight: 10 pts)
+Question: What is the single biggest operational problem facing field operations?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [ 95 pts]  Van Stock Leakage & Physical Shrinkage
+             (Value Code: HIGH)
+  [ 70 pts]  Lack of Salesman Activity Visibility & Geofencing
+             (Value Code: MEDIUM)
+  [ 30 pts]  Minor Clerical Delays
+             (Value Code: LOW)
+
+--------------------------------------------------------------------------------
+Q10. [BUSINESS_VALUE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the quantified business impact or revenue loss caused by this problem?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  High Revenue Loss / Cost Inefficiency (>=20%)
+             (Value Code: >=20%)
+  [ 75 pts]  Moderate Operational Waste (10% to 20%)
+             (Value Code: 10-20%)
+  [ 40 pts]  Low Operational Delay (<10%)
+             (Value Code: <10%)
+  [ 10 pts]  Negligible Financial Consequence
+             (Value Code: NEGLIGIBLE)
+
+--------------------------------------------------------------------------------
+Q11. [BUSINESS_VALUE] (Type: CHOICE, Weight: 10 pts)
+Question: Who in the client organization is directly impacted by these problems?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Entire Commercial Chain: Salesmen, Warehouse & MD
+             (Value Code: FULL_CHAIN)
+  [ 80 pts]  Van Drivers & Route Supervisors
+             (Value Code: DRIVERS_SUPERVISORS)
+  [ 60 pts]  Back-office Data Entry Clerks & Accountants
+             (Value Code: BACKOFFICE)
+  [ 25 pts]  Isolated Individual Drivers
+             (Value Code: ISOLATED)
+
+--------------------------------------------------------------------------------
+Q12. [DECISION_ACCESS] (Type: CHOICE, Weight: 10 pts)
+Question: Who is currently championing or evaluating software solutions?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [ 90 pts]  Sales Director / Commercial VP
+             (Value Code: CHAMPION)
+  [ 70 pts]  Operations / Supply Chain Manager
+             (Value Code: INFLUENCER)
+  [ 60 pts]  IT Systems Manager
+             (Value Code: TECHNICAL)
+  [ 35 pts]  Branch Supervisor / Dispatcher
+             (Value Code: USER)
+
+--------------------------------------------------------------------------------
+Q13. [DECISION_ACCESS] (Type: CHOICE, Weight: 10 pts)
+Question: Who is the ultimate economic decision maker with final budget authority?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  CEO / Managing Director / Owner (Direct Access)
+             (Value Code: DECISION_MAKER)
+  [ 75 pts]  Sales Director with Authorized Discretionary Budget
+             (Value Code: CHAMPION)
+  [ 45 pts]  IT / Operations Head without Independent Budget
+             (Value Code: INFLUENCER)
+  [ 15 pts]  No Decision Maker Identified / Committee Unknown
+             (Value Code: USER)
+
+--------------------------------------------------------------------------------
+Q14. [TIMELINE] (Type: CHOICE, Weight: 10 pts)
+Question: What is the expected project implementation timeline?
+--------------------------------------------------------------------------------
+Answer Options & Scoring:
+  [100 pts]  Immediate Rollout (<3 months)
+             (Value Code: <3 months)
+  [ 70 pts]  Within Next Quarter (3 to 6 months)
+             (Value Code: 3-6 months)
+  [ 40 pts]  Fiscal Year Horizon (6 to 12 months)
+             (Value Code: 6-12 months)
+  [ 10 pts]  Exploratory / Unscheduled (>12 months)
+             (Value Code: >12 months)
+

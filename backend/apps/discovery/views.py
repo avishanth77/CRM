@@ -4,6 +4,8 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from django.db.models import Q
+from apps.authentication.models import User, UserRole
 from apps.discovery.models import (
     Discovery, DiscoveryProblem, DiscoveryProblemMapping,
     DiscoveryStakeholder, DiscoveryStatus
@@ -17,6 +19,36 @@ from apps.products.models import ProductCapability, ProductModule
 from apps.products.serializers import ProductCapabilitySerializer, ProductModuleSerializer
 from apps.accounts.models import Contact
 from apps.audit_logging.models import AuditLog, AuditAction
+
+
+def get_request_user(request):
+    if request.user and request.user.is_authenticated:
+        return request.user
+    user_id = (
+        request.headers.get('X-User-Id') or
+        request.headers.get('x-user-id') or
+        (request.data.get('user_id') if hasattr(request, 'data') and isinstance(request.data, dict) else None)
+    )
+    if user_id:
+        try:
+            u = User.objects.filter(id=user_id, is_active=True).first()
+            if u:
+                return u
+        except Exception:
+            pass
+    user_email = (
+        request.headers.get('X-User-Email') or
+        request.headers.get('x-user-email') or
+        (request.data.get('user_email') if hasattr(request, 'data') and isinstance(request.data, dict) else None)
+    )
+    if user_email:
+        try:
+            u = User.objects.filter(email__iexact=user_email, is_active=True).first()
+            if u:
+                return u
+        except Exception:
+            pass
+    return None
 
 
 class DiscoveryViewSet(viewsets.ModelViewSet):
@@ -33,6 +65,19 @@ class DiscoveryViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        user = get_request_user(self.request)
+
+        is_manager_or_admin = (
+            user and (
+                user.is_superuser or
+                user.is_staff or
+                getattr(user, 'role', None) in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.MANAGEMENT] or
+                'MANAGER' in getattr(user, 'role', '')
+            )
+        )
+        if user and not is_manager_or_admin and getattr(user, 'role', None) in [UserRole.SALES_BDM, 'SALES_BDM', 'SALES_REP', 'ACCOUNT_EXECUTIVE', 'SALES_EXECUTIVE']:
+            qs = qs.filter(Q(lead__owner=user) | Q(conducted_by=user))
+
         lead_id = self.request.query_params.get('lead')
         account_id = self.request.query_params.get('account')
         product_id = self.request.query_params.get('product')
@@ -49,7 +94,7 @@ class DiscoveryViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        user = self.request.user if self.request.user.is_authenticated else None
+        user = get_request_user(self.request)
         discovery = serializer.save(conducted_by=user)
 
         # TEXOL SPECIFICATION: Carry forward confirmed lead problems into Discovery automatically

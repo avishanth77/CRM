@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   Clock, AlertTriangle, AlertCircle, Calendar, 
   Check, Plus, RefreshCw, Settings, ShieldAlert,
-  CheckCircle2, User, Users, Briefcase, X
+  CheckCircle2, User, Users, Briefcase
 } from 'lucide-react';
 import { api } from '../services/api';
-import type { WorkQueueData, AutomationRule, SLADefinition } from '../services/api';
+import type { WorkQueueData, AutomationRule, SLADefinition, AuthUser } from '../services/api';
+import { inAppAlert } from './common/InAppAlert';
+import { Modal } from './common/Modal';
 
 interface MyWorkQueueWorkspaceProps {
+  currentUser?: AuthUser | null;
   onNavigateToLead?: (leadId: string) => void;
   onNavigateToOpportunity?: (oppId: string) => void;
   onNavigateToProposal?: (propId: string) => void;
@@ -16,17 +19,52 @@ interface MyWorkQueueWorkspaceProps {
 }
 
 export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
+  currentUser,
   onNavigateToLead,
   onNavigateToOpportunity,
   onNavigateToProposal: _onNavigateToProposal,
   onNavigateToAccount: _onNavigateToAccount,
   onNavigateToSQL
 }) => {
+  // Resolve user identity & permissions
+  const activeUser = currentUser || (() => {
+    try {
+      const saved = localStorage.getItem('texol_auth_user');
+      return saved ? (JSON.parse(saved) as AuthUser) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const isAdmin = Boolean(
+    activeUser?.is_superuser ||
+    activeUser?.role === 'ADMIN'
+  );
+
+  const getInitialRoleView = (): 'SALES_EXECUTIVE' | 'MANAGER' | 'EXECUTIVE' => {
+    if (!activeUser || isAdmin) {
+      return 'SALES_EXECUTIVE';
+    }
+    if (activeUser.role === 'MANAGEMENT') {
+      return 'EXECUTIVE';
+    }
+    if (activeUser.role === 'SALES_MANAGER' || activeUser.role === 'PARTNER_MANAGER' || activeUser.role?.includes('MANAGER')) {
+      return 'MANAGER';
+    }
+    return 'SALES_EXECUTIVE';
+  };
+
   const [queueData, setQueueData] = useState<WorkQueueData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [roleView, setRoleView] = useState<'SALES_EXECUTIVE' | 'MANAGER' | 'EXECUTIVE'>('SALES_EXECUTIVE');
+  const [roleView, setRoleView] = useState<'SALES_EXECUTIVE' | 'MANAGER' | 'EXECUTIVE'>(getInitialRoleView);
   const [activeSection, setActiveSection] = useState<'TODAY' | 'OVERDUE' | 'AT_RISK' | 'NO_NEXT_ACTION' | 'UPCOMING'>('TODAY');
   const [runningAutomations, setRunningAutomations] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setRoleView(getInitialRoleView());
+    }
+  }, [activeUser?.id, activeUser?.role, isAdmin]);
 
   // Modals
   const [showCreateTaskModal, setShowCreateTaskModal] = useState<boolean>(false);
@@ -73,9 +111,10 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
   const handleCompleteTask = async (taskId: string) => {
     try {
       await api.completeTask(taskId);
+      inAppAlert.success('Task marked as completed!');
       await loadWorkQueue(roleView);
-    } catch (err) {
-      alert("Failed to complete task");
+    } catch (err: any) {
+      inAppAlert.error(err?.message || "Failed to complete task");
     }
   };
 
@@ -84,12 +123,13 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
     if (!rescheduleTaskId || !rescheduleDate) return;
     try {
       await api.rescheduleWorkQueueTask(rescheduleTaskId, rescheduleDate, rescheduleReason);
+      inAppAlert.success('Task rescheduled successfully!');
       setRescheduleTaskId(null);
       setRescheduleDate('');
       setRescheduleReason('');
       await loadWorkQueue(roleView);
     } catch (err: any) {
-      alert(err.message || 'Failed to reschedule task');
+      inAppAlert.error(err.message || 'Failed to reschedule task');
     }
   };
 
@@ -104,12 +144,13 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
         due_date: nextActionDate,
         activity_type: nextActionType
       });
+      inAppAlert.success('Next action scheduled successfully!');
       setNextActionEntity(null);
       setNextActionTitle('');
       setNextActionDate('');
       await loadWorkQueue(roleView);
     } catch (err: any) {
-      alert(err.message || 'Failed to schedule next action');
+      inAppAlert.error(err.message || 'Failed to schedule next action');
     }
   };
 
@@ -125,13 +166,14 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
         priority: taskPriority,
         task_type: taskType
       });
+      inAppAlert.success('Work queue task created!');
       setShowCreateTaskModal(false);
       setTaskTitle('');
       setTaskDescription('');
       setTaskDueDate('');
       await loadWorkQueue(roleView);
     } catch (err: any) {
-      alert(err.message || "Failed to create task");
+      inAppAlert.error(err.message || "Failed to create task");
     }
   };
 
@@ -170,8 +212,8 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
     sla_alerts: 0
   };
 
-  const todayCount = (queueData?.today?.tasks?.length ?? counts.due_today) + (queueData?.today?.scheduled_activities?.length ?? 0) + (queueData?.today?.sql_acceptance?.length ?? 0);
-  const overdueCount = (queueData?.overdue?.tasks?.length ?? counts.overdue) + (queueData?.overdue?.sla_breaches?.length ?? 0);
+  const todayCount = (queueData?.today?.tasks?.length ?? counts.due_today) + (queueData?.today?.scheduled_activities?.length ?? 0) + (queueData?.today?.sql_acceptance?.length ?? 0) + (queueData?.today?.follow_ups_leads?.length ?? 0);
+  const overdueCount = (queueData?.overdue?.tasks?.length ?? counts.overdue) + (queueData?.overdue?.sla_breaches?.length ?? 0) + (queueData?.overdue?.follow_ups_leads?.length ?? 0);
   const atRiskCount = (queueData?.at_risk?.slas_at_risk?.length ?? counts.sla_alerts) + (queueData?.at_risk?.inactive_opportunities?.length ?? 0);
   const noActionCount = (queueData?.no_next_action?.leads?.length ?? 0) + (queueData?.no_next_action?.opportunities?.length ?? 0) || counts.no_next_action;
   const upcomingCount = (queueData?.upcoming?.tasks?.length ?? counts.upcoming) + (queueData?.upcoming?.nurture_reengagement?.length ?? 0);
@@ -182,12 +224,9 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#FFFFFF' }}>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
               Operational Work Queue
             </h1>
-            <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>
-              Phase 10 Engine
-            </span>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
             Action-oriented queue answering <em>"What should I work on today?"</em> with inline task execution.
@@ -195,72 +234,74 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {/* Role Switcher */}
-          <div style={{
-            display: 'flex',
-            background: 'var(--bg-surface-elevated)',
-            borderRadius: '8px',
-            padding: '3px',
-            border: '1px solid var(--border-subtle)'
-          }}>
-            <button
-              onClick={() => setRoleView('SALES_EXECUTIVE')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                border: 'none',
-                cursor: 'pointer',
-                background: roleView === 'SALES_EXECUTIVE' ? 'var(--primary)' : 'transparent',
-                color: roleView === 'SALES_EXECUTIVE' ? '#FFFFFF' : 'var(--text-secondary)'
-              }}
-            >
-              <User size={13} />
-              Sales Rep
-            </button>
-            <button
-              onClick={() => setRoleView('MANAGER')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                border: 'none',
-                cursor: 'pointer',
-                background: roleView === 'MANAGER' ? 'var(--primary)' : 'transparent',
-                color: roleView === 'MANAGER' ? '#FFFFFF' : 'var(--text-secondary)'
-              }}
-            >
-              <Users size={13} />
-              Manager
-            </button>
-            <button
-              onClick={() => setRoleView('EXECUTIVE')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                border: 'none',
-                cursor: 'pointer',
-                background: roleView === 'EXECUTIVE' ? 'var(--primary)' : 'transparent',
-                color: roleView === 'EXECUTIVE' ? '#FFFFFF' : 'var(--text-secondary)'
-              }}
-            >
-              <Briefcase size={13} />
-              Executive
-            </button>
-          </div>
+          {/* Role Switcher - Visible to Admin Only */}
+          {isAdmin && (
+            <div style={{
+              display: 'flex',
+              background: 'var(--bg-surface-elevated)',
+              borderRadius: '8px',
+              padding: '3px',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              <button
+                onClick={() => setRoleView('SALES_EXECUTIVE')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: roleView === 'SALES_EXECUTIVE' ? 'var(--primary)' : 'transparent',
+                  color: roleView === 'SALES_EXECUTIVE' ? '#FFFFFF' : 'var(--text-secondary)'
+                }}
+              >
+                <User size={13} />
+                Sales Rep
+              </button>
+              <button
+                onClick={() => setRoleView('MANAGER')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: roleView === 'MANAGER' ? 'var(--primary)' : 'transparent',
+                  color: roleView === 'MANAGER' ? '#FFFFFF' : 'var(--text-secondary)'
+                }}
+              >
+                <Users size={13} />
+                Manager
+              </button>
+              <button
+                onClick={() => setRoleView('EXECUTIVE')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: roleView === 'EXECUTIVE' ? 'var(--primary)' : 'transparent',
+                  color: roleView === 'EXECUTIVE' ? '#FFFFFF' : 'var(--text-secondary)'
+                }}
+              >
+                <Briefcase size={13} />
+                Executive
+              </button>
+            </div>
+          )}
 
           <button
             className="btn btn-outline"
@@ -309,7 +350,7 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
             <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--primary)', letterSpacing: '0.04em' }}>TODAY</span>
             <Clock size={16} color="var(--primary)" />
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: '#FFFFFF' }}>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: 'var(--text-primary)' }}>
             {todayCount}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -333,7 +374,7 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
             <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--danger)', letterSpacing: '0.04em' }}>OVERDUE</span>
             <AlertCircle size={16} color="var(--danger)" />
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: overdueCount > 0 ? 'var(--danger)' : '#FFFFFF' }}>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: overdueCount > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
             {overdueCount}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -357,7 +398,7 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
             <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--warning)', letterSpacing: '0.04em' }}>AT RISK</span>
             <ShieldAlert size={16} color="var(--warning)" />
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: atRiskCount > 0 ? 'var(--warning)' : '#FFFFFF' }}>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: atRiskCount > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
             {atRiskCount}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -381,7 +422,7 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
             <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#EC4899', letterSpacing: '0.04em' }}>NO ACTION</span>
             <AlertTriangle size={16} color="#EC4899" />
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: noActionCount > 0 ? '#EC4899' : '#FFFFFF' }}>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: noActionCount > 0 ? '#EC4899' : 'var(--text-primary)' }}>
             {noActionCount}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -405,7 +446,7 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
             <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--accent-purple)', letterSpacing: '0.04em' }}>UPCOMING</span>
             <Calendar size={16} color="var(--accent-purple)" />
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: '#FFFFFF' }}>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: 'var(--text-primary)' }}>
             {upcomingCount}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -426,7 +467,7 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
           {activeSection === 'TODAY' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Clock size={18} color="var(--primary)" />
                   Today's Execution Focus ({todayCount})
                 </h3>
@@ -545,6 +586,71 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
                   ))}
                 </div>
               )}
+
+              {/* Lead Follow-ups Due Today */}
+              {queueData?.today?.follow_ups_leads && queueData.today.follow_ups_leads.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase' }}>
+                    Lead Follow-ups Due Today ({queueData.today.follow_ups_leads.length})
+                  </div>
+                  {queueData.today.follow_ups_leads.map((l: any) => (
+                    <div
+                      key={l.id}
+                      style={{
+                        padding: '14px 18px',
+                        borderRadius: '8px',
+                        background: 'rgba(59, 130, 246, 0.05)',
+                        border: '1px solid rgba(59, 130, 246, 0.25)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '12px'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                            {l.account_name}
+                          </span>
+                          <span className="badge badge-primary" style={{ fontSize: '0.65rem' }}>
+                            {l.product_name}
+                          </span>
+                          <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>
+                            {l.status}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                          Next Action: <strong style={{ color: 'var(--text-primary)' }}>{l.next_action || 'Introductory Discovery Call'}</strong> • Owner: {l.owner_name}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {onNavigateToLead && (
+                          <button
+                            className="btn btn-outline"
+                            style={{ fontSize: '0.75rem', padding: '5px 12px' }}
+                            onClick={() => onNavigateToLead(l.id)}
+                          >
+                            Open Lead
+                          </button>
+                        )}
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: '0.75rem', padding: '5px 12px' }}
+                          onClick={() => {
+                            setNextActionEntity({ type: 'lead', id: l.id, name: l.account_name });
+                            setNextActionTitle('Follow-up call with customer');
+                            setNextActionDate(new Date().toISOString().split('T')[0]);
+                          }}
+                        >
+                          Log Next Action
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -639,6 +745,71 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
                           onClick={() => handleCompleteTask(t.id)}
                         >
                           Complete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Overdue Lead Follow-ups */}
+              {queueData?.overdue?.follow_ups_leads && queueData.overdue.follow_ups_leads.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--danger)', textTransform: 'uppercase' }}>
+                    Overdue Lead Follow-ups ({queueData.overdue.follow_ups_leads.length})
+                  </div>
+                  {queueData.overdue.follow_ups_leads.map((l: any) => (
+                    <div
+                      key={l.id}
+                      style={{
+                        padding: '14px 18px',
+                        borderRadius: '8px',
+                        background: 'rgba(239, 68, 68, 0.05)',
+                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '12px'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                            {l.account_name}
+                          </span>
+                          <span className="badge badge-primary" style={{ fontSize: '0.65rem' }}>
+                            {l.product_name}
+                          </span>
+                          <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>
+                            Overdue
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                          Action: {l.next_action || 'Follow up with prospect'} • Due: {l.next_action_due || 'Overdue'} • Owner: {l.owner_name}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {onNavigateToLead && (
+                          <button
+                            className="btn btn-outline"
+                            style={{ fontSize: '0.75rem', padding: '5px 12px' }}
+                            onClick={() => onNavigateToLead(l.id)}
+                          >
+                            Open Lead
+                          </button>
+                        )}
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: '0.75rem', padding: '5px 12px' }}
+                          onClick={() => {
+                            setNextActionEntity({ type: 'lead', id: l.id, name: l.account_name });
+                            setNextActionTitle('Reschedule follow-up call');
+                            setNextActionDate(new Date().toISOString().split('T')[0]);
+                          }}
+                        >
+                          Log Next Action
                         </button>
                       </div>
                     </div>
@@ -877,468 +1048,379 @@ export const MyWorkQueueWorkspace: React.FC<MyWorkQueueWorkspaceProps> = ({
       )}
 
       {/* Reschedule Task Modal */}
-      {rescheduleTaskId && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.75)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '20px'
-        }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Reschedule Task</h3>
-              <button onClick={() => setRescheduleTaskId(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={18} />
-              </button>
-            </div>
-            <form onSubmit={handleRescheduleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  New Due Date &amp; Time
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={rescheduleDate}
-                  onChange={(e) => setRescheduleDate(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)'
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Reason for Rescheduling
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., Prospect rescheduled meeting"
-                  value={rescheduleReason}
-                  onChange={(e) => setRescheduleReason(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setRescheduleTaskId(null)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Changes
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={Boolean(rescheduleTaskId)}
+        onClose={() => setRescheduleTaskId(null)}
+        title="Reschedule Task"
+        size="sm"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', width: '100%' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setRescheduleTaskId(null)}>
+              Cancel
+            </button>
+            <button type="submit" form="reschedule-task-form" className="btn btn-primary">
+              Save Changes
+            </button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form id="reschedule-task-form" onSubmit={handleRescheduleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+              New Due Date &amp; Time
+            </label>
+            <input
+              type="date"
+              required
+              value={rescheduleDate}
+              onChange={(e) => setRescheduleDate(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+              Reason for Rescheduling
+            </label>
+            <input
+              type="text"
+              placeholder="e.g., Prospect rescheduled meeting"
+              value={rescheduleReason}
+              onChange={(e) => setRescheduleReason(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)'
+              }}
+            />
+          </div>
+        </form>
+      </Modal>
 
       {/* Schedule Next Action Modal */}
-      {nextActionEntity && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.75)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '20px'
-        }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Schedule Next Action</h3>
-                <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  For: {nextActionEntity.name}
-                </p>
-              </div>
-              <button onClick={() => setNextActionEntity(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleScheduleNextActionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Next Action Description
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Conduct second discovery call with CTO"
-                  value={nextActionTitle}
-                  onChange={(e) => setNextActionTitle(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)'
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Due Date
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={nextActionDate}
-                  onChange={(e) => setNextActionDate(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)'
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Interaction Type
-                </label>
-                <select
-                  value={nextActionType}
-                  onChange={(e) => setNextActionType(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)'
-                  }}
-                >
-                  <option value="CALL">Call</option>
-                  <option value="MEETING">Meeting</option>
-                  <option value="EMAIL">Email</option>
-                  <option value="DEMO">Demo</option>
-                  <option value="FOLLOW_UP">Follow-Up</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setNextActionEntity(null)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Schedule Action
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={Boolean(nextActionEntity)}
+        onClose={() => setNextActionEntity(null)}
+        title="Schedule Next Action"
+        subtitle={nextActionEntity ? `For: ${nextActionEntity.name}` : undefined}
+        size="sm"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', width: '100%' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setNextActionEntity(null)}>
+              Cancel
+            </button>
+            <button type="submit" form="next-action-form" className="btn btn-primary">
+              Schedule Action
+            </button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form id="next-action-form" onSubmit={handleScheduleNextActionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+              Next Action Description
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Conduct second discovery call with CTO"
+              value={nextActionTitle}
+              onChange={(e) => setNextActionTitle(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+              Due Date
+            </label>
+            <input
+              type="date"
+              required
+              value={nextActionDate}
+              onChange={(e) => setNextActionDate(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+              Interaction Type
+            </label>
+            <select
+              value={nextActionType}
+              onChange={(e) => setNextActionType(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)'
+              }}
+            >
+              <option value="CALL">Call</option>
+              <option value="MEETING">Meeting</option>
+              <option value="EMAIL">Email</option>
+              <option value="DEMO">Demo</option>
+              <option value="FOLLOW_UP">Follow-Up</option>
+            </select>
+          </div>
+        </form>
+      </Modal>
 
       {/* Create Task Modal */}
-      {showCreateTaskModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div className="glass-panel" style={{
-            width: '100%',
-            maxWidth: '520px',
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '14px',
-            padding: '24px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#FFFFFF' }}>Create Operational Task</h3>
-              <button 
-                onClick={() => setShowCreateTaskModal(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+      <Modal
+        isOpen={showCreateTaskModal}
+        onClose={() => setShowCreateTaskModal(false)}
+        title="Create Operational Task"
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowCreateTaskModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="create-task-form"
+              className="btn btn-primary"
+            >
+              Create Task
+            </button>
+          </div>
+        }
+      >
+        <form id="create-task-form" onSubmit={handleCreateTask} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Task Title</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Review commercial proposal terms with Legal"
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)',
+                fontSize: '0.85rem'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Due Date &amp; Time</label>
+            <input
+              type="datetime-local"
+              required
+              value={taskDueDate}
+              onChange={(e) => setTaskDueDate(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)',
+                fontSize: '0.85rem'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Priority</label>
+              <select
+                value={taskPriority}
+                onChange={(e: any) => setTaskPriority(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem'
+                }}
               >
-                ✕
-              </button>
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
+                <option value="CRITICAL">Critical</option>
+              </select>
             </div>
 
-            <form onSubmit={handleCreateTask} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Task Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Review commercial proposal terms with Legal"
-                  value={taskTitle}
-                  onChange={(e) => setTaskTitle(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.85rem'
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Due Date &amp; Time</label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={taskDueDate}
-                  onChange={(e) => setTaskDueDate(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.85rem'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Priority</label>
-                  <select
-                    value={taskPriority}
-                    onChange={(e: any) => setTaskPriority(e.target.value)}
-                    style={{
-                      width: '100%',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '8px',
-                      padding: '8px 12px',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                    <option value="CRITICAL">Critical</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Task Type</label>
-                  <select
-                    value={taskType}
-                    onChange={(e) => setTaskType(e.target.value)}
-                    style={{
-                      width: '100%',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '8px',
-                      padding: '8px 12px',
-                      color: 'var(--text-primary)',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    <option value="FOLLOW_UP">Follow Up</option>
-                    <option value="PROPOSAL_REVIEW">Proposal Review</option>
-                    <option value="SQL_ACCEPTANCE">SQL Acceptance</option>
-                    <option value="DISCOVERY_CALL">Discovery Call</option>
-                    <option value="DEMO_PREP">Demo Preparation</option>
-                    <option value="POC_CHECKIN">POC Check-in</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Description / Context</label>
-                <textarea
-                  rows={3}
-                  placeholder="Include context or specific requirements..."
-                  value={taskDescription}
-                  onChange={(e) => setTaskDescription(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.85rem',
-                    resize: 'none'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowCreateTaskModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                >
-                  Create Task
-                </button>
-              </div>
-            </form>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Task Type</label>
+              <select
+                value={taskType}
+                onChange={(e) => setTaskType(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem'
+                }}
+              >
+                <option value="FOLLOW_UP">Follow Up</option>
+                <option value="PROPOSAL_REVIEW">Proposal Review</option>
+                <option value="SQL_ACCEPTANCE">SQL Acceptance</option>
+                <option value="DISCOVERY_CALL">Discovery Call</option>
+                <option value="DEMO_PREP">Demo Preparation</option>
+                <option value="POC_CHECKIN">POC Check-in</option>
+              </select>
+            </div>
           </div>
-        </div>
-      )}
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Description / Context</label>
+            <textarea
+              rows={3}
+              placeholder="Include context or specific requirements..."
+              value={taskDescription}
+              onChange={(e) => setTaskDescription(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                color: 'var(--text-primary)',
+                fontSize: '0.85rem',
+                resize: 'none'
+              }}
+            />
+          </div>
+        </form>
+      </Modal>
 
       {/* SLA & Governance Config Modal */}
-      {showConfigModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div className="glass-panel" style={{
-            width: '100%',
-            maxWidth: '840px',
-            background: '#0B0F19',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '14px',
-            padding: '28px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-            maxHeight: '90vh',
-            overflowY: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#FFFFFF' }}>SLA &amp; Automation Governance Engine</h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Configurable response targets, escalation ladders, and automated event triggers.
-                </p>
-              </div>
-              <button 
-                onClick={() => setShowConfigModal(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* SLA Definitions Table */}
-            <div>
-              <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '10px' }}>
-                Configured Service Level Agreements (SLAs)
-              </h4>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '8px' }}>SLA Name</th>
-                      <th style={{ padding: '8px' }}>Target Duration</th>
-                      <th style={{ padding: '8px' }}>Warning %</th>
-                      <th style={{ padding: '8px' }}>Escalation Role</th>
-                      <th style={{ padding: '8px' }}>Action</th>
-                      <th style={{ padding: '8px' }}>Status</th>
+      <Modal
+        isOpen={showConfigModal}
+        onClose={() => setShowConfigModal(false)}
+        title="SLA & Governance Engine"
+        subtitle="Configurable response targets, escalation ladders, and automated event triggers."
+        size="lg"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowConfigModal(false)}
+              style={{ fontSize: '0.85rem', padding: '8px 20px' }}
+            >
+              Close Governance Panel
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* SLA Definitions Table */}
+          <div>
+            <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '10px' }}>
+              Configured Service Level Agreements (SLAs)
+            </h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                    <th style={{ padding: '8px' }}>SLA Name</th>
+                    <th style={{ padding: '8px' }}>Target Duration</th>
+                    <th style={{ padding: '8px' }}>Warning %</th>
+                    <th style={{ padding: '8px' }}>Escalation Role</th>
+                    <th style={{ padding: '8px' }}>Action</th>
+                    <th style={{ padding: '8px' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {slaDefinitions.map(def => (
+                    <tr key={def.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--text-primary)' }}>{def.name}</td>
+                      <td style={{ padding: '10px 8px' }}>{def.target_duration_hours}h</td>
+                      <td style={{ padding: '10px 8px' }}>{def.warning_threshold_pct}%</td>
+                      <td style={{ padding: '10px 8px' }}>{def.escalation_role}</td>
+                      <td style={{ padding: '10px 8px' }}>{def.escalation_action}</td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <span className={`badge ${def.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.65rem' }}>
+                          {def.is_active ? 'Active' : 'Disabled'}
+                        </span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {slaDefinitions.map(def => (
-                      <tr key={def.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={{ padding: '10px 8px', fontWeight: 700, color: '#FFFFFF' }}>{def.name}</td>
-                        <td style={{ padding: '10px 8px' }}>{def.target_duration_hours}h</td>
-                        <td style={{ padding: '10px 8px' }}>{def.warning_threshold_pct}%</td>
-                        <td style={{ padding: '10px 8px' }}>{def.escalation_role}</td>
-                        <td style={{ padding: '10px 8px' }}>{def.escalation_action}</td>
-                        <td style={{ padding: '10px 8px' }}>
-                          <span className={`badge ${def.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.65rem' }}>
-                            {def.is_active ? 'Active' : 'Disabled'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </div>
 
-            {/* Automation Rules Table */}
-            <div>
-              <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent-purple)', marginBottom: '10px' }}>
-                Configured Automation Triggers &amp; Actions
-              </h4>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '8px' }}>Rule Name</th>
-                      <th style={{ padding: '8px' }}>Trigger Event</th>
-                      <th style={{ padding: '8px' }}>Action Type</th>
-                      <th style={{ padding: '8px' }}>Executions</th>
-                      <th style={{ padding: '8px' }}>Status</th>
+          {/* Automation Rules Table */}
+          <div>
+            <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent-purple)', marginBottom: '10px' }}>
+              Configured Automation Triggers &amp; Actions
+            </h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                    <th style={{ padding: '8px' }}>Rule Name</th>
+                    <th style={{ padding: '8px' }}>Trigger Event</th>
+                    <th style={{ padding: '8px' }}>Action Type</th>
+                    <th style={{ padding: '8px' }}>Executions</th>
+                    <th style={{ padding: '8px' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {automationRules.map(rule => (
+                    <tr key={rule.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--text-primary)' }}>{rule.name}</td>
+                      <td style={{ padding: '10px 8px', color: 'var(--primary)' }}>{rule.trigger_type}</td>
+                      <td style={{ padding: '10px 8px' }}>{rule.action_type}</td>
+                      <td style={{ padding: '10px 8px' }}>{rule.execution_count} runs</td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <span className={`badge ${rule.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.65rem' }}>
+                          {rule.is_active ? 'Active' : 'Disabled'}
+                        </span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {automationRules.map(rule => (
-                      <tr key={rule.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={{ padding: '10px 8px', fontWeight: 700, color: '#FFFFFF' }}>{rule.name}</td>
-                        <td style={{ padding: '10px 8px', color: 'var(--primary)' }}>{rule.trigger_type}</td>
-                        <td style={{ padding: '10px 8px' }}>{rule.action_type}</td>
-                        <td style={{ padding: '10px 8px' }}>{rule.execution_count} runs</td>
-                        <td style={{ padding: '10px 8px' }}>
-                          <span className={`badge ${rule.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.65rem' }}>
-                            {rule.is_active ? 'Active' : 'Disabled'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-              <button
-                className="btn btn-primary"
-                onClick={() => setShowConfigModal(false)}
-                style={{ fontSize: '0.85rem', padding: '8px 20px' }}
-              >
-                Close Governance Panel
-              </button>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

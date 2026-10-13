@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Database, RefreshCw, ShieldCheck, Server } from 'lucide-react';
 import { api } from '../services/api';
 import type { ERPConnectorConfig, ERPSyncRecord } from '../services/api';
+import { inAppAlert } from './common/InAppAlert';
+import { Modal } from './common/Modal';
 
 interface Props {
   accounts: any[];
@@ -52,12 +54,14 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
       const res = await api.syncAccountToERP(selectedConnectorId, selectedAccountId || undefined);
       if (res.status === 'CONFLICT_DETECTED') {
         onNotify(`ERP Schema Conflict Detected: ${res.conflict_details}`);
+        inAppAlert.warning(`ERP Schema Conflict Detected: ${res.conflict_details}`, 'Schema Conflict');
       } else {
         onNotify(`Account synchronized successfully! External ERP ID: ${res.erp_reference_id}`);
+        inAppAlert.success(`Account synchronized successfully! ID: ${res.erp_reference_id}`);
       }
       loadData();
     } catch (err: any) {
-      alert(err.message || 'ERP Sync failed');
+      inAppAlert.error(err.message || 'ERP Sync failed');
     } finally {
       setSyncing(false);
     }
@@ -68,10 +72,11 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
     try {
       const res = await api.resolveERPConflict(resolvingRecord.id, resolutionChoice);
       onNotify(`Conflict resolved via ${resolutionChoice}! Reference: ${res.erp_reference_id}`);
+      inAppAlert.success(`Conflict resolved via ${resolutionChoice}!`);
       setResolvingRecord(null);
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to resolve conflict');
+      inAppAlert.error(err.message || 'Failed to resolve conflict');
     }
   };
 
@@ -81,10 +86,9 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <span className="badge badge-info" style={{ fontSize: '0.72rem' }}>SPEC SECTION 3.1 &amp; PHASE 5</span>
             <span className="badge badge-success" style={{ fontSize: '0.72rem' }}>BI-DIRECTIONAL ERP GATEWAY</span>
           </div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#FFFFFF', margin: 0 }}>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
             ERP Customer Master Integration
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0, marginTop: '4px' }}>
@@ -103,45 +107,55 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
       </div>
 
       {/* Connected ERP Systems Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-        {connectors.map(c => (
-          <div 
-            key={c.id} 
-            className="glass-panel" 
-            style={{ 
-              padding: '20px', 
-              border: c.is_active ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Server size={18} color="var(--primary)" />
-                <span style={{ fontWeight: 800, color: '#FFFFFF', fontSize: '0.95rem' }}>{c.system_name}</span>
+      {connectors.length === 0 ? (
+        <div className="glass-panel" style={{ padding: '28px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          <Server size={32} color="var(--primary)" style={{ margin: '0 auto 10px auto', opacity: 0.7 }} />
+          <h3 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>No ERP Connectors Configured</h3>
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: '520px', marginLeft: 'auto', marginRight: 'auto' }}>
+            Bi-directional connectors for Odoo 17, SAP Business One, and MS Dynamics 365 can be configured by administrators to enable real-time ledger synchronization.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+          {connectors.map(c => (
+            <div 
+              key={c.id} 
+              className="glass-panel" 
+              style={{ 
+                padding: '20px', 
+                border: c.is_active ? '1px solid rgba(79, 70, 229, 0.4)' : '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Server size={18} color="var(--primary)" />
+                  <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '0.95rem' }}>{c.system_name}</span>
+                </div>
+                <span className={`badge ${c.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.7rem' }}>
+                  {c.is_active ? 'CONNECTED' : 'STANDBY'}
+                </span>
               </div>
-              <span className={`badge ${c.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.7rem' }}>
-                {c.is_active ? 'CONNECTED' : 'STANDBY'}
-              </span>
-            </div>
 
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
-              {c.base_endpoint}
-            </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                {c.base_endpoint}
+              </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              <span>Auth: <strong>{c.auth_mode}</strong></span>
-              <span>Synced Records: <strong style={{ color: '#FFFFFF' }}>{c.sync_records_count}</strong></span>
-            </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                <span>Auth: <strong>{c.auth_mode}</strong></span>
+                <span>Synced Records: <strong style={{ color: 'var(--text-primary)' }}>{c.sync_records_count}</strong></span>
+              </div>
 
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <ShieldCheck size={14} color="var(--primary)" />
-              <span>Auto-sync Won Opportunities: {c.auto_sync_on_won ? 'Active' : 'Disabled'}</span>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <ShieldCheck size={14} color="var(--primary)" />
+                <span>Auto-sync Won Opportunities: {c.auto_sync_on_won ? 'Active' : 'Disabled'}</span>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Main Grid: Trigger Sync Form + Audit Sync Ledger */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: '20px' }}>
@@ -163,19 +177,24 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
               <select
                 value={selectedConnectorId}
                 onChange={(e) => setSelectedConnectorId(e.target.value)}
+                disabled={connectors.length === 0}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
                   borderRadius: '8px',
                   background: 'var(--bg-surface)',
                   border: '1px solid var(--border-subtle)',
-                  color: '#FFFFFF',
+                  color: 'var(--text-primary)',
                   marginTop: '4px'
                 }}
               >
-                {connectors.map(c => (
-                  <option key={c.id} value={c.id}>{c.system_name}</option>
-                ))}
+                {connectors.length === 0 ? (
+                  <option value="">No ERP connectors configured</option>
+                ) : (
+                  connectors.map(c => (
+                    <option key={c.id} value={c.id}>{c.system_name}</option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -184,25 +203,30 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
               <select
                 value={selectedAccountId}
                 onChange={(e) => setSelectedAccountId(e.target.value)}
+                disabled={accounts.length === 0}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
                   borderRadius: '8px',
                   background: 'var(--bg-surface)',
                   border: '1px solid var(--border-subtle)',
-                  color: '#FFFFFF',
+                  color: 'var(--text-primary)',
                   marginTop: '4px'
                 }}
               >
-                {accounts.map(a => (
-                  <option key={a.id} value={a.id}>{a.company_name} ({a.city || 'Riyadh'})</option>
-                ))}
+                {accounts.length === 0 ? (
+                  <option value="">No customer accounts in database</option>
+                ) : (
+                  accounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.company_name}{a.city ? ` (${a.city})` : (a.country ? ` (${a.country})` : '')}</option>
+                  ))
+                )}
               </select>
             </div>
 
             <button
               type="submit"
-              disabled={syncing}
+              disabled={syncing || connectors.length === 0 || accounts.length === 0}
               className="btn btn-primary"
               style={{ padding: '12px', marginTop: '6px' }}
             >
@@ -223,87 +247,103 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '550px', overflowY: 'auto' }}>
-            {syncLogs.map(log => (
-              <div 
-                key={log.id}
-                style={{
-                  padding: '16px',
-                  borderRadius: '10px',
-                  background: 'var(--bg-surface)',
-                  border: log.status === 'CONFLICT_DETECTED' ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-subtle)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#FFFFFF' }}>
-                      {log.crm_entity_name}
-                    </span>
-                    <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
-                      {log.system_name}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className={`badge ${log.status === 'SUCCESS' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
-                      {log.status}
-                    </span>
-
-                    {log.status === 'CONFLICT_DETECTED' && (
-                      <button
-                        onClick={() => setResolvingRecord(log)}
-                        className="btn btn-warning"
-                        style={{ padding: '4px 10px', fontSize: '0.72rem' }}
-                      >
-                        Resolve Conflict
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  <span>ERP Ref: <strong style={{ color: '#93C5FD' }}>{log.erp_reference_id || 'Pending / Unassigned'}</strong></span>
-                  <span>Direction: <strong>{log.direction}</strong></span>
-                  <span>{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-
-                {log.conflict_details && (
-                  <div style={{ fontSize: '0.75rem', color: '#FCA5A5', background: 'rgba(239, 68, 68, 0.1)', padding: '8px 10px', borderRadius: '6px' }}>
-                    <strong>Conflict:</strong> {log.conflict_details}
-                  </div>
-                )}
+            {syncLogs.length === 0 ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                No synchronization logs recorded yet. Real-time sync transactions will appear here when accounts are pushed to external ERP endpoints.
               </div>
-            ))}
+            ) : (
+              syncLogs.map(log => (
+                <div 
+                  key={log.id}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '10px',
+                    background: 'var(--bg-surface)',
+                    border: log.status === 'CONFLICT_DETECTED' ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                        {log.crm_entity_name}
+                      </span>
+                      <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                        {log.system_name}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className={`badge ${log.status === 'SUCCESS' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
+                        {log.status}
+                      </span>
+
+                      {log.status === 'CONFLICT_DETECTED' && (
+                        <button
+                          onClick={() => setResolvingRecord(log)}
+                          className="btn btn-warning"
+                          style={{ padding: '4px 10px', fontSize: '0.72rem' }}
+                        >
+                          Resolve Conflict
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    <span>ERP Ref: <strong style={{ color: 'var(--primary)' }}>{log.erp_reference_id || 'Pending / Unassigned'}</strong></span>
+                    <span>Direction: <strong>{log.direction}</strong></span>
+                    <span>{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+
+                  {log.conflict_details && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--danger)', background: 'var(--danger-bg)', padding: '8px 10px', borderRadius: '6px' }}>
+                      <strong>Conflict:</strong> {log.conflict_details}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
       {/* Conflict Resolution Modal */}
-      {resolvingRecord && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '500px', padding: '32px', border: '1px solid var(--border-focus)' }}>
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0, marginBottom: '8px' }}>
-              Resolve ERP Schema Conflict
-            </h2>
+      <Modal
+        isOpen={Boolean(resolvingRecord)}
+        onClose={() => setResolvingRecord(null)}
+        title="Resolve ERP Schema Conflict"
+        subtitle={resolvingRecord ? `Account: ${resolvingRecord.crm_entity_name}` : undefined}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', gap: '12px', width: '100%', justifyContent: 'flex-end' }}>
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              onClick={() => setResolvingRecord(null)}
+            >
+              Cancel
+            </button>
+            <button 
+              type="button" 
+              onClick={handleResolveConflict} 
+              className="btn btn-primary" 
+              style={{ padding: '8px 20px' }}
+            >
+              Apply Resolution
+            </button>
+          </div>
+        }
+      >
+        {resolvingRecord && (
+          <div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Account: <strong style={{ color: '#FFFFFF' }}>{resolvingRecord.crm_entity_name}</strong>
+              Account: <strong style={{ color: 'var(--text-primary)' }}>{resolvingRecord.crm_entity_name}</strong>
             </p>
 
-            <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', fontSize: '0.78rem', color: '#FCA5A5', marginBottom: '16px' }}>
+            <div style={{ padding: '12px', background: 'var(--danger-bg)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', fontSize: '0.78rem', color: 'var(--danger)', marginBottom: '16px' }}>
               {resolvingRecord.conflict_details}
             </div>
 
@@ -318,9 +358,9 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
                 style={{
                   padding: '10px 14px',
                   borderRadius: '8px',
-                  background: resolutionChoice === 'CRM_WINS' ? 'rgba(59, 130, 246, 0.2)' : 'var(--bg-surface)',
+                  background: resolutionChoice === 'CRM_WINS' ? 'var(--primary-light)' : 'var(--bg-surface)',
                   border: resolutionChoice === 'CRM_WINS' ? '1.5px solid var(--primary)' : '1px solid var(--border-subtle)',
-                  color: '#FFFFFF',
+                  color: 'var(--text-primary)',
                   textAlign: 'left',
                   cursor: 'pointer'
                 }}
@@ -335,9 +375,9 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
                 style={{
                   padding: '10px 14px',
                   borderRadius: '8px',
-                  background: resolutionChoice === 'ERP_WINS' ? 'rgba(59, 130, 246, 0.2)' : 'var(--bg-surface)',
+                  background: resolutionChoice === 'ERP_WINS' ? 'var(--primary-light)' : 'var(--bg-surface)',
                   border: resolutionChoice === 'ERP_WINS' ? '1.5px solid var(--primary)' : '1px solid var(--border-subtle)',
-                  color: '#FFFFFF',
+                  color: 'var(--text-primary)',
                   textAlign: 'left',
                   cursor: 'pointer'
                 }}
@@ -347,26 +387,9 @@ export const ERPSyncGatewayView: React.FC<Props> = ({ accounts, onNotify }) => {
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button 
-                type="button" 
-                onClick={handleResolveConflict} 
-                className="btn btn-primary" 
-                style={{ flex: 1, padding: '12px' }}
-              >
-                Apply Resolution
-              </button>
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={() => setResolvingRecord(null)}
-              >
-                Cancel
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };

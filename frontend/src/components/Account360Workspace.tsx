@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { UnifiedActivityTimeline } from './UnifiedActivityTimeline';
+import { Modal } from './common/Modal';
 
 interface Account360WorkspaceProps {
   initialAccountId?: string;
@@ -19,6 +20,10 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState<string>(initialAccountId || '');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showEditPlaceModal, setShowEditPlaceModal] = useState(false);
+  const [editCity, setEditCity] = useState('');
+  const [editCountry, setEditCountry] = useState('');
+  const [savingPlace, setSavingPlace] = useState(false);
 
   useEffect(() => {
     loadAccounts();
@@ -43,6 +48,24 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSavePlace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAccount) return;
+    setSavingPlace(true);
+    try {
+      await api.updateAccount(selectedAccount.id, {
+        city: editCity.trim() || '',
+        country: editCountry.trim() || ''
+      });
+      setAccounts(prev => prev.map(a => a.id === selectedAccount.id ? { ...a, city: editCity.trim(), country: editCountry.trim() } : a));
+      setShowEditPlaceModal(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update location');
+    } finally {
+      setSavingPlace(false);
     }
   };
 
@@ -118,7 +141,7 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#FFFFFF',
+              color: 'var(--text-primary)',
               fontSize: '0.8rem',
               outline: 'none',
               width: '100%'
@@ -145,7 +168,7 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#FFFFFF' }}>{acc.company_name}</div>
+                  <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-primary)' }}>{acc.company_name}</div>
                   {acc.is_target_account && (
                     <span className="badge badge-warning" style={{ fontSize: '0.65rem' }}>TARGET</span>
                   )}
@@ -154,7 +177,7 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                   <span>{acc.industry || 'Enterprise'}</span>
                   <span>•</span>
-                  <span>{acc.city || acc.country || 'GCC'}</span>
+                  <span>{acc.city ? (acc.country ? `${acc.city}, ${acc.country}` : acc.city) : (acc.country || 'No location')}</span>
                 </div>
 
                 <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -197,7 +220,7 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                     <span className="badge badge-neutral">Partner: {selectedAccount.partner_name}</span>
                   )}
                 </div>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.02em' }}>
+                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                   {selectedAccount.company_name}
                 </h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -211,8 +234,35 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                       <Phone size={13} /> {selectedAccount.phone}
                     </span>
                   )}
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <MapPin size={13} /> {selectedAccount.city || 'Riyadh'}, {selectedAccount.country || 'Saudi Arabia'}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MapPin size={13} color="var(--primary)" />
+                    <span>
+                      {selectedAccount.city && selectedAccount.country
+                        ? `${selectedAccount.city}, ${selectedAccount.country}`
+                        : (selectedAccount.city || selectedAccount.country || 'Location not specified')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditCity(selectedAccount.city || '');
+                        setEditCountry(selectedAccount.country || '');
+                        setShowEditPlaceModal(true);
+                      }}
+                      style={{
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                        borderRadius: '4px',
+                        color: 'var(--primary)',
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        padding: '1px 6px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}
+                    >
+                      {selectedAccount.city || selectedAccount.country ? 'Edit' : '+ Add Place'}
+                    </button>
                   </span>
                   {onNavigateToOpportunity && (
                     <button 
@@ -249,7 +299,7 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                     {nextActionState?.label}
                   </span>
                 </div>
-                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: '#FFFFFF', marginTop: '4px' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginTop: '4px' }}>
                   {selectedAccount.next_action_description || 'No future action defined'}
                 </div>
                 {selectedAccount.next_activity_due_at && (
@@ -271,21 +321,21 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
             }}>
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>EMPLOYEES</div>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#FFFFFF' }}>{selectedAccount.employees_count || 100}</div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedAccount.employees_count || 100}</div>
               </div>
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>DISTRIBUTION CENTERS</div>
-                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#FFFFFF' }}>{selectedAccount.distribution_centers_count || 1}</div>
+                <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedAccount.distribution_centers_count || 1}</div>
               </div>
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>LAST ACTIVITY</div>
-                <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#FFFFFF' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
                   {selectedAccount.last_activity_at ? new Date(selectedAccount.last_activity_at).toLocaleDateString() : 'None Recorded'}
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>PRIMARY OWNER</div>
-                <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#FFFFFF' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
                   {selectedAccount.primary_owner_name || 'Commercial Team'}
                 </div>
               </div>
@@ -327,6 +377,88 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
           Select an account to view Account 360 profile and interaction timeline.
         </div>
       )}
+      {/* EDIT LOCATION / PLACE MODAL */}
+      <Modal
+        isOpen={showEditPlaceModal}
+        onClose={() => setShowEditPlaceModal(false)}
+        title="Account Location / Place"
+        subtitle="Specify geographic city and country for this enterprise account."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MapPin size={18} />
+          </div>
+        }
+        maxWidth="440px"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowEditPlaceModal(false)}
+              className="btn btn-outline"
+              style={{ fontSize: '0.82rem' }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="account-place-form"
+              disabled={savingPlace}
+              className="btn btn-primary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              {savingPlace ? 'Saving...' : 'Save Place'}
+            </button>
+          </>
+        }
+      >
+        <form id="account-place-form" onSubmit={handleSavePlace}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                City / Place
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Jeddah, Dammam, Dubai, Riyadh"
+                value={editCity}
+                onChange={(e) => setEditCity(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
+                  fontSize: '0.85rem'
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                Country
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Saudi Arabia, UAE, Qatar"
+                value={editCountry}
+                onChange={(e) => setEditCountry(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
+                  fontSize: '0.85rem'
+                }}
+              />
+            </div>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

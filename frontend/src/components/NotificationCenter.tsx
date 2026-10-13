@@ -100,7 +100,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           border: '1px solid var(--border-subtle)',
           borderRadius: '8px',
           padding: '8px',
-          color: unreadCount > 0 ? '#FFFFFF' : 'var(--text-muted)',
+          color: unreadCount > 0 ? 'var(--primary)' : 'var(--text-muted)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
@@ -142,10 +142,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             top: '46px',
             width: '380px',
             maxWidth: '90vw',
-            background: '#0B0F19',
+            background: 'var(--bg-surface)',
             border: '1px solid var(--border-subtle)',
             borderRadius: '12px',
-            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6)',
+            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.15)',
             zIndex: 1000,
             overflow: 'hidden',
             display: 'flex',
@@ -164,7 +164,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Bell size={16} color="var(--primary)" />
-              <strong style={{ fontSize: '0.9rem', color: '#FFFFFF' }}>Notifications</strong>
+              <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>Notifications</strong>
               {unreadCount > 0 && (
                 <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>{unreadCount} new</span>
               )}
@@ -204,10 +204,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               style={{
                 flex: 1,
                 padding: '8px',
-                background: filter === 'UNREAD' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                background: filter === 'UNREAD' ? 'var(--primary-subtle)' : 'transparent',
                 border: 'none',
                 borderBottom: filter === 'UNREAD' ? '2px solid var(--primary)' : 'none',
-                color: filter === 'UNREAD' ? '#FFFFFF' : 'var(--text-muted)',
+                color: filter === 'UNREAD' ? 'var(--primary)' : 'var(--text-muted)',
                 fontSize: '0.75rem',
                 fontWeight: 700,
                 cursor: 'pointer'
@@ -220,10 +220,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               style={{
                 flex: 1,
                 padding: '8px',
-                background: filter === 'ALL' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                background: filter === 'ALL' ? 'var(--primary-subtle)' : 'transparent',
                 border: 'none',
                 borderBottom: filter === 'ALL' ? '2px solid var(--primary)' : 'none',
-                color: filter === 'ALL' ? '#FFFFFF' : 'var(--text-muted)',
+                color: filter === 'ALL' ? 'var(--primary)' : 'var(--text-muted)',
                 fontSize: '0.75rem',
                 fontWeight: 700,
                 cursor: 'pointer'
@@ -253,14 +253,14 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   style={{
                     padding: '12px',
                     borderRadius: '8px',
-                    background: notif.is_read ? 'var(--bg-surface)' : 'rgba(59, 130, 246, 0.08)',
-                    border: notif.is_read ? '1px solid var(--border-subtle)' : '1px solid rgba(59, 130, 246, 0.3)',
+                    background: notif.is_read ? 'var(--bg-surface)' : 'var(--primary-subtle)',
+                    border: notif.is_read ? '1px solid var(--border-subtle)' : '1px solid var(--border-focus)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.82rem', color: notif.is_read ? 'var(--text-secondary)' : '#FFFFFF' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.82rem', color: notif.is_read ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
                       {notif.title}
                     </div>
                     {getPriorityBadge(notif.priority)}

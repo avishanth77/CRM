@@ -272,7 +272,7 @@ export const PLDDashboardView: React.FC<PLDDashboardViewProps> = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--danger)' }}>
-              {data?.alerts.leads_without_problems ?? 0}
+              {data?.alerts?.leads_without_problems ?? (data as any)?.quality_alerts?.leads_without_problems ?? 0}
             </span>
             <button
               className="btn btn-outline"
@@ -317,7 +317,7 @@ export const PLDDashboardView: React.FC<PLDDashboardViewProps> = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--warning)' }}>
-              {data?.alerts.leads_without_next_action ?? 0}
+              {data?.alerts?.leads_without_next_action ?? (data as any)?.quality_alerts?.leads_without_next_action ?? 0}
             </span>
             <button
               className="btn btn-outline"
@@ -348,7 +348,17 @@ export const PLDDashboardView: React.FC<PLDDashboardViewProps> = ({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {data?.score_distribution?.map((tier, idx) => {
+            {(Array.isArray(data?.score_distribution)
+              ? data.score_distribution
+              : (data?.score_distribution && typeof data.score_distribution === 'object')
+                ? [
+                    { range: '0-30', label: 'Nurture Band', count: (data.score_distribution as any).nurture_band_0_30 ?? 0 },
+                    { range: '31-60', label: 'Development Band', count: (data.score_distribution as any).development_band_31_60 ?? 0 },
+                    { range: '61-80', label: 'Qualified Band', count: (data.score_distribution as any).qualified_band_61_80 ?? 0 },
+                    { range: '81-100', label: 'High Priority Band', count: (data.score_distribution as any).high_priority_band_81_100 ?? 0 },
+                  ]
+                : []
+            ).map((tier, idx) => {
               const total = data?.kpis?.total_leads || 1;
               const pct = Math.round((tier.count / total) * 100);
               return (
@@ -403,7 +413,7 @@ export const PLDDashboardView: React.FC<PLDDashboardViewProps> = ({
                 No stage data available.
               </div>
             ) : (
-              data.stage_distribution.map((st, idx) => (
+              (data?.stage_distribution || []).map((st, idx) => (
                 <div
                   key={idx}
                   style={{
@@ -469,7 +479,7 @@ export const PLDDashboardView: React.FC<PLDDashboardViewProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {data.high_score_leads.map((lead) => (
+                {(data?.high_score_leads || []).map((lead) => (
                   <tr
                     key={lead.id}
                     style={{

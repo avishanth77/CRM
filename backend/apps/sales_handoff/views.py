@@ -5,12 +5,14 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from django.db.models import Q
 from apps.sales_handoff.models import SQLHandoff, HandoffStatus
 from apps.sales_handoff.serializers import SQLHandoffSerializer
 from apps.sales_handoff.services import SQLReadinessValidator, SQLHandoffService
 from apps.leads.models import Lead
 from apps.workflows.models import StageHistory
 
+from apps.authentication.backends import get_request_user, is_management_or_admin, is_sales_staff
 User = get_user_model()
 
 
@@ -22,6 +24,15 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
     serializer_class = SQLHandoffSerializer
     permission_classes = [permissions.AllowAny]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = get_request_user(self.request)
+
+        if is_sales_staff(user):
+            qs = qs.filter(Q(lead__owner=user) | Q(assigned_sales_owner=user))
+
+        return qs
+
     @action(detail=False, methods=['get', 'post'], url_path='readiness')
     def check_readiness(self, request):
         """
@@ -31,12 +42,16 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         lead_id = request.data.get('lead_id') if request.method == 'POST' else request.query_params.get('lead_id')
         estimated_val = request.data.get('estimated_value') if request.method == 'POST' else request.query_params.get('estimated_value')
 
+        user = get_request_user(request)
         if not lead_id:
             return Response({'error': 'lead_id is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             lead = Lead.objects.select_related('account', 'contact', 'primary_product').get(id=lead_id)
         except Lead.DoesNotExist:
+            return Response({'error': f"Lead with id {lead_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
+
+        if is_sales_staff(user) and lead.owner_id and lead.owner_id != getattr(user, 'id', None):
             return Response({'error': f"Lead with id {lead_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
 
         readiness_data = SQLReadinessValidator.validate_readiness(lead, estimated_value=estimated_val)
@@ -55,6 +70,7 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         is_override = bool(request.data.get('is_override', False))
         override_reason = request.data.get('override_reason')
 
+        user = get_request_user(request)
         if not lead_id:
             return Response({'error': 'lead_id is required'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -63,12 +79,17 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         except Lead.DoesNotExist:
             return Response({'error': f"Lead with id {lead_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
 
+        if is_sales_staff(user) and lead.owner_id and lead.owner_id != getattr(user, 'id', None):
+            return Response({'error': f"Lead with id {lead_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
+
         sales_owner = None
         if sales_owner_id:
             sales_owner = User.objects.filter(id=sales_owner_id).first()
 
-        user = request.user if request.user.is_authenticated else None
-        # Fallback to lead owner or system user for testing/unauthenticated calls
+        if not is_management_or_admin(user):
+            if sales_owner and getattr(sales_owner, 'id', None) != getattr(user, 'id', None):
+                return Response({'error': 'Staff members cannot assign handoffs to other owners. Only managers can assign leads.'}, status=status.HTTP_403_FORBIDDEN)
+
         if not user:
             user = lead.owner or User.objects.first()
 
@@ -100,11 +121,8 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         """
         handoff = self.get_object()
         reason = request.data.get('override_reason')
-        user = request.user if request.user.is_authenticated else None
-        if not user:
-            user = User.objects.filter(is_superuser=True).first()
-
-        if not SQLHandoffService.check_override_permission(user):
+        user = get_request_user(request)
+        if not is_management_or_admin(user):
             return Response({'error': 'User is not authorized to grant SQL overrides.'}, status=status.HTTP_403_FORBIDDEN)
 
         if not reason or not reason.strip():
@@ -153,11 +171,14 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         Sales accepts the SQL handoff. Transfers ownership, marks ACCEPTED, and creates the Opportunity.
         """
         handoff = self.get_object()
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         new_sales_owner = None
         new_owner_id = request.data.get('new_sales_owner_id')
         if new_owner_id:
             new_sales_owner = User.objects.filter(id=new_owner_id).first()
+
+        if not is_management_or_admin(user) and new_sales_owner and getattr(new_sales_owner, 'id', None) != getattr(user, 'id', None):
+            return Response({'error': 'Staff members cannot reassign ownership to other representatives.'}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             result = SQLHandoffService.accept_sql(handoff, user=user, new_sales_owner=new_sales_owner)

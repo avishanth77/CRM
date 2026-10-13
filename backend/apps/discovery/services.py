@@ -61,46 +61,72 @@ class DiscoveryValidator:
             {
                 "gate_code": "CURRENT_PROCESS",
                 "gate_name": "Current Process Documented",
+                "name": "Current Process Documented",
+                "description": "Operational workflow & systems documented" if has_current_process else "Current process notes are required",
+                "status": "COMPLETED" if has_current_process else "MISSING",
                 "is_mandatory": True,
                 "satisfied": has_current_process,
-                "details": "Operational workflow & systems documented" if has_current_process else "Current process notes are required"
+                "details": "Operational workflow & systems documented" if has_current_process else "Current process notes are required",
+                "missing_fields": [] if has_current_process else ["Section 1 Operational Process Notes"]
             },
             {
                 "gate_code": "CONFIRMED_PROBLEMS",
                 "gate_name": "Documented Business Problems",
+                "name": "Documented Business Problems",
+                "description": f"{confirmed_problems.count()} confirmed problem(s) documented" if has_problems else "At least 1 confirmed problem required",
+                "status": "COMPLETED" if has_problems else "MISSING",
                 "is_mandatory": True,
                 "satisfied": has_problems,
-                "details": f"{confirmed_problems.count()} confirmed problem(s) documented" if has_problems else "At least 1 confirmed problem required"
+                "details": f"{confirmed_problems.count()} confirmed problem(s) documented" if has_problems else "At least 1 confirmed problem required",
+                "missing_fields": [] if has_problems else ["Confirmed Business Problems"]
             },
             {
                 "gate_code": "BUSINESS_IMPACT",
                 "gate_name": "Business Impact Captured",
+                "name": "Business Impact Captured",
+                "description": "Financial & operational impact captured" if has_business_impact else "Problem business impact description required",
+                "status": "COMPLETED" if has_business_impact else "MISSING",
                 "is_mandatory": True,
                 "satisfied": has_business_impact,
-                "details": "Financial & operational impact captured" if has_business_impact else "Problem business impact description required"
+                "details": "Financial & operational impact captured" if has_business_impact else "Problem business impact description required",
+                "missing_fields": [] if has_business_impact else ["Quantified Business Impact Summary"]
             },
             {
                 "gate_code": "STAKEHOLDERS",
                 "gate_name": "Stakeholders & Buying Committee",
+                "name": "Stakeholders & Buying Committee",
+                "description": f"{discovery.stakeholders.count()} stakeholder(s) identified" if has_stakeholder_records else ("Stakeholder notes captured" if has_stakeholders else "At least 1 stakeholder or committee note required"),
+                "status": "COMPLETED" if has_stakeholders else "MISSING",
                 "is_mandatory": True,
                 "satisfied": has_stakeholders,
-                "details": f"{discovery.stakeholders.count()} stakeholder(s) identified" if has_stakeholder_records else ("Stakeholder notes captured" if has_stakeholders else "At least 1 stakeholder or committee note required")
+                "details": f"{discovery.stakeholders.count()} stakeholder(s) identified" if has_stakeholder_records else ("Stakeholder notes captured" if has_stakeholders else "At least 1 stakeholder or committee note required"),
+                "missing_fields": [] if has_stakeholders else ["Stakeholder Records or Committee Notes"]
             },
             {
                 "gate_code": "PRODUCT_MAPPING",
                 "gate_name": "Product Capability Mapping",
+                "name": "Product Capability Mapping",
+                "description": "All confirmed problems mapped to product capabilities" if has_product_mapping else (
+                    f"{len(unmapped_problems)} problem(s) unmapped" if unmapped_problems else "No problems to map"
+                ),
+                "status": "COMPLETED" if has_product_mapping else "MISSING",
                 "is_mandatory": True,
                 "satisfied": has_product_mapping,
                 "details": "All confirmed problems mapped to product capabilities" if has_product_mapping else (
                     f"{len(unmapped_problems)} problem(s) unmapped: {', '.join([p['problem_name'] for p in unmapped_problems])}" if unmapped_problems else "No problems to map"
-                )
+                ),
+                "missing_fields": [p['problem_name'][:45] + ('...' if len(p['problem_name']) > 45 else '') for p in unmapped_problems] if unmapped_problems else ([] if has_product_mapping else ["Problem Capability Mapping"])
             },
             {
                 "gate_code": "NEXT_ACTION",
                 "gate_name": "Scheduled Next Action",
+                "name": "Scheduled Next Action",
+                "description": "Future action and due date scheduled" if has_next_action else "Future next action and due date required",
+                "status": "COMPLETED" if has_next_action else "MISSING",
                 "is_mandatory": True,
                 "satisfied": has_next_action,
-                "details": "Future action and due date scheduled" if has_next_action else "Future next action and due date required"
+                "details": "Future action and due date scheduled" if has_next_action else "Future next action and due date required",
+                "missing_fields": [] if has_next_action else ["Scheduled Next Action & Due Date"]
             }
         ]
 
@@ -263,6 +289,34 @@ class DiscoveryService:
         discovery.completed_at = timezone.now()
         discovery.save(update_fields=['status', 'is_product_mapping_complete', 'completed_at'])
 
+        demo_id = None
+        if discovery.lead:
+            # Advance lead pipeline stage to DEMO if available
+            from apps.pld_engine.models import PipelineStage, PipelineType
+            demo_stage = PipelineStage.objects.filter(
+                pipeline_type=PipelineType.PURSUIT,
+                stage_code='DEMO'
+            ).first()
+            if not demo_stage:
+                demo_stage = PipelineStage.objects.filter(
+                    stage_name__icontains='Demo'
+                ).first()
+            if demo_stage and discovery.lead.current_stage != demo_stage:
+                discovery.lead.current_stage = demo_stage
+                discovery.lead.save(update_fields=['current_stage'])
+
+            # Automatically initialize Demo session with all mapped use cases carried over
+            from apps.evaluations.services import DemoService
+            demo = DemoService.create_or_init_demo(
+                lead=discovery.lead,
+                account=discovery.account,
+                discovery=discovery,
+                product=discovery.product or discovery.lead.primary_product,
+                user=user
+            )
+            if demo:
+                demo_id = str(demo.id)
+
         AuditLog.objects.create(
             actor=user,
             actor_email=user.email if user else "system@texol.sa",
@@ -273,12 +327,14 @@ class DiscoveryService:
             changes_json={
                 "status": {"old": old_status, "new": DiscoveryStatus.COMPLETED},
                 "completed_at": discovery.completed_at.isoformat(),
-                "is_product_mapping_complete": True
+                "is_product_mapping_complete": True,
+                "demo_id": demo_id
             }
         )
 
         return {
             "message": "Discovery completed successfully with all problem-to-capability mappings verified.",
             "discovery_id": str(discovery.id),
-            "completed_at": discovery.completed_at.isoformat()
+            "completed_at": discovery.completed_at.isoformat(),
+            "demo_id": demo_id
         }

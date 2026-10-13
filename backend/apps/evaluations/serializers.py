@@ -40,9 +40,9 @@ class DemoUseCaseMappingSerializer(serializers.ModelSerializer):
 
     def get_problem_name(self, obj):
         if obj.discovery_problem:
-            return obj.discovery_problem.refined_statement or obj.discovery_problem.problem.name
+            return obj.discovery_problem.refined_statement or (obj.discovery_problem.problem.name if obj.discovery_problem.problem else "Customer Problem")
         if obj.lead_problem:
-            return obj.lead_problem.problem.name
+            return obj.lead_problem.problem.name if obj.lead_problem.problem else "Lead Problem"
         return "Custom Scenario"
 
 

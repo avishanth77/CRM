@@ -3,6 +3,8 @@ from django.core.exceptions import ValidationError
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db.models import Q
+from apps.authentication.models import User, UserRole
 from apps.evaluations.models import (
     Demo, DemoParticipant, DemoUseCaseMapping,
     POC, POCParticipant, POCSuccessCriterion
@@ -13,6 +15,36 @@ from apps.evaluations.serializers import (
 )
 from apps.evaluations.services import DemoService, DemoValidator, POCService, POCValidator
 from apps.audit_logging.models import AuditLog, AuditAction
+
+
+def get_request_user(request):
+    if request.user and request.user.is_authenticated:
+        return request.user
+    user_id = (
+        request.headers.get('X-User-Id') or
+        request.headers.get('x-user-id') or
+        (request.data.get('user_id') if hasattr(request, 'data') and isinstance(request.data, dict) else None)
+    )
+    if user_id:
+        try:
+            u = User.objects.filter(id=user_id, is_active=True).first()
+            if u:
+                return u
+        except Exception:
+            pass
+    user_email = (
+        request.headers.get('X-User-Email') or
+        request.headers.get('x-user-email') or
+        (request.data.get('user_email') if hasattr(request, 'data') and isinstance(request.data, dict) else None)
+    )
+    if user_email:
+        try:
+            u = User.objects.filter(email__iexact=user_email, is_active=True).first()
+            if u:
+                return u
+        except Exception:
+            pass
+    return None
 
 
 class DemoViewSet(viewsets.ModelViewSet):
@@ -27,11 +59,39 @@ class DemoViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        qs = super().get_queryset()
         lead_id = self.request.query_params.get('lead')
         account_id = self.request.query_params.get('account')
         product_id = self.request.query_params.get('product')
         status_val = self.request.query_params.get('status')
+
+        # Auto-initialize Demo if querying for a specific lead that has completed Discovery but no Demo yet
+        if lead_id and not Demo.objects.filter(lead_id=lead_id).exists():
+            from apps.leads.models import Lead
+            lead_obj = Lead.objects.filter(id=lead_id).first()
+            if lead_obj:
+                disc = lead_obj.discoveries.filter(status='COMPLETED').first() or lead_obj.discoveries.first()
+                if disc:
+                    DemoService.create_or_init_demo(
+                        lead=lead_obj,
+                        account=lead_obj.account,
+                        discovery=disc,
+                        product=disc.product or lead_obj.primary_product,
+                        user=get_request_user(self.request)
+                    )
+
+        qs = super().get_queryset()
+        user = get_request_user(self.request)
+
+        is_manager_or_admin = (
+            user and (
+                user.is_superuser or
+                user.is_staff or
+                getattr(user, 'role', None) in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.MANAGEMENT] or
+                'MANAGER' in getattr(user, 'role', '')
+            )
+        )
+        if user and not is_manager_or_admin and getattr(user, 'role', None) in [UserRole.SALES_BDM, 'SALES_BDM', 'SALES_REP', 'ACCOUNT_EXECUTIVE', 'SALES_EXECUTIVE']:
+            qs = qs.filter(Q(lead__owner=user) | Q(presenter=user))
 
         if lead_id:
             qs = qs.filter(lead_id=lead_id)
@@ -99,6 +159,8 @@ class DemoViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_200_OK)
         except ValidationError as e:
             return Response(e.message_dict if hasattr(e, 'message_dict') else {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='mark-not-required')
     def mark_not_required(self, request, pk=None):
@@ -115,6 +177,8 @@ class DemoViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_200_OK)
         except ValidationError as e:
             return Response(e.message_dict if hasattr(e, 'message_dict') else {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='not-required')
     def not_required(self, request, pk=None):
@@ -125,34 +189,44 @@ class DemoViewSet(viewsets.ModelViewSet):
         demo = self.get_object()
         user = request.user if request.user.is_authenticated else None
 
-        participant = DemoService.add_participant(
-            demo=demo,
-            contact_id=request.data.get('contact_id'),
-            user_id=request.data.get('user_id'),
-            name=request.data.get('name', ''),
-            email=request.data.get('email', ''),
-            participant_type=request.data.get('participant_type', 'CUSTOMER'),
-            role_title=request.data.get('role_title', ''),
-            notes=request.data.get('notes', ''),
-            user=user
-        )
-        return Response(DemoParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
+        try:
+            participant = DemoService.add_participant(
+                demo=demo,
+                contact_id=request.data.get('contact_id'),
+                user_id=request.data.get('user_id'),
+                name=request.data.get('name', ''),
+                email=request.data.get('email', ''),
+                participant_type=request.data.get('participant_type', 'CUSTOMER'),
+                role_title=request.data.get('role_title', ''),
+                notes=request.data.get('notes', ''),
+                user=user
+            )
+            return Response(DemoParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response(e.message_dict if hasattr(e, 'message_dict') else {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='map-use-case')
     def map_use_case(self, request, pk=None):
         demo = self.get_object()
         user = request.user if request.user.is_authenticated else None
 
-        mapping = DemoService.map_use_case(
-            demo=demo,
-            discovery_problem_id=request.data.get('discovery_problem_id'),
-            capability_id=request.data.get('capability_id'),
-            module_id=request.data.get('module_id'),
-            notes=request.data.get('notes', ''),
-            was_demonstrated=request.data.get('was_demonstrated', True),
-            user=user
-        )
-        return Response(DemoUseCaseMappingSerializer(mapping).data, status=status.HTTP_201_CREATED)
+        try:
+            mapping = DemoService.map_use_case(
+                demo=demo,
+                discovery_problem_id=request.data.get('discovery_problem_id'),
+                capability_id=request.data.get('capability_id'),
+                module_id=request.data.get('module_id'),
+                notes=request.data.get('notes', ''),
+                was_demonstrated=request.data.get('was_demonstrated', True),
+                user=user
+            )
+            return Response(DemoUseCaseMappingSerializer(mapping).data, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response(e.message_dict if hasattr(e, 'message_dict') else {'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='unmap-use-case')
     def unmap_use_case(self, request, pk=None):
@@ -162,7 +236,7 @@ class DemoViewSet(viewsets.ModelViewSet):
         if mapping:
             mapping.delete()
             return Response({"message": "Use case mapping removed."}, status=status.HTTP_200_OK)
-        return Response({"error": "Use case mapping not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Use case mapping not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class DemoParticipantViewSet(viewsets.ModelViewSet):
@@ -191,10 +265,37 @@ class POCViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        user = get_request_user(self.request)
+
+        is_manager_or_admin = (
+            user and (
+                user.is_superuser or
+                user.is_staff or
+                getattr(user, 'role', None) in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.MANAGEMENT] or
+                'MANAGER' in getattr(user, 'role', '')
+            )
+        )
+        if user and not is_manager_or_admin and getattr(user, 'role', None) in [UserRole.SALES_BDM, 'SALES_BDM', 'SALES_REP', 'ACCOUNT_EXECUTIVE', 'SALES_EXECUTIVE']:
+            qs = qs.filter(Q(lead__owner=user) | Q(owner=user))
+
         lead_id = self.request.query_params.get('lead')
         account_id = self.request.query_params.get('account')
         product_id = self.request.query_params.get('product')
         status_val = self.request.query_params.get('status')
+
+        # Auto-initialize POC if querying for a specific lead that has no POC yet
+        if lead_id and not POC.objects.filter(lead_id=lead_id).exists():
+            from apps.leads.models import Lead
+            lead_obj = Lead.objects.filter(id=lead_id).first()
+            if lead_obj:
+                disc = lead_obj.discoveries.filter(status='COMPLETED').first() or lead_obj.discoveries.first()
+                POCService.create_or_init_poc(
+                    lead=lead_obj,
+                    account=lead_obj.account,
+                    discovery=disc,
+                    product=(disc.product if disc else None) or lead_obj.primary_product,
+                    user=get_request_user(self.request)
+                )
 
         if lead_id:
             qs = qs.filter(lead_id=lead_id)
@@ -205,6 +306,46 @@ class POCViewSet(viewsets.ModelViewSet):
         if status_val:
             qs = qs.filter(status=status_val)
         return qs
+
+    @action(detail=False, methods=['post'], url_path='init')
+    def init_poc(self, request):
+        lead_id = request.data.get('lead_id') or request.data.get('lead')
+        account_id = request.data.get('account_id') or request.data.get('account')
+        user = get_request_user(request)
+
+        from apps.leads.models import Lead
+        from apps.accounts.models import Account
+
+        lead = None
+        account = None
+        if lead_id:
+            lead = Lead.objects.filter(id=lead_id).first()
+            if lead and not account:
+                account = lead.account
+        if account_id and not account:
+            account = Account.objects.filter(id=account_id).first()
+
+        if not lead and not account:
+            return Response({'error': 'lead_id or account_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        poc = None
+        if lead:
+            poc = POC.objects.filter(lead=lead).first()
+        elif account:
+            poc = POC.objects.filter(account=account).first()
+
+        if not poc:
+            disc = (lead.discoveries.filter(status='COMPLETED').first() or lead.discoveries.first()) if lead else None
+            prod = (disc.product if disc else None) or (lead.primary_product if lead else None)
+            poc = POCService.create_or_init_poc(
+                lead=lead,
+                account=account,
+                discovery=disc,
+                product=prod,
+                user=user
+            )
+
+        return Response(POCSerializer(poc).data, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None

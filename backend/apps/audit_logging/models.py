@@ -24,6 +24,19 @@ class AuditAction(models.TextChoices):
     SLA_BREACH = 'SLA_BREACH', 'SLA Breached'
     ESCALATION = 'ESCALATION', 'Escalation Triggered'
     AUTOMATION_EXECUTE = 'AUTOMATION_EXECUTE', 'Automation Rule Executed'
+    PARTNER_CREATE = 'PARTNER_CREATE', 'Create Partner'
+    PARTNER_STATUS_CHANGE = 'PARTNER_STATUS_CHANGE', 'Partner Status Changed'
+    PARTNER_AUTH_CHANGE = 'PARTNER_AUTH_CHANGE', 'Partner Authorization Changed'
+    PARTNER_USER_CHANGE = 'PARTNER_USER_CHANGE', 'Partner User Changed'
+    DEAL_REG_SUBMIT = 'DEAL_REG_SUBMIT', 'Submit Deal Registration'
+    DEAL_REG_APPROVE = 'DEAL_REG_APPROVE', 'Approve Deal Registration'
+    DEAL_REG_REJECT = 'DEAL_REG_REJECT', 'Reject Deal Registration'
+    CONFLICT_DECISION = 'CONFLICT_DECISION', 'Channel Conflict Resolved'
+    ATTRIBUTION_CHANGE = 'ATTRIBUTION_CHANGE', 'Attribution Model Configured'
+    PARTNER_INFLUENCE = 'PARTNER_INFLUENCE', 'Partner Influence Recorded'
+    COMMISSION_STATUS = 'COMMISSION_STATUS', 'Commission Status Changed'
+    CAMPAIGN_CHANGE = 'CAMPAIGN_CHANGE', 'Campaign Modified'
+    LEAD_ACTION = 'LEAD_ACTION', 'Lead Action'
 
 
 class AuditLog(models.Model):

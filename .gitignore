@@ -4,6 +4,11 @@ backend/venv/
 ENV/
 env/
 
+# Environment files
+.env
+*.env
+backend/.env
+
 # Python
 __pycache__/
 *.py[cod]

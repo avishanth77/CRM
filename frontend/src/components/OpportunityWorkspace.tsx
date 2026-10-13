@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import {
   User, TrendingUp, CheckCircle2, Clock, ShieldCheck, RefreshCw,
-  Edit3, X, Activity as ActivityIcon, AlertCircle, Layers, History, Award, FileText
+  Edit3, Activity as ActivityIcon, AlertCircle, Layers, History, Award, FileText, Handshake, Printer
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Opportunity } from '../services/api';
 import { UnifiedActivityTimeline } from './UnifiedActivityTimeline';
+import { Modal } from './common/Modal';
+import { CommercialInvoiceModal } from './CommercialInvoiceModal';
 
 interface OpportunityWorkspaceProps {
   initialOpportunityId?: string;
   onNavigateToAccount?: (accountId: string) => void;
   onNavigateToProposal?: (oppId: string) => void;
+  onNavigateToNegotiation?: (oppId: string) => void;
 }
 
 export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
   initialOpportunityId,
   onNavigateToAccount,
-  onNavigateToProposal
+  onNavigateToProposal,
+  onNavigateToNegotiation
 }) => {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
@@ -39,6 +43,7 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
 
   // Stage Transition Modal State
   const [showTransitionModal, setShowTransitionModal] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [availableStages, setAvailableStages] = useState<any[]>([]);
   const [targetStageId, setTargetStageId] = useState<string>('');
   const [transitionReason, setTransitionReason] = useState<string>('');
@@ -100,28 +105,24 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
 
   useEffect(() => {
     if (selectedOpportunity) {
-      fetchOpportunityDetails(selectedOpportunity.id);
-      setEditValue(Number(selectedOpportunity.total_contract_value || 0));
-      setEditArr(Number(selectedOpportunity.arr || 0));
-      setEditMrr(Number(selectedOpportunity.mrr || 0));
+      setEditValue(Number(selectedOpportunity.total_contract_value));
+      setEditArr(Number(selectedOpportunity.arr));
+      setEditMrr(Number(selectedOpportunity.mrr));
       setEditPlan(selectedOpportunity.pricing_plan || '');
       setEditSeats(selectedOpportunity.seat_units_count || 1);
       setEditTerm(selectedOpportunity.contract_term_months || 12);
       setEditProb(selectedOpportunity.probability_pct || 50);
       setEditCloseDate(selectedOpportunity.expected_close_date || '');
+
+      fetchOpportunityDetails(selectedOpportunity.id);
     }
-  }, [selectedOpportunity]);
+  }, [selectedOpportunity?.id]);
 
   const handleSaveCommercials = async () => {
     if (!selectedOpportunity) return;
-    if (editValue < 0) {
-      setFeedbackMsg({ type: 'error', text: 'Contract value cannot be negative.' });
-      return;
-    }
     setSavingCommercials(true);
-    setFeedbackMsg(null);
     try {
-      const res = await api.updateOpportunityCommercials(selectedOpportunity.id, {
+      const updated = await api.updateOpportunity(selectedOpportunity.id, {
         total_contract_value: editValue,
         arr: editArr,
         mrr: editMrr,
@@ -131,9 +132,9 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
         probability_pct: editProb,
         expected_close_date: editCloseDate || undefined
       });
-      setSelectedOpportunity(res.opportunity);
+      setSelectedOpportunity(updated);
       setIsEditingCommercials(false);
-      setFeedbackMsg({ type: 'success', text: 'Commercial parameters updated and logged in Audit.' });
+      setFeedbackMsg({ type: 'success', text: 'Commercial contract details updated successfully.' });
       fetchOpportunities();
     } catch (err: any) {
       setFeedbackMsg({ type: 'error', text: err?.message || 'Failed to update commercials.' });
@@ -145,16 +146,18 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
   const handleTransitionStage = async () => {
     if (!selectedOpportunity || !targetStageId) return;
     setTransitioning(true);
-    setFeedbackMsg(null);
     try {
-      const res = await api.transitionOpportunityStage(selectedOpportunity.id, targetStageId, transitionReason);
+      const res = await api.transitionOpportunityStage(selectedOpportunity.id, {
+        target_stage_id: targetStageId,
+        transition_reason: transitionReason.trim()
+      });
       setSelectedOpportunity(res.opportunity);
       setShowTransitionModal(false);
       setTransitionReason('');
-      setFeedbackMsg({ type: 'success', text: `Stage transitioned to ${res.opportunity.stage_name}.` });
+      setFeedbackMsg({ type: 'success', text: res.message || 'Stage transitioned successfully.' });
       fetchOpportunities();
     } catch (err: any) {
-      setFeedbackMsg({ type: 'error', text: err?.message || 'Failed to transition stage.' });
+      setFeedbackMsg({ type: 'error', text: err?.error || err?.message || 'Stage transition failed.' });
     } finally {
       setTransitioning(false);
     }
@@ -162,33 +165,26 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
 
   const handleLogActivity = async () => {
     if (!selectedOpportunity) return;
-    if (!activitySubject.trim()) {
-      setFeedbackMsg({ type: 'error', text: 'Activity subject is required.' });
-      return;
-    }
-    if (!nextActionDesc.trim() || !nextActionDue) {
-      setFeedbackMsg({ type: 'error', text: 'Mandatory next action description and future due date are required.' });
+    if (!activitySubject.trim() || !nextActionDesc.trim() || !nextActionDue) {
+      setFeedbackMsg({ type: 'error', text: 'Activity subject, mandatory next action, and due date are required.' });
       return;
     }
     setLoggingActivity(true);
-    setFeedbackMsg(null);
     try {
-      await api.createActivity({
-        opportunity: selectedOpportunity.id,
-        account: selectedOpportunity.account,
+      await api.logOpportunityActivity(selectedOpportunity.id, {
         activity_type: activityType,
         subject: activitySubject.trim(),
         outcome_notes: activityOutcome.trim(),
         next_action_description: nextActionDesc.trim(),
-        next_action_due_at: nextActionDue
+        next_action_due_at: nextActionDue ? new Date(nextActionDue).toISOString() : undefined
       });
       setShowActivityModal(false);
       setActivitySubject('');
       setActivityOutcome('');
       setNextActionDesc('');
       setNextActionDue('');
-      setFeedbackMsg({ type: 'success', text: 'Activity logged successfully.' });
-      fetchOpportunityDetails(selectedOpportunity.id);
+      setFeedbackMsg({ type: 'success', text: 'Commercial activity logged and next action SLA updated.' });
+      fetchOpportunities();
     } catch (err: any) {
       setFeedbackMsg({ type: 'error', text: err?.message || 'Failed to log activity.' });
     } finally {
@@ -209,67 +205,85 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Header & Selector */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400">
-            <TrendingUp className="w-6 h-6" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Top Header & Selector Banner */}
+      <div className="glass-panel" style={{ padding: '24px', borderLeft: '4px solid var(--accent-purple)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ padding: '10px', borderRadius: '12px', background: 'rgba(139, 92, 246, 0.15)', color: 'var(--accent-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingUp size={28} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+                  Commercial Opportunity Workspace
+                </h1>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '4px 0 0' }}>
+                Manage enterprise deals created from accepted SQLs, track ARR/MRR commercials, and execute pipeline stages.
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              Commercial Opportunity Workspace
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Manage enterprise deals created from accepted SQLs, track ARR/MRR commercials, and execute pipeline stages.
-            </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Opportunity:
+            </label>
+            <select
+              value={selectedOpportunity?.id || ''}
+              onChange={(e) => {
+                const opp = opportunities.find((o) => o.id === e.target.value);
+                if (opp) setSelectedOpportunity(opp);
+              }}
+              className="form-select"
+              style={{ minWidth: '280px', fontSize: '0.82rem', padding: '8px 12px' }}
+            >
+              {opportunities.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.account_name} — {Number(o.total_contract_value).toLocaleString()} {o.currency} ({o.status})
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={fetchOpportunities}
+              className="btn btn-secondary"
+              style={{ padding: '8px 12px' }}
+              title="Refresh Opportunities"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Opportunity:</label>
-          <select
-            value={selectedOpportunity?.id || ''}
-            onChange={(e) => {
-              const opp = opportunities.find((o) => o.id === e.target.value);
-              if (opp) setSelectedOpportunity(opp);
-            }}
-            className="px-3.5 py-2 text-sm font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
-          >
-            {opportunities.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.account_name} — {o.total_contract_value} {o.currency} ({o.status})
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={fetchOpportunities}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Refresh Opportunities"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
         </div>
       </div>
 
       {feedbackMsg && (
         <div
-          className={`p-4 rounded-xl flex items-start gap-3 text-sm ${
-            feedbackMsg.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-              : 'bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-800'
-          }`}
+          className="glass-panel"
+          style={{
+            padding: '14px 18px',
+            background: feedbackMsg.type === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)',
+            border: `1px solid ${feedbackMsg.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            borderRadius: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}
         >
-          {feedbackMsg.type === 'success' ? (
-            <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" />
-          ) : (
-            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-600" />
-          )}
-          <div className="flex-1 font-medium">{feedbackMsg.text}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {feedbackMsg.type === 'success' ? (
+              <CheckCircle2 size={18} color="var(--success)" />
+            ) : (
+              <AlertCircle size={18} color="var(--danger)" />
+            )}
+            <span style={{ fontSize: '0.88rem', fontWeight: 600, color: feedbackMsg.type === 'success' ? 'var(--success)' : 'var(--danger)' }}>
+              {feedbackMsg.text}
+            </span>
+          </div>
           <button
             onClick={() => setFeedbackMsg(null)}
-            className="text-xs font-semibold hover:underline opacity-70"
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
           >
             Dismiss
           </button>
@@ -277,59 +291,60 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
       )}
 
       {selectedOpportunity ? (
-        <div className="space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Main Deal Summary Banner */}
-          <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--border-subtle)' }}>
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--accent-purple)', letterSpacing: '0.05em' }}>
                     OPPORTUNITY #{selectedOpportunity.id.substring(0, 8)}
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  <span className="badge badge-neutral" style={{ fontSize: '0.68rem' }}>
                     {selectedOpportunity.opportunity_type}
                   </span>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                    className={`badge ${
                       selectedOpportunity.status === 'WON'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        ? 'badge-success'
                         : selectedOpportunity.status === 'LOST'
-                        ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
-                        : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                        ? 'badge-danger'
+                        : 'badge-info'
                     }`}
                   >
                     {selectedOpportunity.status}
                   </span>
                 </div>
-                <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-2">
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--text-primary)', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   {selectedOpportunity.account_name}
                   {onNavigateToAccount && (
                     <button
                       onClick={() => onNavigateToAccount(selectedOpportunity.account)}
-                      className="text-xs font-semibold text-violet-600 hover:text-violet-700 underline ml-2"
+                      style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
                     >
                       (View Account 360)
                     </button>
                   )}
                 </h2>
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-1">
-                  <span className="flex items-center gap-1 font-medium">
-                    <User className="w-3.5 h-3.5 text-slate-400" />
-                    Owner: <strong className="text-slate-700 dark:text-slate-300">{selectedOpportunity.owner_name || 'Sales AE'}</strong>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <User size={14} />
+                    Owner: <strong style={{ color: 'var(--text-primary)' }}>{selectedOpportunity.owner_name || 'Sales AE'}</strong>
                   </span>
                   <span>•</span>
-                  <span>Primary Product: <strong className="text-slate-700 dark:text-slate-300">{selectedOpportunity.product_name}</strong></span>
+                  <span>Primary Product: <strong style={{ color: 'var(--primary)' }}>{selectedOpportunity.product_name}</strong></span>
                   <span>•</span>
-                  <span>Stage: <strong className="text-violet-600 dark:text-violet-400">{selectedOpportunity.stage_name || 'Open Pipeline'}</strong></span>
+                  <span>Stage: <strong style={{ color: 'var(--accent-purple)' }}>{selectedOpportunity.stage_name || 'Open Pipeline'}</strong></span>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 <button
                   onClick={() => setIsEditingCommercials(true)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-colors flex items-center gap-1.5"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.82rem' }}
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
+                  <Edit3 size={14} />
                   Edit Commercials
                 </button>
 
@@ -340,28 +355,64 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
                       api.getPipelineStages().then(res => setAvailableStages(res.results || [])).catch(() => {});
                     }
                   }}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-colors flex items-center gap-1.5"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.82rem' }}
                 >
-                  <Clock className="w-3.5 h-3.5" />
+                  <Clock size={14} />
                   Advance Stage
                 </button>
 
                 {onNavigateToProposal && (
                   <button
                     onClick={() => onNavigateToProposal(selectedOpportunity.id)}
-                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5"
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.82rem' }}
                   >
-                    <FileText className="w-3.5 h-3.5" />
+                    <FileText size={14} />
                     Commercial Proposal &amp; Approvals
                   </button>
                 )}
 
+                {onNavigateToNegotiation && (
+                  <button
+                    onClick={() => onNavigateToNegotiation(selectedOpportunity.id)}
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.82rem', background: '#F59E0B', borderColor: '#F59E0B' }}
+                  >
+                    <Handshake size={14} />
+                    Negotiation Stage
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setShowInvoiceModal(true)}
+                  className="btn btn-primary"
+                  style={{
+                    fontSize: '0.82rem',
+                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                    borderColor: '#047857',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)'
+                  }}
+                  title="Print Final Commercial Tax Invoice"
+                >
+                  <Printer size={14} />
+                  Print Final Invoice
+                </button>
+
                 {selectedOpportunity.status === 'OPEN' && (
                   <button
                     onClick={handleMarkWon}
-                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5"
+                    className="btn btn-primary"
+                    style={{
+                      fontSize: '0.82rem',
+                      background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                      boxShadow: '0 2px 10px rgba(16, 185, 129, 0.25)'
+                    }}
                   >
-                    <Award className="w-3.5 h-3.5" />
+                    <Award size={14} />
                     Close Won Deal
                   </button>
                 )}
@@ -369,198 +420,283 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
             </div>
 
             {/* Commercial Metrics Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="p-4 rounded-xl bg-violet-50/60 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/50">
-                <span className="text-[11px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider block">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  background: 'rgba(139, 92, 246, 0.08)',
+                  border: '1px solid rgba(139, 92, 246, 0.25)'
+                }}
+              >
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--accent-purple)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block' }}>
                   TOTAL CONTRACT VALUE
                 </span>
-                <span className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1 block">
+                <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text-primary)', margin: '4px 0 2px', display: 'block' }}>
                   {Number(selectedOpportunity.total_contract_value).toLocaleString()} {selectedOpportunity.currency}
                 </span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
                   Term: {selectedOpportunity.contract_term_months} months
                 </span>
               </div>
 
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)'
+                }}
+              >
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block' }}>
                   ARR (ANNUAL REVENUE)
                 </span>
-                <span className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1 block">
+                <span style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-primary)', margin: '4px 0 2px', display: 'block' }}>
                   {Number(selectedOpportunity.arr).toLocaleString()} {selectedOpportunity.currency}
                 </span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
                   MRR: {Number(selectedOpportunity.mrr).toLocaleString()} {selectedOpportunity.currency}
                 </span>
               </div>
 
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)'
+                }}
+              >
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block' }}>
                   SEATS / UNITS
                 </span>
-                <span className="text-xl font-black text-slate-900 dark:text-slate-100 mt-1 block">
+                <span style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-primary)', margin: '4px 0 2px', display: 'block' }}>
                   {selectedOpportunity.seat_units_count} Units
                 </span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
                   Plan: {selectedOpportunity.pricing_plan || 'Standard'}
                 </span>
               </div>
 
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                  WIN PROBABILITY & CLOSE
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderRadius: '12px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)'
+                }}
+              >
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block' }}>
+                  WIN PROBABILITY &amp; CLOSE
                 </span>
-                <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1 block">
+                <span style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--accent-cyan)', margin: '4px 0 2px', display: 'block' }}>
                   {selectedOpportunity.probability_pct}%
                 </span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
                   Close Date: {selectedOpportunity.expected_close_date || 'Unscheduled'}
                 </span>
               </div>
             </div>
 
             {/* Next Action Priority Banner */}
-            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
-                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <div
+              style={{
+                padding: '14px 18px',
+                borderRadius: '10px',
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
+                fontSize: '0.82rem'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#FDE68A' }}>
+                <Clock size={16} color="var(--warning)" />
                 <span>
                   <strong>NEXT COMMERCIAL ACTION:</strong>{' '}
                   {selectedOpportunity.next_action_description || 'No action scheduled'}
                 </span>
               </div>
-              <div className="text-amber-700 dark:text-amber-400 font-semibold shrink-0">
+              <div style={{ color: 'var(--warning)', fontWeight: 700 }}>
                 Due: {selectedOpportunity.next_activity_due_at ? new Date(selectedOpportunity.next_activity_due_at).toLocaleDateString() : 'Pending'}
               </div>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 text-sm font-semibold">
+          <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '4px' }}>
             <button
               onClick={() => setActiveTab('OVERVIEW')}
-              className={`pb-3 border-b-2 transition-colors ${
-                activeTab === 'OVERVIEW'
-                  ? 'border-violet-600 text-violet-600 dark:text-violet-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '8px 8px 0 0',
+                background: activeTab === 'OVERVIEW' ? 'var(--bg-surface)' : 'transparent',
+                color: activeTab === 'OVERVIEW' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: 'none',
+                borderBottom: activeTab === 'OVERVIEW' ? '2px solid var(--accent-purple)' : '2px solid transparent',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
             >
-              Deal Context & Architecture
+              Deal Context &amp; Architecture
             </button>
             <button
               onClick={() => setActiveTab('ACTIVITIES')}
-              className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === 'ACTIVITIES'
-                  ? 'border-violet-600 text-violet-600 dark:text-violet-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '8px 8px 0 0',
+                background: activeTab === 'ACTIVITIES' ? 'var(--bg-surface)' : 'transparent',
+                color: activeTab === 'ACTIVITIES' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: 'none',
+                borderBottom: activeTab === 'ACTIVITIES' ? '2px solid var(--accent-purple)' : '2px solid transparent',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease'
+              }}
             >
-              <ActivityIcon className="w-4 h-4" />
+              <ActivityIcon size={14} />
               Activities ({activities.length})
             </button>
             <button
               onClick={() => setActiveTab('HISTORY')}
-              className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === 'HISTORY'
-                  ? 'border-violet-600 text-violet-600 dark:text-violet-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '8px 8px 0 0',
+                background: activeTab === 'HISTORY' ? 'var(--bg-surface)' : 'transparent',
+                color: activeTab === 'HISTORY' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                border: 'none',
+                borderBottom: activeTab === 'HISTORY' ? '2px solid var(--accent-purple)' : '2px solid transparent',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease'
+              }}
             >
-              <History className="w-4 h-4" />
-              Stage History & Audit
+              <History size={14} />
+              Stage History &amp; Audit
             </button>
           </div>
 
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'OVERVIEW' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
               {/* Carried Forward PLD & Technical Evaluation Details */}
-              <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              <div className="glass-panel" style={{ padding: '24px' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 16px' }}>
+                  <ShieldCheck size={18} color="var(--success)" />
                   Carried-Forward Evaluation Context
                 </h3>
 
-                <div className="space-y-3 text-xs">
-                  <div className="flex justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400">PLD Fit Score</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.82rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>PLD Fit Score</span>
+                    <span style={{ fontWeight: 800, color: 'var(--success)' }}>
                       {selectedOpportunity.pld_score || '85.0'} / 100
                     </span>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400">SQL Handoff Accepted Date</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>SQL Handoff Accepted Date</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                       {selectedOpportunity.sql_date || 'N/A'}
                     </span>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400">Economic Decision Maker</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Economic Decision Maker</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                       {selectedOpportunity.decision_maker || 'Confirmed during Discovery'}
                     </span>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400">Primary ERP System</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Primary ERP System</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                       {selectedOpportunity.erp_system || 'SAP S/4HANA'}
                     </span>
                   </div>
-                  <div className="py-2 border-b border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400 block mb-1">POC / Trial Outcome:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                  <div style={{ paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>POC / Trial Outcome:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>
                       {selectedOpportunity.poc_result || 'Completed verification benchmarks on file'}
                     </span>
                   </div>
-                  <div className="py-2">
-                    <span className="text-slate-400 block mb-1">Implementation Scope:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Implementation Scope:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>
                       {selectedOpportunity.implementation_scope || 'Standard multi-branch rollout'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Product Modules & Capabilities Relationships (Section 17) */}
-              <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-indigo-500" />
-                  Product Modules & Scope Committed
+              {/* Product Modules & Capabilities Relationships */}
+              <div className="glass-panel" style={{ padding: '24px' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 16px' }}>
+                  <Layers size={18} color="var(--primary)" />
+                  Product Modules &amp; Scope Committed
                 </h3>
 
-                <div className="space-y-3">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {selectedOpportunity.selected_modules && selectedOpportunity.selected_modules.length > 0 ? (
                     selectedOpportunity.selected_modules.map((m) => (
                       <div
                         key={m.id}
-                        className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-xs flex items-center justify-between"
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: '0.82rem'
+                        }}
                       >
                         <div>
-                          <span className="font-bold text-slate-900 dark:text-slate-100 block">
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'block' }}>
                             {m.module_name}
                           </span>
-                          <span className="text-[11px] text-slate-400">{m.notes || m.module_code}</span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{m.notes || m.module_code}</span>
                         </div>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                        <span className="badge badge-success" style={{ fontSize: '0.68rem' }}>
                           Included
                         </span>
                       </div>
                     ))
                   ) : (
-                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 text-xs text-slate-500">
+                    <div style={{ padding: '16px', borderRadius: '8px', background: 'var(--bg-surface)', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
                       Primary Core Module auto-assigned from VanForces suite.
                     </div>
                   )}
 
                   {selectedOpportunity.required_capabilities && selectedOpportunity.required_capabilities.length > 0 && (
-                    <div className="pt-2">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    <div style={{ marginTop: '12px' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em', display: 'block', marginBottom: '8px' }}>
                         Mapped Capabilities
                       </span>
-                      <div className="flex flex-wrap gap-2">
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {selectedOpportunity.required_capabilities.map((c) => (
                           <span
                             key={c.id}
-                            className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900 text-xs font-medium"
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              background: 'rgba(59, 130, 246, 0.1)',
+                              border: '1px solid rgba(59, 130, 246, 0.25)',
+                              color: 'var(--primary)',
+                              fontSize: '0.75rem',
+                              fontWeight: 600
+                            }}
                           >
                             {c.capability_name}
                           </span>
@@ -575,43 +711,65 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
 
           {/* TAB 2: ACTIVITIES */}
           {activeTab === 'ACTIVITIES' && (
-            <UnifiedActivityTimeline
-              entityType="opportunity"
-              entityId={selectedOpportunity.id}
-              entityName={selectedOpportunity.account_name}
-              onActivityLogged={() => {
-                fetchOpportunities();
-              }}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowActivityModal(true)}
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.82rem' }}
+                >
+                  <ActivityIcon size={14} />
+                  Log Commercial Activity
+                </button>
+              </div>
+
+              <UnifiedActivityTimeline
+                entityType="opportunity"
+                entityId={selectedOpportunity.id}
+                entityName={selectedOpportunity.account_name}
+                onActivityLogged={() => {
+                  fetchOpportunities();
+                }}
+              />
+            </div>
           )}
 
           {/* TAB 3: STAGE HISTORY & AUDIT */}
           {activeTab === 'HISTORY' && (
-            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <div className="glass-panel" style={{ padding: '24px' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 16px' }}>
                 Immutable Stage Progression History
               </h3>
 
               {stageHistories.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 text-xs">
+                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                   No stage transition history on record.
                 </div>
               ) : (
-                <div className="space-y-2.5">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {stageHistories.map((h, i) => (
                     <div
                       key={i}
-                      className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: '10px',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '0.82rem'
+                      }}
                     >
                       <div>
-                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                        <span style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
                           {h.from_stage || 'Initiated'} → {h.to_stage}
                         </span>
-                        <p className="text-slate-500 mt-0.5">{h.transition_reason}</p>
+                        <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0', fontSize: '0.78rem' }}>{h.transition_reason || 'Standard progression'}</p>
                       </div>
-                      <div className="text-right text-slate-400">
-                        <span>{new Date(h.changed_at).toLocaleString()}</span>
-                        <span className="block text-[11px] text-slate-500">By: {h.changed_by}</span>
+                      <div style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                        <div>{new Date(h.changed_at).toLocaleString()}</div>
+                        <div style={{ color: 'var(--text-secondary)', marginTop: '2px' }}>By: {h.changed_by}</div>
                       </div>
                     </div>
                   ))}
@@ -621,286 +779,313 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
           )}
         </div>
       ) : (
-        <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 text-sm">
-          No commercial opportunities found. Complete and accept an SQL Handoff to initialize an Opportunity.
+        <div className="glass-panel" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          <TrendingUp size={44} style={{ opacity: 0.3, margin: '0 auto 16px' }} />
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
+            No Commercial Opportunities Found
+          </h3>
+          <p style={{ maxWidth: '480px', margin: '0 auto', fontSize: '0.88rem' }}>
+            Complete and accept an SQL Handoff in the SQL Readiness workspace to automatically initialize a Commercial Opportunity.
+          </p>
         </div>
       )}
 
       {/* Edit Commercials Modal */}
-      {isEditingCommercials && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Edit Commercial Contract Values
-              </h3>
-              <button onClick={() => setIsEditingCommercials(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+      <Modal
+        isOpen={isEditingCommercials}
+        onClose={() => setIsEditingCommercials(false)}
+        title="Edit Commercial Contract Values"
+        subtitle="Update opportunity financials, contract value, seats, and target close date."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Edit3 size={18} />
+          </div>
+        }
+        maxWidth="540px"
+        footer={
+          <>
+            <button
+              onClick={() => setIsEditingCommercials(false)}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveCommercials}
+              disabled={savingCommercials}
+              className="btn btn-primary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              {savingCommercials ? 'Saving Changes...' : 'Save & Log Audit'}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              Total Contract Value ($ / SAR) *
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={editValue}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setEditValue(v);
+                setEditArr(v);
+                setEditMrr(Number((v / 12).toFixed(2)));
+              }}
+              className="form-input"
+              style={{ fontWeight: 800, fontSize: '0.95rem', width: '100%' }}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>ARR</label>
+              <input
+                type="number"
+                value={editArr}
+                onChange={(e) => setEditArr(Number(e.target.value))}
+                className="form-input"
+                style={{ width: '100%' }}
+              />
             </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Total Contract Value ($ / SAR) *
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={editValue}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setEditValue(v);
-                    setEditArr(v);
-                    setEditMrr(Number((v / 12).toFixed(2)));
-                  }}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-slate-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">ARR</label>
-                  <input
-                    type="number"
-                    value={editArr}
-                    onChange={(e) => setEditArr(Number(e.target.value))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">MRR</label>
-                  <input
-                    type="number"
-                    value={editMrr}
-                    onChange={(e) => setEditMrr(Number(e.target.value))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Seats / Units</label>
-                  <input
-                    type="number"
-                    value={editSeats}
-                    onChange={(e) => setEditSeats(Number(e.target.value))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Win Probability (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={editProb}
-                    onChange={(e) => setEditProb(Number(e.target.value))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Pricing Plan Name</label>
-                <input
-                  type="text"
-                  value={editPlan}
-                  onChange={(e) => setEditPlan(e.target.value)}
-                  placeholder="e.g. Enterprise Annual Subscription"
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Expected Close Date</label>
-                <input
-                  type="date"
-                  value={editCloseDate}
-                  onChange={(e) => setEditCloseDate(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                onClick={() => setIsEditingCommercials(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveCommercials}
-                disabled={savingCommercials}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors shadow-lg shadow-violet-600/20"
-              >
-                {savingCommercials ? 'Saving Changes...' : 'Save & Log Audit'}
-              </button>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>MRR</label>
+              <input
+                type="number"
+                value={editMrr}
+                onChange={(e) => setEditMrr(Number(e.target.value))}
+                className="form-input"
+                style={{ width: '100%' }}
+              />
             </div>
           </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Seats / Units</label>
+              <input
+                type="number"
+                value={editSeats}
+                onChange={(e) => setEditSeats(Number(e.target.value))}
+                className="form-input"
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Win Probability (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={editProb}
+                onChange={(e) => setEditProb(Number(e.target.value))}
+                className="form-input"
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Pricing Plan Name</label>
+            <input
+              type="text"
+              value={editPlan}
+              onChange={(e) => setEditPlan(e.target.value)}
+              placeholder="e.g. Enterprise Annual Subscription"
+              className="form-input"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Expected Close Date</label>
+            <input
+              type="date"
+              value={editCloseDate}
+              onChange={(e) => setEditCloseDate(e.target.value)}
+              className="form-input"
+              style={{ width: '100%' }}
+            />
+          </div>
         </div>
-      )}
+      </Modal>
 
       {/* Log Activity Modal */}
-      {showActivityModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Log Commercial Activity
-              </h3>
-              <button onClick={() => setShowActivityModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <Modal
+        isOpen={showActivityModal}
+        onClose={() => setShowActivityModal(false)}
+        title="Log Commercial Activity"
+        subtitle="Record meetings, calls, notes, and assign mandatory next step."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIcon size={18} />
+          </div>
+        }
+        maxWidth="540px"
+        footer={
+          <>
+            <button
+              onClick={() => setShowActivityModal(false)}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleLogActivity}
+              disabled={loggingActivity}
+              className="btn btn-primary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              {loggingActivity ? 'Saving Activity...' : 'Log Activity & Action'}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Activity Type</label>
+            <select
+              value={activityType}
+              onChange={(e) => setActivityType(e.target.value)}
+              className="form-select"
+              style={{ width: '100%' }}
+            >
+              <option value="MEETING">Meeting / Executive Review</option>
+              <option value="CALL">Phone Call</option>
+              <option value="EMAIL">Email Follow-up</option>
+              <option value="WHATSAPP">WhatsApp Commercial Message</option>
+              <option value="SITE_VISIT">Site Visit / Facility Inspection</option>
+            </select>
+          </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Activity Type</label>
-                <select
-                  value={activityType}
-                  onChange={(e) => setActivityType(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-semibold"
-                >
-                  <option value="MEETING">Meeting / Executive Review</option>
-                  <option value="CALL">Phone Call</option>
-                  <option value="EMAIL">Email Follow-up</option>
-                  <option value="WHATSAPP">WhatsApp Commercial Message</option>
-                  <option value="SITE_VISIT">Site Visit / Facility Inspection</option>
-                </select>
-              </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Subject *</label>
+            <input
+              type="text"
+              value={activitySubject}
+              onChange={(e) => setActivitySubject(e.target.value)}
+              placeholder="e.g. Commercial Scope & Terms Finalization"
+              className="form-input"
+              style={{ width: '100%' }}
+            />
+          </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Subject *</label>
-                <input
-                  type="text"
-                  value={activitySubject}
-                  onChange={(e) => setActivitySubject(e.target.value)}
-                  placeholder="e.g. Commercial Scope & Terms Finalization"
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                />
-              </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Outcome Notes</label>
+            <textarea
+              rows={3}
+              value={activityOutcome}
+              onChange={(e) => setActivityOutcome(e.target.value)}
+              placeholder="e.g. Client agreed to 45 units in initial deployment."
+              className="form-textarea"
+              style={{ width: '100%' }}
+            />
+          </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Outcome Notes</label>
-                <textarea
-                  rows={2}
-                  value={activityOutcome}
-                  onChange={(e) => setActivityOutcome(e.target.value)}
-                  placeholder="e.g. Client agreed to 45 units in Phase 1 deployment."
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                />
-              </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Mandatory Next Action *</label>
+            <input
+              type="text"
+              value={nextActionDesc}
+              onChange={(e) => setNextActionDesc(e.target.value)}
+              placeholder="e.g. Issue revised commercial contract and payment schedule"
+              className="form-input"
+              style={{ width: '100%' }}
+            />
+          </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Mandatory Next Action *</label>
-                <input
-                  type="text"
-                  value={nextActionDesc}
-                  onChange={(e) => setNextActionDesc(e.target.value)}
-                  placeholder="e.g. Issue revised commercial contract and payment schedule"
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Next Action Due Date *</label>
-                <input
-                  type="date"
-                  value={nextActionDue}
-                  onChange={(e) => setNextActionDue(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                onClick={() => setShowActivityModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleLogActivity}
-                disabled={loggingActivity}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors shadow-lg shadow-violet-600/20"
-              >
-                {loggingActivity ? 'Saving Activity...' : 'Log Activity & Action'}
-              </button>
-            </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Next Action Due Date *</label>
+            <input
+              type="date"
+              value={nextActionDue}
+              onChange={(e) => setNextActionDue(e.target.value)}
+              className="form-input"
+              style={{ width: '100%' }}
+            />
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Stage Transition Modal */}
-      {showTransitionModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-violet-600" />
-                Transition Opportunity Stage
-              </h3>
-              <button
-                onClick={() => setShowTransitionModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <Modal
+        isOpen={showTransitionModal}
+        onClose={() => setShowTransitionModal(false)}
+        title="Transition Opportunity Stage"
+        subtitle="Select the target stage for this commercial opportunity."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(124, 58, 237, 0.15)', color: 'var(--accent-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Clock size={18} />
+          </div>
+        }
+        maxWidth="500px"
+        accentGradient="linear-gradient(90deg, var(--accent-purple) 0%, var(--primary) 100%)"
+        footer={
+          <>
+            <button
+              onClick={() => setShowTransitionModal(false)}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleTransitionStage}
+              disabled={transitioning || !targetStageId}
+              className="btn btn-primary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              {transitioning ? 'Transitioning...' : 'Confirm Stage Change'}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>Target Pipeline Stage *</label>
+            <select
+              value={targetStageId}
+              onChange={(e) => setTargetStageId(e.target.value)}
+              className="form-select"
+              style={{ width: '100%' }}
+            >
+              <option value="">-- Select Target Stage --</option>
+              {availableStages.map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.stage_name} ({st.stage_code})
+                </option>
+              ))}
+            </select>
+          </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Target Pipeline Stage *</label>
-                <select
-                  value={targetStageId}
-                  onChange={(e) => setTargetStageId(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                >
-                  <option value="">-- Select Target Stage --</option>
-                  {availableStages.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.stage_name} ({st.stage_code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Transition Reason (Mandatory for backward movement)
-                </label>
-                <textarea
-                  rows={3}
-                  value={transitionReason}
-                  onChange={(e) => setTransitionReason(e.target.value)}
-                  placeholder="Detail rationale for advancing or returning stage..."
-                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                onClick={() => setShowTransitionModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleTransitionStage}
-                disabled={transitioning || !targetStageId}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 transition-colors shadow-lg shadow-violet-600/20"
-              >
-                {transitioning ? 'Transitioning...' : 'Confirm Stage Change'}
-              </button>
-            </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              Transition Reason (Mandatory for backward movement)
+            </label>
+            <textarea
+              rows={4}
+              value={transitionReason}
+              onChange={(e) => setTransitionReason(e.target.value)}
+              placeholder="Detail rationale for advancing or returning stage..."
+              className="form-textarea"
+              style={{ width: '100%' }}
+            />
           </div>
         </div>
-      )}
+      </Modal>
+
+      {/* Final Commercial Invoice Modal (Print Ready) */}
+      <CommercialInvoiceModal
+        isOpen={showInvoiceModal}
+        onClose={() => setShowInvoiceModal(false)}
+        opportunity={selectedOpportunity}
+      />
     </div>
   );
 };

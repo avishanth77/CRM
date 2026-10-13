@@ -2,6 +2,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import permissions, status
 from django.http import HttpResponse
+from django.utils import timezone
+from django.db.models import Q
+from apps.sales_handoff.models import SQLHandoff, HandoffStatus
+from apps.authentication.backends import get_request_user, is_sales_staff
 
 from apps.analytics.services import (
     ExecutiveAnalyticsService,
@@ -13,7 +17,8 @@ from apps.analytics.services import (
     ActivitySLAAnalyticsService,
     ReportGenerationService,
     FunnelConversionAnalyticsService,
-    OwnerPerformanceService
+    OwnerPerformanceService,
+    AttributionReportService
 )
 
 
@@ -32,7 +37,7 @@ class ExecutiveAnalyticsView(APIView):
         owner_id = request.query_params.get('owner')
         territory = request.query_params.get('territory')
 
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = ExecutiveAnalyticsService.get_dashboard_data(
             user=user,
             period=period,
@@ -58,7 +63,7 @@ class PLDAnalyticsView(APIView):
         end_date = request.query_params.get('end_date')
         product_code = request.query_params.get('product')
 
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = PLDAnalyticsService.get_dashboard_data(
             user=user,
             period=period,
@@ -83,7 +88,7 @@ class SalesAnalyticsView(APIView):
         product_code = request.query_params.get('product')
         owner_id = request.query_params.get('owner')
 
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = SalesAnalyticsService.get_dashboard_data(
             user=user,
             period=period,
@@ -107,7 +112,7 @@ class MarketingAnalyticsView(APIView):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
 
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = MarketingAnalyticsService.get_dashboard_data(
             user=user,
             period=period,
@@ -125,7 +130,7 @@ class ProductAnalyticsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = ProductAnalyticsService.get_dashboard_data(user=user)
         return Response(data, status=status.HTTP_200_OK)
 
@@ -137,7 +142,7 @@ class PartnerAnalyticsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = PartnerAnalyticsService.get_dashboard_data(user=user)
         return Response(data, status=status.HTTP_200_OK)
 
@@ -153,7 +158,7 @@ class ActivitySLAAnalyticsView(APIView):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
 
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = ActivitySLAAnalyticsService.get_dashboard_data(
             user=user,
             period=period,
@@ -171,7 +176,7 @@ class FunnelConversionAnalyticsView(APIView):
 
     def get(self, request):
         product_code = request.query_params.get('product')
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = FunnelConversionAnalyticsService.get_funnel_and_conversions(user=user, product_code=product_code)
         return Response(data, status=status.HTTP_200_OK)
 
@@ -183,7 +188,7 @@ class OwnerPerformanceAnalyticsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = OwnerPerformanceService.get_owner_performance(user=user)
         return Response(data, status=status.HTTP_200_OK)
 
@@ -195,8 +200,8 @@ class ReportTableView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        report_name = request.query_params.get('report', 'pipeline_by_owner')
-        user = request.user if request.user.is_authenticated else None
+        report_name = request.query_params.get('report') or request.query_params.get('report_type', 'pipeline_by_owner')
+        user = get_request_user(request)
         data = ReportGenerationService.get_report_data(report_name, request.query_params, user=user)
         return Response(data, status=status.HTTP_200_OK)
 
@@ -208,13 +213,26 @@ class ReportCSVExportView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        report_name = request.query_params.get('report', 'pipeline_by_owner')
-        user = request.user if request.user.is_authenticated else None
+        report_name = request.query_params.get('report') or request.query_params.get('report_type', 'pipeline_by_owner')
+        user = get_request_user(request)
         csv_content = ReportGenerationService.export_csv(report_name, request.query_params, user=user)
 
         response = HttpResponse(csv_content, content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="{report_name}.csv"'
         return response
+
+
+class AttributionReportView(APIView):
+    """
+    Multi-touch Attribution Report for revenue traceability across Campaign, Source, and Partner.
+    Answers: "Which source, campaign and partner actually produced revenue?"
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        user = get_request_user(request)
+        data = AttributionReportService.get_attribution_report(request.query_params, user=user)
+        return Response(data, status=status.HTTP_200_OK)
 
 
 # ==============================================================================
@@ -225,7 +243,7 @@ class FunnelAnalyticsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = ExecutiveAnalyticsService.get_dashboard_data(user=user)
         return Response({
             "metrics": {
@@ -266,8 +284,39 @@ class FunnelLeakageVelocityView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        user = request.user if request.user.is_authenticated else None
+        user = get_request_user(request)
         data = FunnelConversionAnalyticsService.get_funnel_and_conversions(user=user)
+
+        now = timezone.now()
+        active_sla_breaches = []
+        pending_handoffs = SQLHandoff.objects.filter(
+            status=HandoffStatus.PENDING
+        ).select_related('account', 'lead', 'lead__account', 'assigned_sales_owner')
+        if is_sales_staff(user):
+            pending_handoffs = pending_handoffs.filter(Q(lead__owner=user) | Q(assigned_sales_owner=user))
+
+        for h in pending_handoffs:
+            elapsed = 0.0
+            if h.submitted_at:
+                elapsed = max(0.0, (now - h.submitted_at).total_seconds() / 3600.0)
+            elif h.created_at:
+                elapsed = max(0.0, (now - h.created_at).total_seconds() / 3600.0)
+
+            max_h = float(h.sla_duration_hours or 48)
+            is_breached = elapsed > max_h
+            acc_name = h.account.company_name if h.account else (h.lead.account.company_name if (h.lead and h.lead.account) else "Target Account")
+            owner_name = f"{h.assigned_sales_owner.first_name} {h.assigned_sales_owner.last_name}".strip() if h.assigned_sales_owner else "Unassigned"
+            active_sla_breaches.append({
+                "id": str(h.id),
+                "entity": f"SQL Handoff #{str(h.id)[:8]}",
+                "account": acc_name,
+                "type": "SQL Acceptance SLA",
+                "elapsed_hours": round(elapsed, 1),
+                "max_hours": max_h,
+                "status": "BREACHED" if is_breached else "APPROACHING",
+                "owner": owner_name
+            })
+
         return Response({
             "funnel_stages": [
                 {
@@ -288,5 +337,6 @@ class FunnelLeakageVelocityView(APIView):
                     "status": "OPTIMAL" if v["avg_days"] <= v["target_sla_days"] else "WARNING"
                 } for v in data["velocity_metrics"]
             ],
+            "active_sla_breaches": active_sla_breaches,
             "loss_reasons_breakdown": data["loss_reasons_breakdown"]
         })

@@ -22,6 +22,12 @@ class ActivityType(models.TextChoices):
     FOLLOW_UP = 'FOLLOW_UP', 'Follow-up'
     SITE_VISIT = 'SITE_VISIT', 'Site Visit'
     PARTNER_MEETING = 'PARTNER_MEETING', 'Partner Meeting'
+    PARTNER_FOLLOWUP = 'PARTNER_FOLLOWUP', 'Partner Follow-up'
+    DEAL_REGISTRATION = 'DEAL_REGISTRATION', 'Deal Registration'
+    ENABLEMENT = 'ENABLEMENT', 'Partner Enablement'
+    TRAINING = 'TRAINING', 'Partner Training'
+    CUSTOMER_INTRODUCTION = 'CUSTOMER_INTRODUCTION', 'Customer Introduction'
+    OPPORTUNITY_SUPPORT = 'OPPORTUNITY_SUPPORT', 'Opportunity Support'
     PROPOSAL_SENT = 'PROPOSAL_SENT', 'Proposal Sent'
     PROPOSAL_REVIEW = 'PROPOSAL_REVIEW', 'Proposal Review'
     NEGOTIATION = 'NEGOTIATION', 'Commercial Negotiation'
@@ -80,6 +86,20 @@ class Activity(BaseModel):
     )
     proposal = models.ForeignKey(
         'opportunities.Proposal',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activities"
+    )
+    partner = models.ForeignKey(
+        'partners.Partner',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="activities"
+    )
+    deal_registration = models.ForeignKey(
+        'partners.DealRegistration',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -291,6 +311,16 @@ class NotificationType(models.TextChoices):
     NURTURE_REENGAGEMENT = 'NURTURE_REENGAGEMENT', 'Nurture Re-engagement Due'
     TASK_DUE = 'TASK_DUE', 'Task Due'
     TASK_OVERDUE = 'TASK_OVERDUE', 'Task Overdue'
+    DEAL_REGISTRATION_SUBMITTED = 'DEAL_REGISTRATION_SUBMITTED', 'Deal Registration Submitted'
+    DEAL_REGISTRATION_APPROVED = 'DEAL_REGISTRATION_APPROVED', 'Deal Registration Approved'
+    DEAL_REGISTRATION_REJECTED = 'DEAL_REGISTRATION_REJECTED', 'Deal Registration Rejected'
+    CHANNEL_CONFLICT_DETECTED = 'CHANNEL_CONFLICT_DETECTED', 'Channel Conflict Detected'
+    CHANNEL_CONFLICT_RESOLVED = 'CHANNEL_CONFLICT_RESOLVED', 'Channel Conflict Resolved'
+    PARTNER_AUTH_CHANGED = 'PARTNER_AUTH_CHANGED', 'Partner Authorization Changed'
+    CERTIFICATION_EXPIRING = 'CERTIFICATION_EXPIRING', 'Partner Certification Expiring'
+    PARTNER_STATUS_CHANGED = 'PARTNER_STATUS_CHANGED', 'Partner Status Changed'
+    PARTNER_OPPORTUNITY_INFLUENCE = 'PARTNER_OPPORTUNITY_INFLUENCE', 'Partner Opportunity Influence Recorded'
+    CAMPAIGN_ALERT = 'CAMPAIGN_ALERT', 'Campaign Alert'
     GENERAL = 'GENERAL', 'System Notification'
 
 

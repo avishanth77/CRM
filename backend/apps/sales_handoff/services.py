@@ -411,7 +411,7 @@ class SQLHandoffService:
     """
     AUTHORIZED_OVERRIDE_ROLES = [
         'ADMIN', 'SUPERADMIN', 'SYSTEM_ADMIN', 'SALES_DIRECTOR', 'VP_SALES',
-        'HEAD_OF_SALES', 'PLD_DIRECTOR', 'MANAGER'
+        'HEAD_OF_SALES', 'PLD_DIRECTOR', 'MANAGER', 'SALES_MANAGER', 'MANAGEMENT'
     ]
 
     @classmethod
@@ -421,7 +421,11 @@ class SQLHandoffService:
         if user.is_superuser or user.is_staff:
             return True
         user_role = getattr(user, 'role', '').upper()
-        return user_role in cls.AUTHORIZED_OVERRIDE_ROLES
+        return (
+            user_role in cls.AUTHORIZED_OVERRIDE_ROLES or
+            'MANAGER' in user_role or
+            user_role in ['MANAGEMENT', 'ADMIN', 'SALES_MANAGER']
+        )
 
     @classmethod
     def submit_sql(cls, lead, user, assigned_sales_owner=None, estimated_value=None, currency='USD', sla_hours=48, is_override=False, override_reason=None):

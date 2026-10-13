@@ -93,8 +93,8 @@ class InboundWebhookLeadView(APIView):
             defaults={
                 'industry': industry,
                 'employee_count': employee_count,
-                'city': data.get('city', 'Riyadh'),
-                'country': data.get('country', 'Saudi Arabia'),
+                'city': data.get('city', ''),
+                'country': data.get('country', ''),
                 'account_stage': 'PROSPECT'
             }
         )
@@ -181,6 +181,23 @@ class CommunicationViewSet(viewsets.ModelViewSet):
     serializer_class = CommunicationMessageSerializer
     permission_classes = [AllowAny]
 
+    @action(detail=False, methods=['get'], url_path='stage-templates')
+    def list_stage_templates(self, request):
+        """
+        Returns all registered stage completion notification email templates.
+        """
+        from apps.integrations.stage_notifications import CUSTOMER_STAGE_TEMPLATES
+        templates_data = [
+            {
+                'key': k,
+                'stage_name': v['stage_name'],
+                'subject': v['subject'],
+                'body_preview': v['body'][:160] + '...'
+            }
+            for k, v in CUSTOMER_STAGE_TEMPLATES.items()
+        ]
+        return Response(templates_data)
+
     @action(detail=False, methods=['post'], url_path='send-test')
     def send_test_message(self, request):
         channel = request.data.get('channel', 'EMAIL')
@@ -193,6 +210,28 @@ class CommunicationViewSet(viewsets.ModelViewSet):
 
         lead = Lead.objects.filter(id=lead_id).first() if lead_id else Lead.objects.first()
         account = lead.account if lead else Account.objects.first()
+
+        # Check if template is one of the customer stage completion templates
+        from apps.integrations.stage_notifications import CUSTOMER_STAGE_TEMPLATES, CustomerStageEmailService
+        normalized_key = template_key.replace('STAGE_', '')
+        if normalized_key in CUSTOMER_STAGE_TEMPLATES:
+            if channel == 'EMAIL':
+                res = CustomerStageEmailService.send_stage_email(
+                    record=lead or account,
+                    stage=normalized_key,
+                    user=request.user if request.user.is_authenticated else None,
+                    custom_recipient_email=recipient
+                )
+                return Response({
+                    'success': res.get('success', True),
+                    'message_id': res.get('message_id'),
+                    'channel': 'EMAIL',
+                    'status': res.get('status'),
+                    'subject': res.get('subject'),
+                    'body': CustomerStageEmailService.build_context(lead or account, normalized_key)['template']['body'].format(
+                        **CustomerStageEmailService.build_context(lead or account, normalized_key)
+                    )
+                }, status=status.HTTP_201_CREATED)
 
         template_map = {
             'SQL_READY': NotificationTemplates.SQL_READY,

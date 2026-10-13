@@ -147,25 +147,25 @@ export const ProductAnalyticsView: React.FC = () => {
               gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
               gap: '18px'
             }}>
-              {data.products.map((p) => (
-                <div key={p.id} className="glass-panel" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {(data?.products || []).map((p: any) => (
+                <div key={p.id || p.product_id} className="glass-panel" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                          {p.name}
+                          {p.name || p.product_name}
                         </h3>
                         <span className="badge badge-info" style={{ fontSize: '0.68rem', fontWeight: 700 }}>
-                          {p.code}
+                          {p.code || p.product_code}
                         </span>
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Avg PLD Score: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{p.average_pld_score}/100</span>
+                        Avg PLD Score: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{p.average_pld_score ?? p.avg_pld_score ?? 0}/100</span>
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>
-                        {formatCurrency(p.pipeline)}
+                        {formatCurrency(p.pipeline ?? p.open_pipeline_value ?? 0)}
                       </div>
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Pipeline</div>
                     </div>
@@ -183,25 +183,25 @@ export const ProductAnalyticsView: React.FC = () => {
                   }}>
                     <div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>LEADS</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>{p.leads}</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>{p.leads ?? p.leads_count ?? 0}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>PLD QUAL</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--success)' }}>{p.pld_qualified}</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--success)' }}>{p.pld_qualified ?? p.pld_qualified_count ?? 0}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>SQLs</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--warning)' }}>{p.sqls}</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--warning)' }}>{p.sqls ?? p.sqls_count ?? 0}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>WON</div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>{p.won_count}</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>{p.won_count ?? 0}</div>
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    <span>Conversion Rate: <strong style={{ color: 'var(--text-primary)' }}>{p.conversion_rate}%</strong></span>
-                    <span>Won Value: <strong style={{ color: 'var(--success)' }}>{formatCurrency(p.won_value)}</strong></span>
+                    <span>Conversion Rate: <strong style={{ color: 'var(--text-primary)' }}>{p.conversion_rate ?? 0}%</strong></span>
+                    <span>Won Value: <strong style={{ color: 'var(--success)' }}>{formatCurrency(p.won_value ?? p.won_revenue ?? 0)}</strong></span>
                   </div>
                 </div>
               ))}
@@ -228,7 +228,7 @@ export const ProductAnalyticsView: React.FC = () => {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {data.module_interest.map((m, idx) => (
+              {(data?.module_interest || []).map((m, idx) => (
                 <div key={idx} style={{ background: 'var(--bg-surface-elevated)', padding: '14px 18px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -270,7 +270,7 @@ export const ProductAnalyticsView: React.FC = () => {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {data.capability_demand.map((c, idx) => (
+              {(data?.capability_demand || []).map((c, idx) => (
                 <div key={idx} style={{ background: 'var(--bg-surface-elevated)', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{

@@ -8,6 +8,7 @@ from apps.pld_assessments.models import (
     AccountProductAssessment, ScoreAssessment, ScoreClassification, ICPResultStatus
 )
 from apps.audit_logging.models import AuditLog, AuditAction
+from django.db.models import Q
 
 
 class ICPEvaluator:
@@ -43,7 +44,12 @@ class ICPEvaluator:
             **attr_dict
         }
 
-        rules = config_version.icp_rules.filter(is_active=True)
+        rules = ICPRule.objects.filter(is_active=True)
+        if config_version:
+            rules = rules.filter(Q(config_version=config_version) | Q(config_version__product=product) | Q(profile__product=product)).distinct()
+        else:
+            rules = rules.filter(Q(config_version__product=product) | Q(profile__product=product)).distinct()
+
         knockout_rules = rules.filter(rule_type=ICPRuleType.KNOCKOUT)
         fit_rules = rules.filter(rule_type=ICPRuleType.FIT)
 
@@ -215,6 +221,28 @@ class ICPEvaluator:
                 }
             )
 
+        # Automatic Lead Routing: If ICP failed, move lead to Nurture pool with ICP failure reason
+        target_lead = lead or (existing_assessment.lead if existing_assessment else None)
+        if not target_lead and account and product:
+            target_lead = account.leads.filter(primary_product=product).first()
+
+        if target_lead and final_result == ICPResultStatus.FAIL:
+            from apps.leads.models import LeadStatus
+            reason_str = "Failed ICP qualification criteria: " + "; ".join(why_result_occurred)
+            target_lead.status = LeadStatus.NURTURE
+            target_lead.nurture_reason = reason_str
+            target_lead.disqualification_reason = reason_str
+            target_lead.save(update_fields=['status', 'nurture_reason', 'disqualification_reason'])
+            try:
+                from apps.activities.models import Task
+                from django.utils import timezone
+                Task.objects.filter(related_lead=target_lead, is_completed=False).update(
+                    is_completed=True,
+                    completed_at=timezone.now()
+                )
+            except Exception:
+                pass
+
         return {
             "result": final_result,
             "knockout_passed": knockout_passed,
@@ -230,9 +258,19 @@ class ICPEvaluator:
     def _check_operator(actual, op, target):
         if actual is None:
             return False
+
+        def _to_bool(val):
+            if isinstance(val, bool):
+                return val
+            return str(val).strip().lower() in ('true', '1', 'yes', 't')
+
         if op == RuleOperator.EQUALS:
+            if isinstance(target, bool) or isinstance(actual, bool):
+                return _to_bool(actual) == _to_bool(target)
             return str(actual).strip().lower() == str(target).strip().lower() if isinstance(actual, str) else actual == target
         elif op == RuleOperator.NOT_EQUALS:
+            if isinstance(target, bool) or isinstance(actual, bool):
+                return _to_bool(actual) != _to_bool(target)
             return str(actual).strip().lower() != str(target).strip().lower() if isinstance(actual, str) else actual != target
         elif op == RuleOperator.GREATER_THAN:
             try:
@@ -282,6 +320,61 @@ class PLDScoreCalculator:
     @staticmethod
     def calculate(assessment, dimension_inputs, user=None):
         config_version = assessment.config_version
+
+        # Sync operational questionnaire inputs to Account custom attributes if provided
+        from apps.accounts.models import AccountAttribute
+        if dimension_inputs:
+            if "Q2_FIELD_SALES" in dimension_inputs:
+                val = dimension_inputs["Q2_FIELD_SALES"]
+                is_field_sales = val in [True, "true", "True", "Yes, Dedicated Field Sales / Delivery Fleet"]
+                AccountAttribute.objects.update_or_create(
+                    account=assessment.account,
+                    product=assessment.product,
+                    attribute_key="field_sales",
+                    defaults={"attribute_value": is_field_sales}
+                )
+            if "Q3_SALESMEN_VANS" in dimension_inputs:
+                vans_val = dimension_inputs["Q3_SALESMEN_VANS"]
+                vans_count = 25
+                if "50+" in str(vans_val) or ">=50" in str(vans_val):
+                    vans_count = 50
+                elif "20" in str(vans_val):
+                    vans_count = 25
+                elif "10" in str(vans_val):
+                    vans_count = 12
+                elif "5" in str(vans_val):
+                    vans_count = 6
+                elif "<5" in str(vans_val) or "fewer" in str(vans_val).lower():
+                    vans_count = 3
+                AccountAttribute.objects.update_or_create(
+                    account=assessment.account,
+                    product=assessment.product,
+                    attribute_key="vans_count",
+                    defaults={"attribute_value": vans_count}
+                )
+                AccountAttribute.objects.update_or_create(
+                    account=assessment.account,
+                    product=assessment.product,
+                    attribute_key="salesmen_count",
+                    defaults={"attribute_value": vans_count}
+                )
+            if not assessment.account.custom_attributes.filter(product=assessment.product, attribute_key="primary_erp").exists():
+                AccountAttribute.objects.create(
+                    account=assessment.account,
+                    product=assessment.product,
+                    attribute_key="primary_erp",
+                    attribute_value="SAP"
+                )
+            # Re-evaluate ICP with freshly synced operational attributes
+            ICPEvaluator.evaluate(
+                account=assessment.account,
+                product=assessment.product,
+                config_version=assessment.config_version,
+                lead=assessment.lead,
+                user=user
+            )
+            assessment.refresh_from_db()
+
         score_models = config_version.score_models.filter(is_active=True)
         total_weighted_score = Decimal('0.00')
 
@@ -291,33 +384,84 @@ class PLDScoreCalculator:
         dimension_breakdown_results = []
         why_score_exists = []
 
+        # Map questionnaire questions by feeds_dimension
+        template = config_version.questionnaires.first()
+        template_questions = template.questions.all().prefetch_related('options') if template else []
+        questions_by_dimension = {}
+        for q in template_questions:
+            if q.feeds_dimension:
+                questions_by_dimension.setdefault(q.feeds_dimension, []).append(q)
+
         # Iterate over configured dimensions
         for sm in score_models:
-            input_val = dimension_inputs.get(sm.dimension_name)
+            input_val = dimension_inputs.get(sm.dimension_name) if dimension_inputs else None
             mapping = sm.input_mapping or {}
 
             # Map raw input to 0-100 raw score
             raw_score = 0
             evidence_desc = ""
 
-            if isinstance(input_val, (int, float)):
-                raw_score = min(max(int(input_val), 0), 100)
-                evidence_desc = f"Direct numerical value: {input_val}"
-            elif str(input_val) in mapping:
-                raw_score = int(mapping[str(input_val)])
-                evidence_desc = f"Selected option '{input_val}' mapped to {raw_score} pts"
-            elif input_val is True:
-                raw_score = 100
-                evidence_desc = "Confirmed positive"
-            elif input_val is False:
-                raw_score = 0
-                evidence_desc = "Negative response"
-            elif input_val:
-                raw_score = 50
-                evidence_desc = f"Unmapped input '{input_val}' assigned baseline 50 pts"
+            if input_val is not None:
+                if isinstance(input_val, (int, float)):
+                    raw_score = min(max(int(input_val), 0), 100)
+                    evidence_desc = f"Direct numerical value: {input_val}"
+                elif str(input_val) in mapping:
+                    raw_score = int(mapping[str(input_val)])
+                    evidence_desc = f"Selected option '{input_val}' mapped to {raw_score} pts"
+                elif input_val is True:
+                    raw_score = 100
+                    evidence_desc = "Confirmed positive"
+                elif input_val is False:
+                    raw_score = 0
+                    evidence_desc = "Negative response"
+                elif input_val:
+                    raw_score = 50
+                    evidence_desc = f"Unmapped input '{input_val}' assigned baseline 50 pts"
+                else:
+                    raw_score = 0
+                    evidence_desc = "No response provided (0 pts)"
             else:
-                raw_score = 0
-                evidence_desc = "No response provided (0 pts)"
+                # Resolve from answered questions feeding this dimension
+                feeding_qs = questions_by_dimension.get(sm.dimension_name, [])
+                answered_pts = []
+                evidence_notes = []
+                for q in feeding_qs:
+                    q_ans = dimension_inputs.get(q.code) if dimension_inputs else None
+                    if q_ans is None and dimension_inputs:
+                        q_ans = dimension_inputs.get(str(q.id))
+                    if q_ans is not None:
+                        matched_opt = None
+                        for opt in q.options.all():
+                            if (str(opt.id) == str(q_ans) or 
+                                opt.value == str(q_ans) or 
+                                opt.label == str(q_ans) or 
+                                opt.value.lower() == str(q_ans).lower() or 
+                                opt.label.lower() == str(q_ans).lower()):
+                                matched_opt = opt
+                                break
+                        if matched_opt:
+                            answered_pts.append(matched_opt.points)
+                            evidence_notes.append(f"{q.code}: {matched_opt.label} ({matched_opt.points} pts)")
+                        elif isinstance(q_ans, (int, float)):
+                            num_pts = min(max(int(q_ans), 0), 100)
+                            answered_pts.append(num_pts)
+                            evidence_notes.append(f"{q.code}: {q_ans} ({num_pts} pts)")
+                        elif q_ans is True or str(q_ans).lower() in ['true', 'yes']:
+                            answered_pts.append(100)
+                            evidence_notes.append(f"{q.code}: Yes (100 pts)")
+                        elif q_ans is False or str(q_ans).lower() in ['false', 'no']:
+                            answered_pts.append(0)
+                            evidence_notes.append(f"{q.code}: No (0 pts)")
+                        elif q_ans:
+                            answered_pts.append(50)
+                            evidence_notes.append(f"{q.code}: '{q_ans}' (custom 50 pts)")
+
+                if answered_pts:
+                    raw_score = int(sum(answered_pts) / len(answered_pts))
+                    evidence_desc = "; ".join(evidence_notes)
+                else:
+                    raw_score = 0
+                    evidence_desc = "No response provided for questions feeding this dimension (0 pts)"
 
             weighted = (Decimal(raw_score) * Decimal(sm.weight_percentage)) / Decimal('100.00')
             total_weighted_score += weighted
@@ -463,6 +607,7 @@ class PLDScoreCalculator:
 
         return {
             "pld_score": final_score,
+            "total_score": final_score,
             "classification": classification,
             "problem_missing_capped": capped,
             "cap_reason": cap_reason,
@@ -525,11 +670,19 @@ class PLDScoreCalculator:
         history.append(history_entry)
         assessment.qualification_history = history
 
-        assessment.save(update_fields=[
+        update_fields = [
             'is_overridden', 'pld_score', 'original_pld_score',
             'score_classification', 'override_reason', 'overridden_by',
             'overridden_at', 'qualification_history'
-        ])
+        ]
+
+        # If overriding to Qualified/High Priority, mark ICP knockout as satisfied
+        if assessment.score_classification in [ScoreClassification.QUALIFIED, ScoreClassification.HIGH_PRIORITY]:
+            assessment.icp_result = ICPResultStatus.PASS
+            assessment.icp_knockout_passed = True
+            update_fields.extend(['icp_result', 'icp_knockout_passed'])
+
+        assessment.save(update_fields=update_fields)
 
         # Audit Logging
         AuditLog.objects.create(
@@ -611,24 +764,27 @@ class GateValidator:
 
             # 5. Require discovery product mapping
             if rules.get("require_product_mapping", False):
-                latest_discovery = lead.discoveries.first()
-                if not latest_discovery:
-                    satisfied = False
-                    missing.append("Discovery session must be conducted before progressing")
-                    what_is_missing.append("Discovery record not found")
+                if target_stage.stage_code == 'DISCOVERY' and getattr(lead.current_stage, 'stage_code', None) != 'DISCOVERY':
+                    what_we_know.append("Discovery: Initializing new Discovery & Mapping session")
                 else:
-                    from apps.discovery.services import DiscoveryValidator
-                    readiness = DiscoveryValidator.validate_readiness(latest_discovery)
-                    if not readiness["is_ready"] or not latest_discovery.is_product_mapping_complete:
+                    latest_discovery = lead.discoveries.first()
+                    if not latest_discovery:
                         satisfied = False
-                        if readiness["unmapped_problems"]:
-                            unmapped_names = ", ".join([p["problem_name"] for p in readiness["unmapped_problems"]])
-                            missing.append(f"All confirmed problems must map to product capabilities in Discovery ({unmapped_names} unmapped)")
-                        else:
-                            missing.append("Discovery readiness requirements not met")
-                        what_is_missing.append("Discovery problem-to-capability mapping incomplete")
+                        missing.append("Discovery session must be conducted before progressing")
+                        what_is_missing.append("Discovery record not found")
                     else:
-                        what_we_know.append("Discovery problem-to-capability mapping 100% complete")
+                        from apps.discovery.services import DiscoveryValidator
+                        readiness = DiscoveryValidator.validate_readiness(latest_discovery)
+                        if not readiness["is_ready"] or not latest_discovery.is_product_mapping_complete:
+                            satisfied = False
+                            if readiness["unmapped_problems"]:
+                                unmapped_names = ", ".join([p["problem_name"] for p in readiness["unmapped_problems"]])
+                                missing.append(f"All confirmed problems must map to product capabilities in Discovery ({unmapped_names} unmapped)")
+                            else:
+                                missing.append("Discovery readiness requirements not met")
+                            what_is_missing.append("Discovery problem-to-capability mapping incomplete")
+                        else:
+                            what_we_know.append("Discovery problem-to-capability mapping 100% complete")
 
             # 6. Require Demo completed (or Not Required if optional)
             if rules.get("require_demo_completed", False) or (target_stage.stage_code in ['POC', 'SQL_READY'] and rules.get("enforce_demo_gate", False)):

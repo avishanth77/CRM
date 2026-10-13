@@ -19,6 +19,14 @@ class LeadSource(BaseModel):
         return self.name
 
 
+class CampaignStatus(models.TextChoices):
+    DRAFT = 'DRAFT', 'Draft'
+    PLANNED = 'PLANNED', 'Planned'
+    ACTIVE = 'ACTIVE', 'Active'
+    COMPLETED = 'COMPLETED', 'Completed'
+    CANCELLED = 'CANCELLED', 'Cancelled'
+
+
 class Campaign(BaseModel):
     """
     Marketing campaign tracking for multi-touch attribution and ROI.
@@ -26,9 +34,29 @@ class Campaign(BaseModel):
     code = models.CharField(max_length=64, unique=True)
     name = models.CharField(max_length=255)
     campaign_type = models.CharField(max_length=64, blank=True, null=True)
+    source = models.ForeignKey(LeadSource, on_delete=models.SET_NULL, null=True, blank=True, related_name="campaigns")
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="campaigns")
+    status = models.CharField(
+        max_length=32,
+        choices=CampaignStatus.choices,
+        default=CampaignStatus.ACTIVE,
+        db_index=True
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="owned_campaigns"
+    )
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     budget = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    actual_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    description = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.name} ({self.code})"
@@ -100,6 +128,25 @@ class Lead(BaseModel):
     def __str__(self):
         return f"Lead #{str(self.id)[:8]} - {self.account.company_name} [{self.primary_product.code}]"
 
+    def record_touch(self, source=None, campaign=None, partner=None, touch_type="Inbound Form", utm_parameters=None, metadata=None, user=None):
+        """
+        Appends a historical touchpoint while maintaining is_first_touch and is_last_touch flags.
+        Preserves all historical touch records permanently.
+        """
+        is_first = not self.touches.exists()
+        self.touches.filter(is_last_touch=True).update(is_last_touch=False)
+        return self.touches.create(
+            source=source,
+            campaign=campaign,
+            partner=partner,
+            touch_type=touch_type,
+            utm_parameters=utm_parameters or {},
+            metadata=metadata or {},
+            is_first_touch=is_first,
+            is_last_touch=True,
+            recorded_by=user
+        )
+
 
 class LeadProductInterest(BaseModel):
     """
@@ -141,6 +188,16 @@ class LeadTouch(BaseModel):
     touch_type = models.CharField(max_length=64, default="Inbound Form")
     touch_date = models.DateTimeField(auto_now_add=True)
     utm_parameters = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    is_first_touch = models.BooleanField(default=False, db_index=True)
+    is_last_touch = models.BooleanField(default=False, db_index=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recorded_touches"
+    )
 
     class Meta:
         ordering = ['-touch_date']

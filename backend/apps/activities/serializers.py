@@ -12,6 +12,7 @@ class ActivitySerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
     lead_name = serializers.SerializerMethodField()
     opportunity_name = serializers.SerializerMethodField()
+    partner_name = serializers.ReadOnlyField(source='partner.account.company_name')
     next_action_status = serializers.ReadOnlyField()
 
     class Meta:
@@ -20,6 +21,7 @@ class ActivitySerializer(serializers.ModelSerializer):
             'id', 'account', 'account_name', 'contact', 'contact_name',
             'lead', 'lead_name', 'opportunity', 'opportunity_name',
             'proposal', 'discovery', 'demo', 'poc',
+            'partner', 'partner_name', 'deal_registration',
             'activity_type', 'custom_activity_type', 'subject', 'description_notes',
             'conducted_at', 'duration_minutes', 'status', 'priority',
             'outcome_notes', 'next_action_description', 'next_action_due_at',
@@ -28,18 +30,21 @@ class ActivitySerializer(serializers.ModelSerializer):
         ]
 
     def get_contact_name(self, obj):
-        if obj.contact:
-            return f"{obj.contact.first_name} {obj.contact.last_name or ''}".strip()
+        contact = getattr(obj, 'contact', None)
+        if contact:
+            return f"{contact.first_name} {contact.last_name or ''}".strip()
         return None
 
     def get_lead_name(self, obj):
-        if obj.lead and obj.lead.account:
-            return f"Lead #{str(obj.lead.id)[:8]} ({obj.lead.account.company_name})"
+        lead = getattr(obj, 'lead', None)
+        if lead and getattr(lead, 'account', None):
+            return f"Lead #{str(lead.id)[:8]} ({lead.account.company_name})"
         return None
 
     def get_opportunity_name(self, obj):
-        if obj.opportunity and obj.opportunity.account:
-            return f"Opp #{str(obj.opportunity.id)[:8]} ({obj.opportunity.account.company_name})"
+        opportunity = getattr(obj, 'opportunity', None)
+        if opportunity and getattr(opportunity, 'account', None):
+            return f"Opp #{str(opportunity.id)[:8]} ({opportunity.account.company_name})"
         return None
 
 
@@ -63,8 +68,10 @@ class TaskSerializer(serializers.ModelSerializer):
         ]
 
     def get_related_lead_title(self, obj):
-        if obj.related_lead and obj.related_lead.account:
-            return f"{obj.related_lead.account.company_name} [{obj.related_lead.primary_product.code if obj.related_lead.primary_product else ''}]"
+        related_lead = getattr(obj, 'related_lead', None)
+        if related_lead and getattr(related_lead, 'account', None):
+            product_code = getattr(getattr(related_lead, 'primary_product', None), 'code', '')
+            return f"{related_lead.account.company_name} [{product_code}]"
         return None
 
 

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Demo, DemoReadiness } from '../services/api';
+import { Modal } from './common/Modal';
 
 interface DemoWorkspaceProps {
   initialDemoId?: string;
@@ -67,6 +68,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
 
   // Complete Demo Modal / Action
   const [completingDemo, setCompletingDemo] = useState(false);
+  const [navigatingPOC, setNavigatingPOC] = useState(false);
 
   const showNotify = (type: 'success' | 'error', text: string) => {
     setFeedbackMsg({ type, text });
@@ -80,18 +82,24 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
   const loadDemos = async () => {
     setLoading(true);
     try {
-      const res = await api.getDemos(leadId ? { lead: leadId } : undefined);
-      setDemos(res.results);
+      const res = await api.getDemos();
+      const list = res.results || [];
+      setDemos(list);
 
       let active: Demo | null = null;
       if (initialDemoId) {
-        active = res.results.find(d => d.id === initialDemoId) || null;
+        active = list.find(d => d.id === initialDemoId) || null;
       }
-      if (!active && res.results.length > 0) {
-        active = res.results[0];
+      if (!active && leadId) {
+        active = list.find(d => d.lead === leadId) || null;
+      }
+      if (!active && list.length > 0) {
+        active = list[0];
       }
       if (active) {
         selectDemoRecord(active);
+      } else {
+        setSelectedDemo(null);
       }
     } catch (err: any) {
       showNotify('error', err.message || 'Failed to load demos');
@@ -231,7 +239,10 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
       await refreshCurrentDemo();
       showNotify('success', 'Demonstrated capability mapped.');
     } catch (err: any) {
-      showNotify('error', err.message || 'Failed to map use case.');
+      const errMsg = Array.isArray(err.error)
+        ? err.error.join(', ')
+        : (err.error || err.message || 'Failed to map use case.');
+      showNotify('error', errMsg);
     } finally {
       setSavingUseCase(false);
     }
@@ -318,7 +329,10 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
         onDemoCompleted(selectedDemo);
       }
     } catch (err: any) {
-      showNotify('error', err.message || 'Demo completion blocked: Required gates not satisfied.');
+      const errMsg = Array.isArray(err.error)
+        ? err.error.join(', ')
+        : (err.error || err.message || 'Demo completion blocked: Required gates not satisfied.');
+      showNotify('error', errMsg);
     } finally {
       setCompletingDemo(false);
     }
@@ -346,6 +360,36 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
     }
   };
 
+  const scrollToSection = (sectionId: string, focusSelector?: string) => {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('highlight-section-pulse');
+      setTimeout(() => el.classList.remove('highlight-section-pulse'), 2500);
+      if (focusSelector) {
+        const input = el.querySelector(focusSelector) as HTMLElement;
+        if (input) setTimeout(() => input.focus(), 400);
+      }
+    }
+  };
+
+  const getTargetSectionForGate = (gateCodeOrText: string) => {
+    const text = (gateCodeOrText || '').toUpperCase();
+    if (text.includes('PARTICIPANT') || text.includes('PRESENTER') || text.includes('STAKEHOLDER')) {
+      return { id: 'demo-section-participants', selector: undefined, label: 'Demo Participants' };
+    }
+    if (text.includes('USE_CASE') || text.includes('USE CASE') || text.includes('CAPABILITY') || text.includes('PROBLEM')) {
+      return { id: 'demo-section-usecases', selector: '#demo-usecase-problem-select', label: 'Use Case & Capabilities' };
+    }
+    if (text.includes('FEEDBACK') || text.includes('OBJECTION') || text.includes('QUESTION') || text.includes('FIT')) {
+      return { id: 'demo-section-feedback', selector: '#demo-feedback-input', label: 'Customer Feedback' };
+    }
+    if (text.includes('ACTION') || text.includes('ACTIVITY') || text.includes('DUE')) {
+      return { id: 'demo-section-next-action', selector: '#demo-next-action-input', label: 'Mandatory Next Action' };
+    }
+    return { id: 'demo-section-context', selector: undefined, label: 'Demo Details' };
+  };
+
   if (loading) {
     return (
       <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -359,25 +403,30 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Toast Alert */}
       {feedbackMsg && (
-        <div style={{
-          position: 'fixed',
-          top: '24px',
-          right: '24px',
-          zIndex: 9999,
-          background: feedbackMsg.type === 'success'
-            ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
-            : 'linear-gradient(135deg, #DC2626 0%, #EF4444 100%)',
-          color: '#FFFFFF',
-          padding: '14px 20px',
-          borderRadius: '10px',
-          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          fontSize: '0.88rem',
-          fontWeight: 600,
-          border: '1px solid rgba(255, 255, 255, 0.2)'
-        }}>
+        <div
+          className="in-app-alert-item"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 99999,
+            background: feedbackMsg.type === 'success'
+              ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
+              : 'linear-gradient(135deg, #DC2626 0%, #EF4444 100%)',
+            color: '#FFFFFF',
+            padding: '14px 20px',
+            borderRadius: '10px',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'none',
+            WebkitBackdropFilter: 'none'
+          }}
+        >
           {feedbackMsg.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
           {feedbackMsg.text}
         </div>
@@ -392,7 +441,6 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
               <h1 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>
                 Demo Workspace
               </h1>
-              <span className="badge badge-info" style={{ fontSize: '0.72rem' }}>Phase 6</span>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0 }}>
               Live Product Solution Demonstration • Problem &amp; Capability Proof • Customer Objections &amp; Readiness Gate
@@ -475,9 +523,17 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
           <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
             No Demo Record Selected
           </h3>
-          <p style={{ maxWidth: '500px', margin: '0 auto', fontSize: '0.9rem' }}>
+          <p style={{ maxWidth: '500px', margin: '0 auto 16px', fontSize: '0.9rem' }}>
             Please select an existing Demo session above or complete a Discovery session to transition a lead to Product Demo.
           </p>
+          <button
+            className="btn btn-primary"
+            onClick={loadDemos}
+            style={{ fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={14} style={{ marginRight: '6px' }} />
+            Load Active Demo Sessions
+          </button>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
@@ -485,7 +541,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
             {/* CARD 1: Core Record & Context Header */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="demo-section-context" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Layers size={18} color="var(--primary)" />
@@ -530,7 +586,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
             </div>
 
             {/* CARD 2: PARTICIPANTS (Customer vs Internal) */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="demo-section-participants" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -620,7 +676,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
             </div>
 
             {/* CARD 3: USE CASE & PRODUCT CAPABILITY MAPPING */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="demo-section-usecases" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Target size={18} color="var(--primary)" />
@@ -696,6 +752,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
                   <div>
                     <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Discovery Problem</label>
                     <select
+                      id="demo-usecase-problem-select"
                       value={selectedProblemId}
                       onChange={(e) => setSelectedProblemId(e.target.value)}
                       style={{ width: '100%', padding: '7px 10px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.8rem' }}
@@ -747,7 +804,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
             </div>
 
             {/* CARD 4: CUSTOMER FEEDBACK, OBJECTIONS & QUESTIONS */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="demo-section-feedback" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <MessageSquare size={18} color="var(--warning)" />
@@ -764,6 +821,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
                     Customer Feedback * <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Mandatory for completion)</span>
                   </label>
                   <textarea
+                    id="demo-feedback-input"
                     rows={3}
                     placeholder="Document detailed feedback received during or immediately following the demo..."
                     value={customerFeedback}
@@ -844,7 +902,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
             </div>
 
             {/* CARD 5: NEXT ACTION (Mandatory Activity, Owner & Due Date) */}
-            <div className="glass-panel" style={{ padding: '20px' }}>
+            <div id="demo-section-next-action" className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ marginBottom: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Clock size={18} color="var(--primary)" />
@@ -859,6 +917,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
                 <div>
                   <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Next Action Description *</label>
                   <input
+                    id="demo-next-action-input"
                     type="text"
                     placeholder="e.g. Present commercial proposal or configure 30-day POC pilot sandbox..."
                     value={nextActionDesc}
@@ -894,7 +953,7 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
             {/* READINESS CHECKLIST CARD */}
-            <div className="glass-panel" style={{ padding: '24px', borderTop: '4px solid var(--accent-cyan)' }}>
+            <div id="demo-readiness-card" className="glass-panel" style={{ padding: '24px', borderTop: '4px solid var(--accent-cyan)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0 }}>DEMO READINESS</h3>
                 <span className={`badge ${readiness?.is_ready ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.72rem' }}>
@@ -903,16 +962,26 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
               </div>
 
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '18px' }}>
-                Backend Gate Validation: A demo cannot be completed unless all 4 minimum enterprise criteria exist.
+                Backend Gate Validation: A demo cannot be completed unless all 4 minimum enterprise criteria exist. Click any missing item to jump straight to it.
               </p>
 
               {/* Checklist items */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
                 {readiness?.checklist.map(item => {
                   const isDone = item.status === 'COMPLETED';
+                  const target = getTargetSectionForGate(item.gate_code);
                   return (
                     <div
                       key={item.gate_code}
+                      onClick={() => {
+                        if (!isDone) {
+                          if (item.gate_code === 'DEMO_PARTICIPANTS' && (!selectedDemo.participants || selectedDemo.participants.length === 0)) {
+                            setShowAddParticipantModal(true);
+                          } else {
+                            scrollToSection(target.id, target.selector);
+                          }
+                        }
+                      }}
                       style={{
                         padding: '10px 12px',
                         background: 'var(--bg-surface)',
@@ -920,8 +989,23 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        borderLeft: isDone ? '3px solid var(--success)' : '3px solid var(--danger)'
+                        borderLeft: isDone ? '3px solid var(--success)' : '3px solid var(--danger)',
+                        border: '1px solid var(--border-subtle)',
+                        borderLeftWidth: '3px',
+                        borderLeftColor: isDone ? 'var(--success)' : 'var(--danger)',
+                        cursor: isDone ? 'default' : 'pointer',
+                        transition: 'all 0.15s ease'
                       }}
+                      onMouseEnter={(e) => {
+                        if (!isDone) e.currentTarget.style.borderColor = 'var(--primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isDone) {
+                          e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                          e.currentTarget.style.borderLeftColor = 'var(--danger)';
+                        }
+                      }}
+                      title={!isDone ? `Click to jump to ${target.label} and fill missing data` : undefined}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {isDone ? (
@@ -935,13 +1019,18 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
                         </div>
                       </div>
 
-                      <span style={{
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        color: isDone ? 'var(--success)' : 'var(--danger)'
-                      }}>
-                        {isDone ? 'READY' : 'MISSING'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          color: isDone ? 'var(--success)' : 'var(--danger)'
+                        }}>
+                          {isDone ? 'READY' : 'MISSING'}
+                        </span>
+                        {!isDone && (
+                          <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 700 }}>➔</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -949,16 +1038,51 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
 
               {/* Missing Fields Explanations */}
               {readiness && !readiness.is_ready && readiness.missing_fields.length > 0 && (
-                <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', marginBottom: '20px' }}>
+                <div style={{ padding: '14px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', marginBottom: '20px' }}>
                   <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--danger)', marginBottom: '4px' }}>
-                    Demo cannot be completed.
+                    Demo cannot be completed:
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Missing items:</div>
-                  <ul style={{ margin: '4px 0 0 16px', padding: 0, fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                    {readiness.missing_fields.map((mf, i) => (
-                      <li key={i}>{mf}</li>
-                    ))}
-                  </ul>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Click any missing item below to jump directly to it:</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {readiness.missing_fields.map((mf, i) => {
+                      const target = getTargetSectionForGate(mf);
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => {
+                            if (mf.toLowerCase().includes('participant') && (!selectedDemo.participants || selectedDemo.participants.length === 0)) {
+                              setShowAddParticipantModal(true);
+                            } else {
+                              scrollToSection(target.id, target.selector);
+                            }
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            background: 'var(--bg-surface)',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            color: 'var(--text-primary)',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)'}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <AlertCircle size={13} color="var(--danger)" />
+                            {mf}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 700 }}>
+                            Fill In ➔
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -985,10 +1109,22 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
                   <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <button
                       className="btn btn-secondary"
-                      onClick={() => onNavigateToPOC && selectedDemo.lead && onNavigateToPOC(selectedDemo.lead)}
+                      disabled={navigatingPOC}
+                      onClick={async () => {
+                        if (!selectedDemo.lead) return;
+                        setNavigatingPOC(true);
+                        try {
+                          await api.initPOC(selectedDemo.lead);
+                        } catch (e) {
+                          console.warn('Auto init POC warning:', e);
+                        } finally {
+                          setNavigatingPOC(false);
+                          if (onNavigateToPOC) onNavigateToPOC(selectedDemo.lead);
+                        }
+                      }}
                       style={{ width: '100%', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                     >
-                      <span>Proceed to POC / Pilot Trial</span>
+                      <span>{navigatingPOC ? 'Initializing Pilot Trial...' : 'Proceed to POC / Pilot Trial'}</span>
                       <ArrowRight size={14} />
                     </button>
 
@@ -1010,157 +1146,138 @@ export const DemoWorkspace: React.FC<DemoWorkspaceProps> = ({
       )}
 
       {/* MODAL 1: ADD PARTICIPANT */}
-      {showAddParticipantModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '460px', padding: '24px', background: 'var(--bg-surface-elevated)' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '16px' }}>Add Demo Participant</h3>
-            <form onSubmit={handleAddParticipant}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Participant Type *</label>
-                  <select
-                    value={partType}
-                    onChange={(e: any) => setPartType(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  >
-                    <option value="CUSTOMER">Customer Stakeholder</option>
-                    <option value="INTERNAL">Internal Team / Presenter</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Waleed Al-Amri"
-                    value={partName}
-                    onChange={(e) => setPartName(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Email Address *</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="e.g. waleed@client.sa"
-                    value={partEmail}
-                    onChange={(e) => setPartEmail(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Role / Title</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. VP Fleet Logistics or Solutions Consultant"
-                    value={partRoleTitle}
-                    onChange={(e) => setPartRoleTitle(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Notes</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Led technical evaluation of route optimization module"
-                    value={partNotes}
-                    onChange={(e) => setPartNotes(e.target.value)}
-                    style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowAddParticipantModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={savingParticipant}
-                >
-                  {savingParticipant ? 'Adding...' : 'Add Participant'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showAddParticipantModal}
+        onClose={() => setShowAddParticipantModal(false)}
+        title="Add Demo Participant"
+        size="sm"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowAddParticipantModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="add-demo-participant-form"
+              className="btn btn-primary"
+              disabled={savingParticipant}
+            >
+              {savingParticipant ? 'Adding...' : 'Add Participant'}
+            </button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form id="add-demo-participant-form" onSubmit={handleAddParticipant}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Participant Type *</label>
+              <select
+                value={partType}
+                onChange={(e: any) => setPartType(e.target.value)}
+                style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              >
+                <option value="CUSTOMER">Customer Stakeholder</option>
+                <option value="INTERNAL">Internal Team / Presenter</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Full Name *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Waleed Al-Amri"
+                value={partName}
+                onChange={(e) => setPartName(e.target.value)}
+                style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Email Address *</label>
+              <input
+                type="email"
+                required
+                placeholder="e.g. waleed@client.sa"
+                value={partEmail}
+                onChange={(e) => setPartEmail(e.target.value)}
+                style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Role / Title</label>
+              <input
+                type="text"
+                placeholder="e.g. VP Fleet Logistics or Solutions Consultant"
+                value={partRoleTitle}
+                onChange={(e) => setPartRoleTitle(e.target.value)}
+                style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Notes</label>
+              <input
+                type="text"
+                placeholder="e.g. Led technical evaluation of route optimization module"
+                value={partNotes}
+                onChange={(e) => setPartNotes(e.target.value)}
+                style={{ width: '100%', padding: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
+              />
+            </div>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL 2: STAGE NOT REQUIRED (OPTIONAL PIPELINE BYPASS) */}
-      {showNotRequiredModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999
-        }}>
-          <div className="glass-panel" style={{ width: '480px', padding: '24px', background: 'var(--bg-surface-elevated)' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '8px', color: 'var(--warning)' }}>
-              Mark Demo as NOT REQUIRED
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              If Demo is configured as OPTIONAL in the product pipeline, you may waive this stage. You must record an auditable business reason.
-            </p>
-
-            <form onSubmit={handleMarkNotRequired}>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
-                  Auditable Waiver Reason *
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="e.g. Customer technical team completed self-guided sandbox assessment; formal live demo waived by mutual agreement."
-                  value={notRequiredReason}
-                  onChange={(e) => setNotRequiredReason(e.target.value)}
-                  style={{ width: '100%', padding: '10px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowNotRequiredModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={savingNotRequired}
-                  style={{ background: 'var(--warning)', borderColor: 'var(--warning)', color: '#000000', fontWeight: 800 }}
-                >
-                  {savingNotRequired ? 'Recording...' : 'Confirm Waiver & Skip Stage'}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showNotRequiredModal}
+        onClose={() => setShowNotRequiredModal(false)}
+        title="Mark Demo as NOT REQUIRED"
+        subtitle="If Demo is configured as OPTIONAL in the product pipeline, you may waive this stage. You must record an auditable business reason."
+        size="sm"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowNotRequiredModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="mark-demo-not-required-form"
+              className="btn btn-primary"
+              disabled={savingNotRequired}
+              style={{ background: 'var(--warning)', borderColor: 'var(--warning)', color: '#000000', fontWeight: 800 }}
+            >
+              {savingNotRequired ? 'Recording...' : 'Confirm Waiver & Skip Stage'}
+            </button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form id="mark-demo-not-required-form" onSubmit={handleMarkNotRequired}>
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+              Auditable Waiver Reason *
+            </label>
+            <textarea
+              rows={4}
+              required
+              placeholder="e.g. Customer technical team completed self-guided sandbox assessment; formal live demo waived by mutual agreement."
+              value={notRequiredReason}
+              onChange={(e) => setNotRequiredReason(e.target.value)}
+              style={{ width: '100%', padding: '10px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', fontSize: '0.85rem' }}
+            />
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

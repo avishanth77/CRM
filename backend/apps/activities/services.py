@@ -212,28 +212,35 @@ class ActivityService:
         now = timezone.now()
         if lead:
             lead.last_activity_at = conducted_at or now
-            if next_action_due_at:
+            if next_action_due_at or next_action_description:
                 lead.next_activity_due_at = next_action_due_at
                 lead.next_action_description = next_action_description
             lead.save(update_fields=['last_activity_at', 'next_activity_due_at', 'next_action_description'])
 
         if opportunity:
             opportunity.last_activity_at = conducted_at or now
-            if next_action_due_at:
+            if next_action_due_at or next_action_description:
                 opportunity.next_activity_due_at = next_action_due_at
                 opportunity.next_action_description = next_action_description
             opportunity.save(update_fields=['last_activity_at', 'next_activity_due_at', 'next_action_description'])
 
         if account:
             account.last_activity_at = conducted_at or now
-            if next_action_due_at:
+            if next_action_due_at or next_action_description:
                 account.next_activity_due_at = next_action_due_at
                 account.next_action_description = next_action_description
             account.save(update_fields=['last_activity_at', 'next_activity_due_at', 'next_action_description'])
 
         # Automatic follow-up Task generation
         if (create_next_task or next_action_description) and next_action_due_at:
-            assignee = task_assignee or performed_by or (lead.owner if lead else None) or (opportunity.owner if opportunity else None)
+            assignee = (
+                task_assignee or
+                performed_by or
+                (lead.owner if lead else None) or
+                (opportunity.owner if opportunity else None) or
+                (getattr(account, 'primary_owner', None) if account else None) or
+                User.objects.filter(is_active=True).first()
+            )
             if assignee:
                 Task.objects.create(
                     title=next_action_description or f"Follow-up: {subject}",
@@ -1131,22 +1138,34 @@ class WorkQueueService:
         now = timezone.now()
         today_date = now.date()
 
-        # Determine effective role mode
-        effective_role = role_view
-        if not effective_role and user:
-            if user.is_superuser or user.role in [UserRole.ADMIN, UserRole.MANAGEMENT]:
+        # Determine effective role mode (Only Admin can freely switch roles)
+        is_admin = bool(user and (user.is_superuser or getattr(user, 'role', None) == UserRole.ADMIN))
+        if not is_admin and user:
+            if getattr(user, 'role', None) == UserRole.MANAGEMENT:
                 effective_role = 'EXECUTIVE'
-            elif user.role in [UserRole.SALES_MANAGER, UserRole.PARTNER_MANAGER]:
+            elif getattr(user, 'role', None) in [UserRole.SALES_MANAGER, UserRole.PARTNER_MANAGER] or 'MANAGER' in getattr(user, 'role', ''):
                 effective_role = 'MANAGER'
             else:
                 effective_role = 'SALES_EXECUTIVE'
+        else:
+            effective_role = role_view or 'SALES_EXECUTIVE'
         effective_role = effective_role or 'SALES_EXECUTIVE'
 
         # Base Querysets
         task_qs = Task.objects.select_related(
             'assigned_to', 'related_lead', 'related_opportunity', 'related_account'
+        ).exclude(
+            related_lead__status__in=[LeadStatus.NURTURE, LeadStatus.DISQUALIFIED]
+        ).exclude(
+            related_lead__assessments__icp_result='FAIL'
+        ).exclude(
+            related_lead__assessments__icp_knockout_passed=False
         )
-        lead_qs = Lead.objects.filter(status=LeadStatus.ACTIVE).select_related('account', 'owner', 'primary_product')
+        lead_qs = Lead.objects.filter(status=LeadStatus.ACTIVE).exclude(
+            assessments__icp_result='FAIL'
+        ).exclude(
+            assessments__icp_knockout_passed=False
+        ).select_related('account', 'owner', 'primary_product')
         opp_qs = Opportunity.objects.filter(status=OpportunityStatus.OPEN).select_related('account', 'owner', 'stage', 'product')
         sql_qs = SQLHandoff.objects.filter(status=HandoffStatus.PENDING).select_related('lead__account', 'assigned_sales_owner', 'product')
         sla_qs = SLATracker.objects.filter(completed_time__isnull=True).select_related('definition', 'assigned_user')
@@ -1202,10 +1221,13 @@ class WorkQueueService:
         ).order_by('-total_contract_value'))
 
         three_days_future = today_date + timedelta(days=3)
-        proposals_expiring = list(Proposal.objects.filter(
+        proposals_qs = Proposal.objects.filter(
             status__in=[ProposalStatus.APPROVED, ProposalStatus.SENT],
             valid_until__lte=three_days_future
-        ).select_related('opportunity__account', 'owner'))
+        ).select_related('opportunity__account', 'owner')
+        if effective_role == 'SALES_EXECUTIVE' and user and not user.is_superuser and user.role not in [UserRole.ADMIN, UserRole.MANAGEMENT]:
+            proposals_qs = proposals_qs.filter(Q(owner=user) | Q(opportunity__owner=user))
+        proposals_expiring = list(proposals_qs)
 
         # ======================================================================
         # SECTION 4: NO NEXT ACTION
@@ -1233,10 +1255,13 @@ class WorkQueueService:
         ).exclude(conducted_at__date=today_date).order_by('conducted_at'))
 
         thirty_days_ago = now - timedelta(days=30)
-        nurture_reengagement = list(Lead.objects.filter(
+        nurture_leads_qs = Lead.objects.filter(
             status=LeadStatus.NURTURE,
             updated_at__lte=thirty_days_ago
-        ).select_related('account', 'owner', 'primary_product')[:20])
+        )
+        if effective_role == 'SALES_EXECUTIVE' and user and not user.is_superuser and user.role not in [UserRole.ADMIN, UserRole.MANAGEMENT]:
+            nurture_leads_qs = nurture_leads_qs.filter(owner=user)
+        nurture_reengagement = list(nurture_leads_qs.select_related('account', 'owner', 'primary_product')[:20])
 
         return {
             'role_view': effective_role,

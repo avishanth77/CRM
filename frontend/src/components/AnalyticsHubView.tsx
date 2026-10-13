@@ -14,6 +14,7 @@ import { ActivitySLADashboardView } from './ActivitySLADashboardView';
 import { FunnelConversionsAnalyticsView } from './FunnelConversionsAnalyticsView';
 import { OwnerPerformanceView } from './OwnerPerformanceView';
 import { ReportsWorkspaceView } from './ReportsWorkspaceView';
+import { ErrorBoundary } from './common/ErrorBoundary';
 
 interface AnalyticsHubViewProps {
   products: Product[];
@@ -48,6 +49,8 @@ export const AnalyticsHubView: React.FC<AnalyticsHubViewProps> = ({
     { key: 'owners', label: 'Owner Performance', icon: <Users size={15} /> },
     { key: 'reports', label: 'Reports Hub & Export', icon: <FileText size={15} /> }
   ];
+
+  const currentTab = TABS.find(t => t.key === subTab);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -88,69 +91,71 @@ export const AnalyticsHubView: React.FC<AnalyticsHubViewProps> = ({
         ))}
       </div>
 
-      {/* View Switcher */}
-      {subTab === 'executive' && (
-        <ExecutiveDashboardView
-          products={products}
-          onNavigateToEntity={(type, id) => {
-            if (type === 'lead' && onNavigateToLead) onNavigateToLead(id);
-            else if (type === 'opportunity' && onNavigateToOpportunity) onNavigateToOpportunity(id);
-          }}
-          onNavigateToTab={onNavigateToTab}
-        />
-      )}
+      {/* View Switcher with Error Boundary */}
+      <ErrorBoundary key={subTab} fallbackTitle={`Unable to load ${currentTab?.label || 'Analytics'} view`}>
+        {subTab === 'executive' && (
+          <ExecutiveDashboardView
+            products={products}
+            onNavigateToEntity={(type, id) => {
+              if (type === 'lead' && onNavigateToLead) onNavigateToLead(id);
+              else if (type === 'opportunity' && onNavigateToOpportunity) onNavigateToOpportunity(id);
+            }}
+            onNavigateToTab={onNavigateToTab}
+          />
+        )}
 
-      {subTab === 'pld' && (
-        <PLDDashboardView
-          products={products}
-          onNavigateToLead={onNavigateToLead}
-        />
-      )}
+        {subTab === 'pld' && (
+          <PLDDashboardView
+            products={products}
+            onNavigateToLead={onNavigateToLead}
+          />
+        )}
 
-      {subTab === 'sales' && (
-        <SalesDashboardView
-          products={products}
-          onNavigateToOpportunity={onNavigateToOpportunity}
-          onNavigateToProposal={onNavigateToProposal}
-          onNavigateToSQL={onNavigateToSQL}
-        />
-      )}
+        {subTab === 'sales' && (
+          <SalesDashboardView
+            products={products}
+            onNavigateToOpportunity={onNavigateToOpportunity}
+            onNavigateToProposal={onNavigateToProposal}
+            onNavigateToSQL={onNavigateToSQL}
+          />
+        )}
 
-      {subTab === 'marketing' && (
-        <MarketingDashboardView
-          products={products}
-          onNavigateToTab={onNavigateToTab}
-        />
-      )}
+        {subTab === 'marketing' && (
+          <MarketingDashboardView
+            products={products}
+            onNavigateToTab={onNavigateToTab}
+          />
+        )}
 
-      {subTab === 'product' && (
-        <ProductAnalyticsView />
-      )}
+        {subTab === 'product' && (
+          <ProductAnalyticsView />
+        )}
 
-      {subTab === 'partner' && (
-        <PartnerDashboardFoundationView />
-      )}
+        {subTab === 'partner' && (
+          <PartnerDashboardFoundationView />
+        )}
 
-      {subTab === 'activity_sla' && (
-        <ActivitySLADashboardView
-          onNavigateToTab={onNavigateToTab}
-        />
-      )}
+        {subTab === 'activity_sla' && (
+          <ActivitySLADashboardView
+            onNavigateToTab={onNavigateToTab}
+          />
+        )}
 
-      {subTab === 'funnel' && (
-        <FunnelConversionsAnalyticsView
-          products={products}
-          onNavigateToTab={onNavigateToTab}
-        />
-      )}
+        {subTab === 'funnel' && (
+          <FunnelConversionsAnalyticsView
+            products={products}
+            onNavigateToTab={onNavigateToTab}
+          />
+        )}
 
-      {subTab === 'owners' && (
-        <OwnerPerformanceView />
-      )}
+        {subTab === 'owners' && (
+          <OwnerPerformanceView />
+        )}
 
-      {subTab === 'reports' && (
-        <ReportsWorkspaceView />
-      )}
+        {subTab === 'reports' && (
+          <ReportsWorkspaceView />
+        )}
+      </ErrorBoundary>
     </div>
   );
 };

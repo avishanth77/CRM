@@ -10,6 +10,7 @@ import { api } from '../services/api';
 import type {
   Discovery, DiscoveryProblem, DiscoveryReadiness
 } from '../services/api';
+import { Modal } from './common/Modal';
 
 interface DiscoveryWorkspaceProps {
   initialDiscoveryId?: string;
@@ -126,17 +127,21 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
   const loadDiscoveries = async () => {
     setLoading(true);
     try {
-      const res = await api.getDiscoveries(leadId ? { lead: leadId } : undefined);
+      const res = await api.getDiscoveries();
       const list = res.results || [];
       setDiscoveries(list);
 
+      let active: Discovery | null = null;
       if (initialDiscoveryId) {
-        const found = list.find(d => d.id === initialDiscoveryId);
-        if (found) setSelectedDiscovery(found);
-        else if (list.length > 0) setSelectedDiscovery(list[0]);
-      } else if (list.length > 0) {
-        setSelectedDiscovery(list[0]);
+        active = list.find(d => d.id === initialDiscoveryId) || null;
       }
+      if (!active && leadId) {
+        active = list.find(d => d.lead === leadId) || null;
+      }
+      if (!active && list.length > 0) {
+        active = list[0];
+      }
+      setSelectedDiscovery(active);
     } catch (err: any) {
       console.error('Error loading discoveries:', err);
       showNotify('error', 'Failed to load discovery records.');
@@ -567,6 +572,31 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
   const unmappedConfirmedProblems = confirmedProblems.filter(p => !p.capability_mappings || p.capability_mappings.length === 0);
   const totalMappingsCount = (disc.problems || []).reduce((acc, p) => acc + (p.capability_mappings?.length || 0), 0);
 
+  const scrollToSection = (sectionId: string, focusSelector?: string) => {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('highlight-section-pulse');
+      setTimeout(() => el.classList.remove('highlight-section-pulse'), 2500);
+      if (focusSelector) {
+        const input = el.querySelector(focusSelector) as HTMLElement;
+        if (input) setTimeout(() => input.focus(), 400);
+      }
+    }
+  };
+
+  const getTargetSectionForGate = (gateCode: string) => {
+    const code = (gateCode || '').toUpperCase();
+    if (code.includes('PROCESS')) return { id: 'disc-section-process', selector: 'textarea', label: 'Section 1: Current Process' };
+    if (code.includes('PROBLEM')) return { id: 'disc-section-problems', selector: undefined, label: 'Section 2: Business Problems' };
+    if (code.includes('IMPACT')) return { id: 'disc-section-timeline', selector: 'textarea', label: 'Sections 4 & 5: Business Impact' };
+    if (code.includes('STAKEHOLDER')) return { id: 'disc-section-stakeholders', selector: undefined, label: 'Section 3: Buying Committee' };
+    if (code.includes('MAPPING') || code.includes('PRODUCT') || code.includes('CAPABILITY')) return { id: 'mapping-workspace', selector: undefined, label: 'Section 6: Capability Mapping' };
+    if (code.includes('TIMELINE') || code.includes('DECISION')) return { id: 'disc-section-timeline', selector: 'textarea', label: 'Sections 4 & 5: Timeline' };
+    if (code.includes('ACTION') || code.includes('ACTIVITY')) return { id: 'disc-section-next-action', selector: 'input', label: 'Section 7: Next Action' };
+    return { id: 'disc-section-process', selector: undefined, label: 'Missing Section' };
+  };
+
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Notifications */}
@@ -609,7 +639,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
               )}
             </div>
 
-            <h1 style={{ fontSize: '1.85rem', fontWeight: 800, marginTop: '8px', letterSpacing: '-0.02em', color: '#FFFFFF' }}>
+            <h1 style={{ fontSize: '1.85rem', fontWeight: 800, marginTop: '8px', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
               {disc.account_name}
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginTop: '4px' }}>
@@ -618,22 +648,34 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            {discoveries.length > 1 && (
-              <select
-                className="input-select"
-                style={{ padding: '8px 12px', fontSize: '0.85rem', maxWidth: '240px' }}
-                value={selectedDiscovery?.id}
-                onChange={(e) => {
-                  const found = discoveries.find(d => d.id === e.target.value);
-                  if (found) setSelectedDiscovery(found);
-                }}
-              >
-                {discoveries.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.account_name} ({d.status})
-                  </option>
-                ))}
-              </select>
+            {discoveries.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Active Session:</span>
+                <select
+                  className="input-select"
+                  style={{
+                    padding: '8px 12px',
+                    fontSize: '0.82rem',
+                    minWidth: '220px',
+                    maxWidth: '320px',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    color: 'var(--text-primary)'
+                  }}
+                  value={selectedDiscovery?.id || ''}
+                  onChange={(e) => {
+                    const found = discoveries.find(d => d.id === e.target.value);
+                    if (found) setSelectedDiscovery(found);
+                  }}
+                >
+                  {discoveries.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.account_name} ({d.product_code || 'Product'}) — {d.status}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
 
             <button
@@ -679,39 +721,59 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
           paddingTop: '16px',
           borderTop: '1px solid var(--border-subtle)'
         }}>
-          <div style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          <div
+            onClick={() => scrollToSection('disc-section-process', 'textarea')}
+            style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'all 0.15s ease' }}
+            title="Click to jump to Section 1: Current Operational Process"
+          >
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Current Process</div>
             <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '4px', color: disc.current_process_notes ? 'var(--success)' : 'var(--warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
               {disc.current_process_notes ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-              {disc.current_process_notes ? 'Documented' : 'Missing'}
+              {disc.current_process_notes ? 'Documented' : 'Missing ➔ Fill'}
             </div>
           </div>
 
-          <div style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          <div
+            onClick={() => scrollToSection('disc-section-problems')}
+            style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'all 0.15s ease' }}
+            title="Click to jump to Section 2: Documented Business Problems"
+          >
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Confirmed Problems</div>
-            <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '4px', color: confirmedProblems.length > 0 ? '#FFFFFF' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '4px', color: confirmedProblems.length > 0 ? 'var(--text-primary)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Target size={16} style={{ color: 'var(--accent-purple)' }} />
-              {confirmedProblems.length} Confirmed ({disc.problems?.length || 0} Total)
+              {confirmedProblems.length} Confirmed ({disc.problems?.length || 0} Total) {confirmedProblems.length === 0 && '➔ Add'}
             </div>
           </div>
 
-          <div style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          <div
+            onClick={() => scrollToSection('mapping-workspace')}
+            style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'all 0.15s ease' }}
+            title="Click to jump to Section 6: Product Capability Mapping"
+          >
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Capability Mappings</div>
             <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '4px', color: unmappedConfirmedProblems.length === 0 && confirmedProblems.length > 0 ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Layers size={16} style={{ color: 'var(--accent-cyan)' }} />
-              {totalMappingsCount} Mappings {unmappedConfirmedProblems.length > 0 && `(${unmappedConfirmedProblems.length} unmapped)`}
+              {totalMappingsCount} Mappings {unmappedConfirmedProblems.length > 0 && `(${unmappedConfirmedProblems.length} unmapped ➔ Map)`}
             </div>
           </div>
 
-          <div style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          <div
+            onClick={() => scrollToSection('disc-section-stakeholders')}
+            style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'all 0.15s ease' }}
+            title="Click to jump to Section 3: Stakeholders & Buying Committee"
+          >
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Buying Committee</div>
-            <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '4px', color: (disc.stakeholders?.length || 0) > 0 ? '#FFFFFF' : 'var(--warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '4px', color: (disc.stakeholders?.length || 0) > 0 ? 'var(--text-primary)' : 'var(--warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Users size={16} style={{ color: 'var(--info)' }} />
-              {disc.stakeholders?.length || 0} Stakeholders Identified
+              {disc.stakeholders?.length || 0} Stakeholders Identified {(disc.stakeholders?.length || 0) === 0 && '➔ Add'}
             </div>
           </div>
 
-          <div style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          <div
+            onClick={() => scrollToSection('disc-readiness-card')}
+            style={{ padding: '12px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'all 0.15s ease' }}
+            title="Click to inspect Discovery Readiness Gate Checklist"
+          >
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Discovery Readiness Gate</div>
             <div style={{ fontSize: '0.95rem', fontWeight: 700, marginTop: '4px', color: readinessData?.is_ready ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
               {readinessData?.is_ready ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
@@ -763,7 +825,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           {/* SECTION 1: CURRENT PROCESS */}
-          <div className="glass-panel" style={{ padding: '24px' }}>
+          <div id="disc-section-process" className="glass-panel" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h2 style={{ fontSize: '1.15rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -784,18 +846,80 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
               </button>
             </div>
 
-            <textarea
-              className="input-textarea"
-              rows={4}
-              placeholder="e.g. Sales reps manually record store orders on paper order pads during daily van routes. Van drivers collect cash and handwritten delivery notes, which are brought back to the depot at 7 PM for manual entry into Excel / legacy ERP..."
-              value={currentProcessNotes}
-              onChange={(e) => setCurrentProcessNotes(e.target.value)}
-              style={{ width: '100%', background: 'var(--bg-surface)' }}
-            />
+            <div style={{
+              background: 'var(--bg-surface-elevated)',
+              borderRadius: '10px',
+              border: '1.5px solid var(--border-subtle)',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-cyan)' }}></span>
+                  Current Workflow &amp; Systems Architecture Narrative
+                </span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  {currentProcessNotes?.length || 0} characters recorded
+                </span>
+              </div>
+
+              <textarea
+                className="input-textarea"
+                rows={5}
+                placeholder="e.g. Sales reps manually record store orders on paper order pads during daily van routes. Van drivers collect cash and handwritten delivery notes, which are brought back to the depot at 7 PM for manual entry into Excel / legacy ERP..."
+                value={currentProcessNotes}
+                onChange={(e) => setCurrentProcessNotes(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.875rem',
+                  lineHeight: '1.6',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  minHeight: '120px'
+                }}
+              />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '4px' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Quick Topics:</span>
+                {[
+                  '📋 Van Sales & Daily Routes',
+                  '📦 Inventory & Mobile Stock',
+                  '💵 Cash & Handwritten Receipts',
+                  '🔄 Legacy ERP & Reconciliation'
+                ].map((topic, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      const prefix = `\n• ${topic.slice(3)}: `;
+                      setCurrentProcessNotes(prev => prev ? `${prev}${prefix}` : prefix.trim());
+                    }}
+                    style={{
+                      fontSize: '0.7rem',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    + {topic}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* SECTION 2: PROBLEMS CARRY-FORWARD & REFINEMENT */}
-          <div className="glass-panel" style={{ padding: '24px' }}>
+          <div id="disc-section-problems" className="glass-panel" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h2 style={{ fontSize: '1.15rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -852,7 +976,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#FFFFFF' }}>
+                            <span style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
                               {prob.refined_statement || prob.problem_detail?.name || 'Problem Statement'}
                             </span>
                             <span className={`badge ${prob.severity === 'CRITICAL' ? 'badge-danger' : prob.severity === 'HIGH' ? 'badge-warning' : 'badge-neutral'}`}>
@@ -1260,7 +1384,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
                       >
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{p.refined_statement || p.problem_detail?.name}</span>
+                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{p.refined_statement || p.problem_detail?.name}</span>
                             <ArrowRight size={13} style={{ color: 'var(--text-muted)' }} />
                             <span style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>{m.capability_name}</span>
                             <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>{m.module_name}</span>
@@ -1286,7 +1410,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
           </div>
 
           {/* SECTION 3: STAKEHOLDERS & BUYING COMMITTEE */}
-          <div className="glass-panel" style={{ padding: '24px' }}>
+          <div id="disc-section-stakeholders" className="glass-panel" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h2 style={{ fontSize: '1.15rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1329,7 +1453,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                          <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#FFFFFF' }}>{sh.contact_name}</div>
+                          <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{sh.contact_name}</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sh.contact_designation || sh.role_name}</div>
                         </div>
 
@@ -1351,7 +1475,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)' }}>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                        Involvement: <strong style={{ color: '#FFFFFF' }}>{sh.involvement_level}</strong>
+                        Involvement: <strong style={{ color: 'var(--text-primary)' }}>{sh.involvement_level}</strong>
                       </span>
                       <button
                         className="btn btn-outline"
@@ -1372,7 +1496,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           {/* DISCOVERY READINESS CHECKLIST (CRITICAL REQUIREMENT) */}
-          <div className="glass-panel" style={{ padding: '24px' }}>
+          <div id="disc-readiness-card" className="glass-panel" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <h2 style={{ fontSize: '1.15rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CheckSquare size={18} style={{ color: 'var(--success)' }} />
@@ -1384,17 +1508,23 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              All documented Discovery criteria must be satisfied before completing Discovery and moving to Product Demo or SQL.
+              All documented Discovery criteria must be satisfied before completing Discovery. Click any incomplete item below to jump directly to that section.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
               {readinessData?.checklist?.map((item) => {
-                const isPassed = item.status === 'COMPLETED';
+                const isPassed = item.status === 'COMPLETED' || item.satisfied === true;
                 const isBlocked = item.status === 'BLOCKED';
+                const displayName = item.name || item.gate_name || item.gate_code;
+                const displayDesc = item.description || item.details || '';
+                const target = getTargetSectionForGate(item.gate_code);
 
                 return (
                   <div
                     key={item.gate_code}
+                    onClick={() => {
+                      if (!isPassed) scrollToSection(target.id, target.selector);
+                    }}
                     style={{
                       padding: '12px 14px',
                       background: 'var(--bg-surface)',
@@ -1402,7 +1532,15 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
                       border: `1px solid ${isPassed ? 'rgba(16, 185, 129, 0.2)' : isBlocked ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.2)'}`,
                       display: 'flex',
                       alignItems: 'flex-start',
-                      gap: '10px'
+                      gap: '10px',
+                      cursor: isPassed ? 'default' : 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isPassed) e.currentTarget.style.borderColor = 'var(--primary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isPassed) e.currentTarget.style.borderColor = isBlocked ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.2)';
                     }}
                   >
                     <div style={{ marginTop: '2px' }}>
@@ -1417,21 +1555,50 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
 
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: isPassed ? '#FFFFFF' : isBlocked ? 'var(--danger)' : 'var(--warning)' }}>
-                          {item.name}
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: isPassed ? 'var(--text-primary)' : isBlocked ? 'var(--danger)' : 'var(--warning)' }}>
+                          {displayName}
                         </span>
                         <span style={{ fontSize: '0.7rem', fontWeight: 600, color: isPassed ? 'var(--success)' : isBlocked ? 'var(--danger)' : 'var(--warning)' }}>
                           {isPassed ? '✓ Satisfied' : isBlocked ? '✕ Blocked' : '⚠ Missing'}
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        {item.description}
-                      </div>
+                      {displayDesc && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {displayDesc}
+                        </div>
+                      )}
 
                       {item.missing_fields && item.missing_fields.length > 0 && (
                         <div style={{ fontSize: '0.72rem', color: 'var(--danger)', marginTop: '4px', fontWeight: 600 }}>
                           Missing: {item.missing_fields.join(', ')}
+                        </div>
+                      )}
+
+                      {!isPassed && (
+                        <div style={{ marginTop: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              scrollToSection(target.id, target.selector);
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '4px 10px',
+                              background: 'rgba(79, 70, 229, 0.1)',
+                              border: '1px solid rgba(79, 70, 229, 0.3)',
+                              borderRadius: '6px',
+                              color: 'var(--primary)',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Jump to {target.label} ➔
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1503,7 +1670,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
           </div>
 
           {/* SECTION 4 & 5: DECISION PROCESS & TIMELINE */}
-          <div className="glass-panel" style={{ padding: '24px' }}>
+          <div id="disc-section-timeline" className="glass-panel" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <h2 style={{ fontSize: '1.15rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Clock size={18} style={{ color: 'var(--warning)' }} />
@@ -1592,7 +1759,7 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
           </div>
 
           {/* SECTION 7: NEXT ACTION & ACTIVITIES */}
-          <div className="glass-panel" style={{ padding: '24px' }}>
+          <div id="disc-section-next-action" className="glass-panel" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <h2 style={{ fontSize: '1.15rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Clock size={18} style={{ color: 'var(--primary)' }} />
@@ -1681,323 +1848,275 @@ export const DiscoveryWorkspace: React.FC<DiscoveryWorkspaceProps> = ({
       </div>
 
       {/* MODAL 1: ADD STAKEHOLDER */}
-      {showAddStakeholderModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 999
-        }}>
-          <div className="glass-panel animate-scale-up" style={{ width: '500px', maxWidth: '92vw', padding: '28px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '6px' }}>
-              Add Buying Committee Stakeholder
-            </h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
-              Link or create a customer contact and assign their role in the purchasing decision.
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>First Name *</label>
-                  <input
-                    className="input-text"
-                    style={{ width: '100%', marginTop: '4px' }}
-                    value={shFirstName}
-                    onChange={(e) => setShFirstName(e.target.value)}
-                    placeholder="e.g. Tariq"
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Last Name</label>
-                  <input
-                    className="input-text"
-                    style={{ width: '100%', marginTop: '4px' }}
-                    value={shLastName}
-                    onChange={(e) => setShLastName(e.target.value)}
-                    placeholder="e.g. Al-Mansoor"
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Email Address</label>
-                  <input
-                    type="email"
-                    className="input-text"
-                    style={{ width: '100%', marginTop: '4px' }}
-                    value={shEmail}
-                    onChange={(e) => setShEmail(e.target.value)}
-                    placeholder="tariq@client.com"
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Phone Number</label>
-                  <input
-                    className="input-text"
-                    style={{ width: '100%', marginTop: '4px' }}
-                    value={shPhone}
-                    onChange={(e) => setShPhone(e.target.value)}
-                    placeholder="+966 50 123 4567"
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Designation</label>
-                  <input
-                    className="input-text"
-                    style={{ width: '100%', marginTop: '4px' }}
-                    value={shDesignation}
-                    onChange={(e) => setShDesignation(e.target.value)}
-                    placeholder="e.g. Head of Van Fleet Operations"
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Decision Role *</label>
-                  <select
-                    className="input-select"
-                    style={{ width: '100%', marginTop: '4px' }}
-                    value={shDecisionRole}
-                    onChange={(e) => setShDecisionRole(e.target.value as any)}
-                  >
-                    <option value="DECISION_MAKER">DECISION MAKER</option>
-                    <option value="ECONOMIC_BUYER">ECONOMIC BUYER</option>
-                    <option value="TECHNICAL_EVALUATOR">TECHNICAL EVALUATOR</option>
-                    <option value="INFLUENCER">INFLUENCER</option>
-                    <option value="CHAMPION">CHAMPION</option>
-                    <option value="GATEKEEPER">GATEKEEPER</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Involvement Level</label>
-                <select
-                  className="input-select"
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={shInvolvementLevel}
-                  onChange={(e) => setShInvolvementLevel(e.target.value as any)}
-                >
-                  <option value="HIGH">HIGH (Participates in all demos)</option>
-                  <option value="MEDIUM">MEDIUM (Reviews summary &amp; pricing)</option>
-                  <option value="LOW">LOW (Sign-off only)</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Responsibility / Notes</label>
-                <input
-                  className="input-text"
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={shResponsibility}
-                  onChange={(e) => setShResponsibility(e.target.value)}
-                  placeholder="e.g. Validates driver offline sync and invoice printing"
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button
-                  className="btn btn-outline"
-                  onClick={() => setShowAddStakeholderModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleAddStakeholder}
-                  disabled={savingStakeholder}
-                >
-                  {savingStakeholder ? 'Adding...' : 'Add Stakeholder'}
-                </button>
-              </div>
+      <Modal
+        isOpen={showAddStakeholderModal}
+        onClose={() => setShowAddStakeholderModal(false)}
+        title="Add Buying Committee Stakeholder"
+        subtitle="Link or create a customer contact and assign their role in the purchasing decision."
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%' }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setShowAddStakeholderModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleAddStakeholder}
+              disabled={savingStakeholder}
+            >
+              {savingStakeholder ? 'Adding...' : 'Add Stakeholder'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>First Name *</label>
+              <input
+                className="input-text"
+                style={{ width: '100%', marginTop: '4px' }}
+                value={shFirstName}
+                onChange={(e) => setShFirstName(e.target.value)}
+                placeholder="e.g. Tariq"
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Last Name</label>
+              <input
+                className="input-text"
+                style={{ width: '100%', marginTop: '4px' }}
+                value={shLastName}
+                onChange={(e) => setShLastName(e.target.value)}
+                placeholder="e.g. Al-Mansoor"
+              />
             </div>
           </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Email Address</label>
+              <input
+                type="email"
+                className="input-text"
+                style={{ width: '100%', marginTop: '4px' }}
+                value={shEmail}
+                onChange={(e) => setShEmail(e.target.value)}
+                placeholder="tariq@client.com"
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Phone Number</label>
+              <input
+                className="input-text"
+                style={{ width: '100%', marginTop: '4px' }}
+                value={shPhone}
+                onChange={(e) => setShPhone(e.target.value)}
+                placeholder="+966 50 123 4567"
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Designation</label>
+              <input
+                className="input-text"
+                style={{ width: '100%', marginTop: '4px' }}
+                value={shDesignation}
+                onChange={(e) => setShDesignation(e.target.value)}
+                placeholder="e.g. Head of Van Fleet Operations"
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Decision Role *</label>
+              <select
+                className="input-select"
+                style={{ width: '100%', marginTop: '4px' }}
+                value={shDecisionRole}
+                onChange={(e) => setShDecisionRole(e.target.value as any)}
+              >
+                <option value="DECISION_MAKER">DECISION MAKER</option>
+                <option value="ECONOMIC_BUYER">ECONOMIC BUYER</option>
+                <option value="TECHNICAL_EVALUATOR">TECHNICAL EVALUATOR</option>
+                <option value="INFLUENCER">INFLUENCER</option>
+                <option value="CHAMPION">CHAMPION</option>
+                <option value="GATEKEEPER">GATEKEEPER</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Involvement Level</label>
+            <select
+              className="input-select"
+              style={{ width: '100%', marginTop: '4px' }}
+              value={shInvolvementLevel}
+              onChange={(e) => setShInvolvementLevel(e.target.value as any)}
+            >
+              <option value="HIGH">HIGH (Participates in all demos)</option>
+              <option value="MEDIUM">MEDIUM (Reviews summary &amp; pricing)</option>
+              <option value="LOW">LOW (Sign-off only)</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Responsibility / Notes</label>
+            <input
+              className="input-text"
+              style={{ width: '100%', marginTop: '4px' }}
+              value={shResponsibility}
+              onChange={(e) => setShResponsibility(e.target.value)}
+              placeholder="e.g. Validates driver offline sync and invoice printing"
+            />
+          </div>
         </div>
-      )}
+      </Modal>
 
       {/* MODAL 2: LOG UNIFIED ACTIVITY */}
-      {showLogActivityModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 999
-        }}>
-          <div className="glass-panel animate-scale-up" style={{ width: '520px', maxWidth: '92vw', padding: '28px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '6px' }}>
-              Log Discovery Activity
-            </h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
-              Record meeting notes, site visits, or calls in the unified timeline.
-            </p>
+      <Modal
+        isOpen={showLogActivityModal}
+        onClose={() => setShowLogActivityModal(false)}
+        title="Log Discovery Activity"
+        subtitle="Record meeting notes, site visits, or calls in the unified timeline."
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%' }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setShowLogActivityModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleLogActivity}
+              disabled={savingActivity || !actSubject.trim() || !actNextAction.trim()}
+            >
+              {savingActivity ? 'Saving...' : 'Log Activity'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Activity Type</label>
+            <select
+              className="input-select"
+              style={{ width: '100%', marginTop: '4px' }}
+              value={actType}
+              onChange={(e) => setActType(e.target.value)}
+            >
+              <option value="DISCOVERY">Discovery Meeting</option>
+              <option value="SITE_VISIT">On-Site Fleet Inspection</option>
+              <option value="CALL">Discovery Phone Call</option>
+              <option value="WHATSAPP">WhatsApp Discussion</option>
+              <option value="EMAIL">Email Follow-Up</option>
+            </select>
+          </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Activity Type</label>
-                <select
-                  className="input-select"
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={actType}
-                  onChange={(e) => setActType(e.target.value)}
-                >
-                  <option value="DISCOVERY">Discovery Meeting</option>
-                  <option value="SITE_VISIT">On-Site Fleet Inspection</option>
-                  <option value="CALL">Discovery Phone Call</option>
-                  <option value="WHATSAPP">WhatsApp Discussion</option>
-                  <option value="EMAIL">Email Follow-Up</option>
-                </select>
-              </div>
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Subject *</label>
+            <input
+              className="input-text"
+              style={{ width: '100%', marginTop: '4px' }}
+              value={actSubject}
+              onChange={(e) => setActSubject(e.target.value)}
+              placeholder="e.g. Conducted in-depth fleet ops review with VP Logistics"
+            />
+          </div>
 
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Subject *</label>
-                <input
-                  className="input-text"
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={actSubject}
-                  onChange={(e) => setActSubject(e.target.value)}
-                  placeholder="e.g. Conducted in-depth fleet ops review with VP Logistics"
-                />
-              </div>
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Notes &amp; Key Findings</label>
+            <textarea
+              className="input-textarea"
+              rows={3}
+              style={{ width: '100%', marginTop: '4px' }}
+              value={actNotes}
+              onChange={(e) => setActNotes(e.target.value)}
+              placeholder="Client confirmed 45 vans and manual handwritten delivery books..."
+            />
+          </div>
 
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Notes &amp; Key Findings</label>
-                <textarea
-                  className="input-textarea"
-                  rows={3}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={actNotes}
-                  onChange={(e) => setActNotes(e.target.value)}
-                  placeholder="Client confirmed 45 vans and manual handwritten delivery books..."
-                />
-              </div>
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Next Action Description *</label>
+            <input
+              className="input-text"
+              style={{ width: '100%', marginTop: '4px' }}
+              value={actNextAction}
+              onChange={(e) => setActNextAction(e.target.value)}
+              placeholder="e.g. Schedule customized VanForces demo with dispatch team"
+            />
+          </div>
 
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Next Action Description *</label>
-                <input
-                  className="input-text"
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={actNextAction}
-                  onChange={(e) => setActNextAction(e.target.value)}
-                  placeholder="e.g. Schedule customized VanForces demo with dispatch team"
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Next Action Due Date</label>
-                <input
-                  type="date"
-                  className="input-text"
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={actNextActionDue}
-                  onChange={(e) => setActNextActionDue(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button
-                  className="btn btn-outline"
-                  onClick={() => setShowLogActivityModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleLogActivity}
-                  disabled={savingActivity || !actSubject.trim() || !actNextAction.trim()}
-                >
-                  {savingActivity ? 'Saving...' : 'Log Activity'}
-                </button>
-              </div>
-            </div>
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Next Action Due Date</label>
+            <input
+              type="date"
+              className="input-text"
+              style={{ width: '100%', marginTop: '4px' }}
+              value={actNextActionDue}
+              onChange={(e) => setActNextActionDue(e.target.value)}
+            />
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* MODAL 3: OPTIONAL STAGE WAIVER (DEMO / POC) */}
-      {showWaiverModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 999
-        }}>
-          <div className="glass-panel animate-scale-up" style={{ width: '500px', maxWidth: '92vw', padding: '28px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '6px' }}>
-              Optional Stage Handling: Waive Stage
-            </h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
-              TEXOL Rule: If Demo or POC is not required for the product/lead, document the reason. Never fake trial records.
-            </p>
+      <Modal
+        isOpen={showWaiverModal}
+        onClose={() => setShowWaiverModal(false)}
+        title="Optional Stage Handling: Waive Stage"
+        subtitle="TEXOL Rule: If Demo or POC is not required for the product/lead, document the reason. Never fake trial records."
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%' }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setShowWaiverModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleMarkWaiver}
+              disabled={savingWaiver || !waiverReason.trim()}
+            >
+              {savingWaiver ? 'Recording...' : 'Record Waiver with Audit'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Stage to Waive</label>
+            <select
+              className="input-select"
+              style={{ width: '100%', marginTop: '4px' }}
+              value={waiverStage}
+              onChange={(e) => setWaiverStage(e.target.value as any)}
+            >
+              <option value="POC">POC Trial (Mark NOT_REQUIRED)</option>
+              <option value="DEMO">Product Demo (Proceed straight to Proposal/SQL)</option>
+            </select>
+          </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Stage to Waive</label>
-                <select
-                  className="input-select"
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={waiverStage}
-                  onChange={(e) => setWaiverStage(e.target.value as any)}
-                >
-                  <option value="POC">POC Trial (Mark NOT_REQUIRED)</option>
-                  <option value="DEMO">Product Demo (Proceed straight to Proposal/SQL)</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Documented Business Reason *</label>
-                <textarea
-                  className="input-textarea"
-                  rows={3}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={waiverReason}
-                  onChange={(e) => setWaiverReason(e.target.value)}
-                  placeholder="e.g. Customer waived 30-day POC trial after reviewing on-site reference architecture at Al-Munajem distribution hub; proceeding directly to commercial SQL handoff."
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button
-                  className="btn btn-outline"
-                  onClick={() => setShowWaiverModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleMarkWaiver}
-                  disabled={savingWaiver || !waiverReason.trim()}
-                >
-                  {savingWaiver ? 'Recording...' : 'Record Waiver with Audit'}
-                </button>
-              </div>
-            </div>
+          <div>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Documented Business Reason *</label>
+            <textarea
+              className="input-textarea"
+              rows={3}
+              style={{ width: '100%', marginTop: '4px' }}
+              value={waiverReason}
+              onChange={(e) => setWaiverReason(e.target.value)}
+              placeholder="e.g. Customer waived 30-day POC trial after reviewing on-site reference architecture at Al-Munajem distribution hub; proceeding directly to commercial SQL handoff."
+            />
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

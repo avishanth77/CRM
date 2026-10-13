@@ -1,4 +1,42 @@
-const API_BASE = 'http://localhost:8001/api/v1';
+const CANDIDATE_BASE_URLS = [
+  import.meta.env.VITE_API_BASE,
+  'http://localhost:8000/api/v1',
+  'http://localhost:8001/api/v1',
+].filter(Boolean) as string[];
+
+let activeApiBase = CANDIDATE_BASE_URLS[0];
+export const API_BASE = activeApiBase;
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  name: string;
+  role: string;
+  role_display: string;
+  is_superuser: boolean;
+  is_partner_user: boolean;
+  is_active?: boolean;
+  territory?: string;
+  phone?: string;
+  allowed_workspaces: string[];
+  capabilities: {
+    can_override_scores?: boolean;
+    can_accept_sql?: boolean;
+    can_publish_configs?: boolean;
+    can_sync_erp?: boolean;
+    can_view_audit?: boolean;
+    can_manage_partners?: boolean;
+    can_edit_proposals?: boolean;
+  };
+  partner_details?: {
+    partner_id: string;
+    partner_name: string;
+    partner_role: string;
+  } | null;
+}
 
 export interface FunnelData {
   metrics: {
@@ -48,12 +86,29 @@ export interface Product {
   }>;
 }
 
+export interface LeadSource {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
 export interface Lead {
   id: string;
   account: string;
   account_name: string;
+  account_city?: string;
+  account_country?: string;
   contact?: string;
   contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  contact_designation?: string;
+  owner?: string;
+  owner_name?: string;
+  owner_email?: string;
+  partner?: string;
+  partner_name?: string;
   primary_product: string;
   primary_product_name: string;
   primary_product_code: string;
@@ -76,10 +131,48 @@ export interface Lead {
   }>;
   is_target_account?: boolean;
   target_tier?: string;
+  domain?: string;
+  industry?: string;
+  employees_count?: number;
+  pld_score?: number | null;
+  score_classification?: string | null;
+  icp_knockout_passed?: boolean | null;
+  icp_result?: 'PASS' | 'FAIL' | 'PENDING' | null;
+  icp_fit_score?: number | null;
+  icp_reasons?: string[];
+  nurture_reason?: string;
+  disqualification_reason?: string;
   source?: string;
+  source_name?: string;
   estimated_opportunity_value?: number;
   timeline_expectation?: string;
   created_at: string;
+  updated_at?: string;
+}
+
+export interface LeadActionLog {
+  id: string;
+  action_type: string;
+  action_category: string;
+  title: string;
+  timestamp: string;
+  date_formatted: string;
+  time_formatted: string;
+  actor_name: string;
+  actor_role: string;
+  status: string;
+  description: string;
+  outcome?: string;
+  details?: Record<string, any>;
+  source: string;
+}
+
+export interface LeadActionLogsResponse {
+  lead_id: string;
+  account_name: string;
+  total_actions: number;
+  last_action_at?: string;
+  logs: LeadActionLog[];
 }
 
 export interface ICPBreakdown {
@@ -131,6 +224,7 @@ export interface AccountProductAssessment {
   is_qualified: boolean;
   qualification_status: string;
   override_reason?: string;
+  is_overridden?: boolean;
   overridden_by_name?: string;
   overridden_at?: string;
   qualification_history?: Array<Record<string, any>>;
@@ -143,25 +237,31 @@ export interface AccountProductAssessment {
 
 export interface QuestionAnswerOption {
   id: string;
-  code: string;
+  question?: string;
+  code?: string;
   label: string;
-  order: number;
-  score_value: number;
-  knockout_flag: boolean;
-  feeds_dimension: string;
+  value?: string;
+  order?: number;
+  points?: number;
+  score_value?: number;
+  knockout_flag?: boolean;
+  feeds_dimension?: string;
+  is_active?: boolean;
 }
 
 export interface QuestionnaireQuestion {
   id: string;
+  template?: string;
   code: string;
   question_text: string;
-  question_type: 'SINGLE_SELECT' | 'MULTI_SELECT' | 'TEXT' | 'NUMERIC' | 'BOOLEAN' | 'SLIDER';
-  category: string;
+  question_type: string;
+  category?: string;
   order: number;
   is_required: boolean;
   help_text?: string;
   feeds_dimension: string;
-  weight: number;
+  weight?: number;
+  dimension_weight_points?: number;
   options: QuestionAnswerOption[];
 }
 
@@ -267,6 +367,9 @@ export interface DiscoveryChecklistItem {
   status: 'COMPLETED' | 'MISSING' | 'BLOCKED';
   is_mandatory: boolean;
   missing_fields: string[];
+  gate_name?: string;
+  details?: string;
+  satisfied?: boolean;
 }
 
 export interface DiscoveryReadiness {
@@ -653,6 +756,22 @@ export interface Opportunity {
   selected_modules?: OpportunityModuleItem[];
   required_capabilities?: OpportunityCapabilityItem[];
   created_at: string;
+  updated_at?: string;
+}
+
+export interface AccountProduct {
+  id: string;
+  account: string;
+  account_name?: string;
+  product: string;
+  product_name?: string;
+  product_code?: string;
+  status: 'PROSPECT' | 'EVALUATION' | 'CUSTOMER' | 'INACTIVE' | 'EXPANSION';
+  contract_value: number;
+  arr_mrr: number;
+  renewal_date?: string;
+  health_score: number;
+  created_at?: string;
   updated_at?: string;
 }
 
@@ -1492,18 +1611,73 @@ export interface ERPSyncRecord {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
+  const authUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('texol_auth_user') : null;
+  const authHeaders: Record<string, string> = {};
+  if (authUserStr) {
+    try {
+      const authUser = JSON.parse(authUserStr);
+      if (authUser?.id) authHeaders['X-User-Id'] = String(authUser.id);
+      if (authUser?.email) authHeaders['X-User-Email'] = String(authUser.email);
+      if (authUser?.role) authHeaders['X-User-Role'] = String(authUser.role);
+    } catch {
+      // ignore
+    }
+  }
+
   const headers = {
     'Content-Type': 'application/json',
+    ...authHeaders,
     ...(options.headers || {})
   };
 
-  const response = await fetch(url, { ...options, headers });
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.error || `API request failed with status ${response.status}`);
+  const basesToTry = [activeApiBase, ...CANDIDATE_BASE_URLS.filter((b) => b !== activeApiBase)];
+  let lastError: any = null;
+
+  for (const base of basesToTry) {
+    try {
+      const url = `${base}${endpoint}`;
+      const response = await fetch(url, {
+        credentials: 'include',
+        ...options,
+        headers
+      });
+      if (!response.ok) {
+        let errorMsg = null;
+        try {
+          const errorBody = await response.json();
+          errorMsg = errorBody.error || errorBody.message || errorBody.detail || (typeof errorBody === 'string' ? errorBody : null);
+        } catch {
+          // ignore parsing error on error response
+        }
+        throw new Error(errorMsg || `API request failed with status ${response.status}`);
+      }
+      activeApiBase = base;
+      if (response.status === 204 || response.status === 205) {
+        return {} as T;
+      }
+      const rawText = await response.text();
+      if (!rawText || !rawText.trim()) {
+        return {} as T;
+      }
+      try {
+        return JSON.parse(rawText);
+      } catch {
+        return {} as T;
+      }
+    } catch (err: any) {
+      lastError = err;
+      if (err.message && err.message.startsWith('API request failed')) {
+        throw err;
+      }
+      // If it's a specific backend error (not a network failure), throw it immediately
+      if (err.message && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
+        throw err;
+      }
+      continue;
+    }
   }
-  return response.json();
+
+  throw lastError || new Error('Failed to connect to backend API server. Ensure Django is running on port 8000 or 8001.');
 }
 
 export const api = {
@@ -1518,11 +1692,51 @@ export const api = {
   getConfigurations: () => request<{ results: any[] }>('/configurations/'),
 
   // Leads
-  getLeads: () => request<{ results: Lead[] }>('/leads/'),
+  getLeads: (params?: Record<string, any>) => {
+    const q = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+    return request<{ results: Lead[] }>(`/leads/${q}`);
+  },
   getLead: (id: string) => request<Lead>(`/leads/${id}/`),
   createLead: (data: any) => request<Lead>('/leads/', { method: 'POST', body: JSON.stringify(data) }),
+  updateLead: (id: string, data: any) => request<Lead>(`/leads/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLead: (id: string) => request<{ message?: string }>(`/leads/${id}/`, { method: 'DELETE' }),
+
+  // Lead Sources (Origination Channels)
+  getLeadSources: () => request<LeadSource[] | { results: LeadSource[] }>('/sources/'),
+  createLeadSource: (data: { name: string; code?: string; is_active?: boolean }) =>
+    request<LeadSource>('/sources/', { method: 'POST', body: JSON.stringify(data) }),
+  updateLeadSource: (id: string, data: Partial<LeadSource>) =>
+    request<LeadSource>(`/sources/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLeadSource: (id: string) =>
+    request<{ message?: string }>(`/sources/${id}/`, { method: 'DELETE' }),
   checkDuplicates: (data: { company_name?: string; domain?: string; email?: string; phone?: string }) =>
     request<{ has_duplicates: boolean; duplicate_count: number; duplicates: any[] }>('/leads/check-duplicates/', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  getLeadActionLogs: (id: string) => request<LeadActionLogsResponse>(`/leads/${id}/action-logs/`),
+  logLeadAction: (id: string, data: {
+    action_type?: string;
+    subject?: string;
+    title?: string;
+    conducted_at?: string;
+    duration_minutes?: number;
+    description_notes?: string;
+    outcome_notes?: string;
+    next_action_description?: string;
+    next_activity_due_at?: string;
+    status?: string;
+    priority?: string;
+  }) => request<{ message: string; activity_id: string; conducted_at: string; lead: Lead }>(`/leads/${id}/log-action/`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  restoreNurtureLead: (leadId: string) =>
+    request<{ message: string; lead: Lead; moved_to?: string; queue_name?: string }>(`/leads/${leadId}/restore-active/`, {
+      method: 'POST'
+    }),
+  moveToNurturePool: (leadId: string, data: { reason: string; status?: 'NURTURE' | 'DISQUALIFIED'; is_icp_failure?: boolean }) =>
+    request<{ message: string; lead: Lead; moved_to?: string }>(`/leads/${leadId}/move-to-nurture/`, {
       method: 'POST',
       body: JSON.stringify(data)
     }),
@@ -1641,11 +1855,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data || {})
     }),
-  rejectSQLHandoff: (handoffId: string, reason: string, returnTarget: string = 'NURTURE') =>
-    request<{ message: string; return_target: string; handoff: SQLHandoff }>(`/sql-handoffs/${handoffId}/reject/`, {
+  rejectSQLHandoff: (
+    handoffId: string,
+    reasonOrPayload: string | { rejection_reason?: string; reason?: string; return_to_stage?: string; return_target?: string },
+    returnTarget: string = 'NURTURE'
+  ) => {
+    let payload: { rejection_reason: string; return_target: string };
+    if (typeof reasonOrPayload === 'string') {
+      payload = { rejection_reason: reasonOrPayload, return_target: returnTarget };
+    } else {
+      payload = {
+        rejection_reason: reasonOrPayload.rejection_reason || reasonOrPayload.reason || '',
+        return_target: reasonOrPayload.return_to_stage || reasonOrPayload.return_target || returnTarget
+      };
+    }
+    return request<{ message: string; return_target: string; handoff: SQLHandoff }>(`/sql-handoffs/${handoffId}/reject/`, {
       method: 'POST',
-      body: JSON.stringify({ rejection_reason: reason, return_target: returnTarget })
-    }),
+      body: JSON.stringify(payload)
+    });
+  },
   getSQLHandoffHistory: (handoffId: string) =>
     request<{ handoff_id: string; gate_audit_results: any; original_gate_results: any; qualification_evidence: any; stage_history: any[] }>(`/sql-handoffs/${handoffId}/history/`),
 
@@ -1661,15 +1889,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ sql_handoff_id: sqlHandoffId })
     }),
+  updateOpportunity: (id: string, data: Partial<Opportunity>) =>
+    request<Opportunity>(`/opportunities/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    }),
   updateOpportunityCommercials: (id: string, data: Partial<Opportunity>) =>
     request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/update-commercials/`, {
       method: 'POST',
       body: JSON.stringify(data)
     }),
-  transitionOpportunityStage: (id: string, targetStageId: string, reason?: string) =>
-    request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/transition-stage/`, {
+  transitionOpportunityStage: (
+    id: string,
+    targetStageIdOrPayload: string | { target_stage_id: string; transition_reason?: string; reason?: string },
+    reason?: string
+  ) => {
+    let payload: { target_stage_id: string; reason?: string };
+    if (typeof targetStageIdOrPayload === 'string') {
+      payload = { target_stage_id: targetStageIdOrPayload, reason };
+    } else {
+      payload = {
+        target_stage_id: targetStageIdOrPayload.target_stage_id,
+        reason: targetStageIdOrPayload.transition_reason || targetStageIdOrPayload.reason || reason
+      };
+    }
+    return request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/transition-stage/`, {
       method: 'POST',
-      body: JSON.stringify({ target_stage_id: targetStageId, reason })
+      body: JSON.stringify(payload)
+    });
+  },
+  logOpportunityActivity: (opportunityId: string, data: any) =>
+    request<any>('/activities/', {
+      method: 'POST',
+      body: JSON.stringify({ opportunity: opportunityId, ...data })
     }),
   getOpportunityActivities: (id: string) =>
     request<any[]>(`/opportunities/${id}/activities/`),
@@ -1679,16 +1931,23 @@ export const api = {
     request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/mark-won/`, {
       method: 'POST'
     }),
-  markOpportunityLost: (id: string, category: string, notes?: string) =>
+  markOpportunityLost: (id: string, category: string, notes?: string, competitor?: string) =>
     request<Opportunity>(`/opportunities/${id}/mark-lost/`, {
       method: 'POST',
-      body: JSON.stringify({ loss_reason_category: category, loss_reason_notes: notes })
+      body: JSON.stringify({ loss_reason_category: category, loss_reason_notes: notes, competitor })
     }),
   transitionOpportunityToNegotiation: (id: string, reason?: string) =>
     request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/to-negotiation/`, {
       method: 'POST',
       body: JSON.stringify({ reason })
     }),
+  reEngageOpportunity: (id: string, data?: { reason?: string; stage_code?: string }) =>
+    request<{ message: string; opportunity: Opportunity }>(`/opportunities/${id}/re-engage/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    }),
+  getOpportunityProposals: (id: string) =>
+    request<Proposal[]>(`/opportunities/${id}/proposals/`),
 
   // Phase 8: Commercial Proposal / Quote & Approvals
   getProposals: (params?: Record<string, string>) => {
@@ -1725,16 +1984,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data || {})
     }),
-  approveProposal: (proposalId: string, data?: { version_number?: number; comments?: string }) =>
-    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/approve/`, {
+  approveProposal: (proposalId: string, data?: { version_number?: number; comments?: string; user_id?: string; user_email?: string }) => {
+    let authPayload: Record<string, any> = {};
+    const authUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('texol_auth_user') : null;
+    if (authUserStr) {
+      try {
+        const u = JSON.parse(authUserStr);
+        if (u?.id) authPayload.user_id = u.id;
+        if (u?.email) authPayload.user_email = u.email;
+      } catch {
+        // ignore
+      }
+    }
+    return request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/approve/`, {
       method: 'POST',
-      body: JSON.stringify(data || {})
-    }),
-  rejectProposal: (proposalId: string, data: { rejection_reason: string; version_number?: number }) =>
-    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/reject/`, {
+      body: JSON.stringify({ ...authPayload, ...(data || {}) })
+    });
+  },
+  rejectProposal: (proposalId: string, data: { rejection_reason: string; version_number?: number; user_id?: string; user_email?: string }) => {
+    let authPayload: Record<string, any> = {};
+    const authUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('texol_auth_user') : null;
+    if (authUserStr) {
+      try {
+        const u = JSON.parse(authUserStr);
+        if (u?.id) authPayload.user_id = u.id;
+        if (u?.email) authPayload.user_email = u.email;
+      } catch {
+        // ignore
+      }
+    }
+    return request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/reject/`, {
       method: 'POST',
-      body: JSON.stringify(data)
-    }),
+      body: JSON.stringify({ ...authPayload, ...data })
+    });
+  },
   expireProposal: (proposalId: string, versionNumber?: number) =>
     request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/expire/`, {
       method: 'POST',
@@ -1757,13 +2040,25 @@ export const api = {
       body: JSON.stringify({ lead_id: leadId, target_stage_id: targetStageId })
     }),
 
-  transitionLeadStage: (leadId: string, targetStageId: string, reason?: string, isOverride: boolean = false) =>
-    request<{ message: string; lead: Lead }>(`/leads/${leadId}/transition-stage/`, {
+  transitionLeadStage: (
+    leadId: string,
+    targetStageId: string,
+    reason?: string,
+    isOverride: boolean = false,
+    emailOptions?: {
+      send_stage_email?: boolean;
+      custom_email_subject?: string;
+      custom_email_body?: string;
+      custom_recipient_email?: string;
+    }
+  ) =>
+    request<{ message: string; lead: Lead; stage_email?: any }>(`/leads/${leadId}/transition-stage/`, {
       method: 'POST',
       body: JSON.stringify({
         target_stage_id: targetStageId,
         transition_reason: reason,
-        is_override: isOverride
+        is_override: isOverride,
+        ...(emailOptions || {})
       })
     }),
 
@@ -1781,6 +2076,12 @@ export const api = {
     rule.id
       ? request<ICPRule>(`/icp-rules/${rule.id}/`, { method: 'PATCH', body: JSON.stringify(rule) })
       : request<ICPRule>('/icp-rules/', { method: 'POST', body: JSON.stringify(rule) }),
+  deleteICPRule: (id: string) =>
+    request<any>(`/icp-rules/${id}/`, { method: 'DELETE' }),
+  saveICPProfile: (profile: Partial<ICPProfile>) =>
+    profile.id
+      ? request<ICPProfile>(`/icp-profiles/${profile.id}/`, { method: 'PATCH', body: JSON.stringify(profile) })
+      : request<ICPProfile>('/icp-profiles/', { method: 'POST', body: JSON.stringify(profile) }),
 
   // Phase 4: PLD Qualification & Scoring Engine
   evaluatePLDScore: (assessmentId: string, answers: Record<string, any>) =>
@@ -1833,6 +2134,20 @@ export const api = {
     option.id
       ? request<QuestionAnswerOption>(`/question-options/${option.id}/`, { method: 'PATCH', body: JSON.stringify(option) })
       : request<QuestionAnswerOption>('/question-options/', { method: 'POST', body: JSON.stringify(option) }),
+  addQuestionOption: (questionId: string, label: string, points: number = 50, value?: string) =>
+    request<QuestionAnswerOption>('/question-options/', {
+      method: 'POST',
+      body: JSON.stringify({
+        question: questionId,
+        label,
+        value: value || label,
+        points
+      })
+    }),
+  deleteQuestionOption: (optionId: string) =>
+    request<any>(`/question-options/${optionId}/`, { method: 'DELETE' }),
+  deleteQuestionnaireQuestion: (questionId: string) =>
+    request<any>(`/questionnaire-questions/${questionId}/`, { method: 'DELETE' }),
 
   // Phase 4: Documented Business Problems Capture
   getLeadProblems: (leadId: string) =>
@@ -1854,9 +2169,31 @@ export const api = {
       body: JSON.stringify(problemData)
     }),
 
-  // Accounts & Opportunities
+  // Accounts, Contacts & Opportunities
   getAccounts: () => request<{ results: any[] }>('/accounts/'),
   createAccount: (data: any) => request<any>('/accounts/', { method: 'POST', body: JSON.stringify(data) }),
+  updateAccount: (id: string, data: any) => request<any>(`/accounts/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getContacts: (accountId?: string) => request<{ results: any[] }>(`/contacts/${accountId ? `?account=${accountId}` : ''}`),
+  createContact: (data: any) => request<any>('/contacts/', { method: 'POST', body: JSON.stringify(data) }),
+  upsertAccountAttributes: (accountId: string, productId: string, attributes: Record<string, any>) =>
+    request<any>(`/accounts/${accountId}/upsert-attributes/`, {
+      method: 'POST',
+      body: JSON.stringify({ product_id: productId, attributes })
+    }),
+  createRenewalOpportunity: (accountId: string, data: { product_id?: string; opportunity_type?: 'RENEWAL' | 'EXPANSION'; value?: number; term_months?: number; notes?: string }) =>
+    request<{ message: string; opportunity: Opportunity }>(`/accounts/${accountId}/create-renewal-opportunity/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  getAccountProducts: (params?: Record<string, string>) => {
+    const q = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<{ results: AccountProduct[] }>(`/account-products/${q}`);
+  },
+  updateAccountProduct: (id: string, data: Partial<AccountProduct>) =>
+    request<AccountProduct>(`/account-products/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    }),
 
   // Phase 3: Partner Portal & Deal Registration
   getPartners: () => request<{ results: any[] }>('/partners/'),
@@ -1913,6 +2250,11 @@ export const api = {
     }),
 
   // Phase 6: Product-Configurable POC/Pilot Management
+  initPOC: (leadId?: string, accountId?: string) =>
+    request<POC>('/pocs/init/', {
+      method: 'POST',
+      body: JSON.stringify({ lead_id: leadId, account_id: accountId })
+    }),
   getPOCs: (params?: Record<string, string>) => {
     const q = params ? '?' + new URLSearchParams(params).toString() : '';
     return request<{ results: POC[] }>(`/pocs/${q}`);
@@ -2078,7 +2420,7 @@ export const api = {
   },
   getReportCSVDownloadUrl: (params: Record<string, any>) => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
-    return `${API_BASE}/analytics/reports/export/?${query}`;
+    return `${activeApiBase}/analytics/reports/export/?${query}`;
   },
 
   // Phase 3: Governance & Audit Trail
@@ -2100,6 +2442,92 @@ export const api = {
     request<{ results: CommunicationMessage[] }>('/communications/'),
   sendTestCommunication: (data: { channel: 'EMAIL' | 'WHATSAPP'; recipient: string; template: string; lead_id?: string }) =>
     request<any>('/communications/send-test/', { method: 'POST', body: JSON.stringify(data) }),
+  getStageTemplates: () =>
+    request<Array<{ key: string; stage_name: string; subject: string; body_preview: string }>>('/communications/stage-templates/'),
+
+  // Customer Stage Notification Emails
+  getLeadStageEmailPreview: (leadId: string, stageId?: string, status?: string) => {
+    const q = new URLSearchParams();
+    if (stageId) q.append('stage_id', stageId);
+    if (status) q.append('status', status);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return request<{
+      template_code: string;
+      stage_name: string;
+      recipient_name: string;
+      recipient_email: string | null;
+      has_recipient_email: boolean;
+      company_name: string;
+      product_name: string;
+      sales_rep_name: string;
+      sales_rep_email: string;
+      subject: string;
+      body: string;
+    }>(`/leads/${leadId}/stage-email-preview/${qs}`);
+  },
+  sendLeadStageEmail: (leadId: string, data?: {
+    stage_id?: string;
+    subject?: string;
+    body?: string;
+    recipient_email?: string;
+    status?: string;
+  }) =>
+    request<{
+      success: boolean;
+      email_sent: boolean;
+      message_id: string;
+      status: string;
+      recipient_name: string;
+      recipient_email: string | null;
+      subject: string;
+      stage_code: string;
+      stage_name: string;
+      error_message?: string;
+    }>(`/leads/${leadId}/send-stage-email/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    }),
+  getOpportunityStageEmailPreview: (oppId: string, stageId?: string, status?: string) => {
+    const q = new URLSearchParams();
+    if (stageId) q.append('stage_id', stageId);
+    if (status) q.append('status', status);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return request<{
+      template_code: string;
+      stage_name: string;
+      recipient_name: string;
+      recipient_email: string | null;
+      has_recipient_email: boolean;
+      company_name: string;
+      product_name: string;
+      sales_rep_name: string;
+      sales_rep_email: string;
+      subject: string;
+      body: string;
+    }>(`/opportunities/${oppId}/stage-email-preview/${qs}`);
+  },
+  sendOpportunityStageEmail: (oppId: string, data?: {
+    stage_id?: string;
+    subject?: string;
+    body?: string;
+    recipient_email?: string;
+    status?: string;
+  }) =>
+    request<{
+      success: boolean;
+      email_sent: boolean;
+      message_id: string;
+      status: string;
+      recipient_name: string;
+      recipient_email: string | null;
+      subject: string;
+      stage_code: string;
+      stage_name: string;
+      error_message?: string;
+    }>(`/opportunities/${oppId}/send-stage-email/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    }),
 
   // Phase 3: ERP Customer Master Bi-Directional Sync Gateway
   getERPConnectors: () =>
@@ -2113,5 +2541,85 @@ export const api = {
 
   // Pipeline Stages
   getPipelineStages: () =>
-    request<{ results: any[] }>('/pld-engine/stages/'),
+    request<{ results: any[] }>('/stages/'),
+
+  // Authentication & Role-Based Authorization
+  login: (data: { username: string; password: string }) =>
+    request<{ message: string; user: AuthUser }>('/auth/login/', { method: 'POST', body: JSON.stringify(data) }),
+  logout: () =>
+    request<{ message: string }>('/auth/logout/', { method: 'POST' }),
+  getCurrentUser: () =>
+    request<AuthUser>('/auth/me/'),
+  getUsers: () =>
+    request<{ results: AuthUser[] }>('/users/'),
+
+  // Staff & Partner Administration (Admin Only)
+  getStaffUsers: () =>
+    request<{ count: number; results: AuthUser[] }>('/admin/staff/'),
+  createStaffUser: (data: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: string;
+    password?: string;
+    territory?: string;
+    phone?: string;
+  }) =>
+    request<{ message: string; user: AuthUser }>('/admin/staff/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteStaffUser: (userId: string) =>
+    request<{ message: string }>(`/admin/staff/${userId}/`, {
+      method: 'DELETE',
+    }),
+  createPartnerAdmin: (data: {
+    company_name: string;
+    domain?: string;
+    partner_code: string;
+    partner_type: string;
+    territory?: string;
+    status?: string;
+    contact_name?: string;
+    contact_email?: string;
+    contact_password?: string;
+    partner_role?: string;
+  }) =>
+    request<{ message: string; partner: any }>('/partners/admin-create/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  addPartnerUser: (
+    partnerId: string,
+    data: {
+      first_name: string;
+      last_name: string;
+      email: string;
+      password?: string;
+      partner_role?: string;
+    }
+  ) =>
+    request<{ message: string; partner: any }>(`/partners/${partnerId}/add-user/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updatePartner: (partnerId: string, data: any) =>
+    request<{ message?: string; partner: any }>(`/partners/${partnerId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deletePartner: (partnerId: string) =>
+    request<{ message: string }>(`/partners/${partnerId}/`, {
+      method: 'DELETE',
+    }),
+  deactivatePartner: (partnerId: string, reason?: string) =>
+    request<{ message: string; partner: any }>(`/partners/${partnerId}/deactivate/`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  activatePartner: (partnerId: string, reason?: string) =>
+    request<{ message: string; partner: any }>(`/partners/${partnerId}/activate/`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
 };

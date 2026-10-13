@@ -306,7 +306,7 @@ export const SalesDashboardView: React.FC<SalesDashboardViewProps> = ({
                 No active stage pipeline.
               </div>
             ) : (
-              data.by_stage.map((st, idx) => (
+              (data?.by_stage || []).map((st, idx) => (
                 <div
                   key={idx}
                   onClick={() => handleOpenStageDrillDown(st.stage)}
@@ -363,7 +363,7 @@ export const SalesDashboardView: React.FC<SalesDashboardViewProps> = ({
                 No owner pipeline assigned.
               </div>
             ) : (
-              data.by_owner.map((ow, idx) => (
+              (data?.by_owner || []).map((ow, idx) => (
                 <div
                   key={idx}
                   style={{
@@ -388,7 +388,7 @@ export const SalesDashboardView: React.FC<SalesDashboardViewProps> = ({
                       fontWeight: 700,
                       fontSize: '0.78rem'
                     }}>
-                      {ow.owner.slice(0, 2).toUpperCase()}
+                      {(ow.owner || 'AE').slice(0, 2).toUpperCase()}
                     </div>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
@@ -412,7 +412,7 @@ export const SalesDashboardView: React.FC<SalesDashboardViewProps> = ({
       </div>
 
       {/* Row 4: Inactive Opportunities Stagnation Alert Table */}
-      {data?.attention.inactive_opportunities && data.attention.inactive_opportunities.length > 0 && (
+      {Array.isArray(data?.attention?.inactive_opportunities) && data.attention.inactive_opportunities.length > 0 && (
         <div className="glass-panel" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div>
@@ -441,10 +441,10 @@ export const SalesDashboardView: React.FC<SalesDashboardViewProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {data.attention.inactive_opportunities.map((opp) => (
+                {(data?.attention?.inactive_opportunities || []).map((opp: any) => (
                   <tr key={opp.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {opp.name}
+                      {opp.name || opp.account_name || 'Opportunity'}
                     </td>
                     <td style={{ padding: '12px 14px' }}>
                       <span className="badge badge-neutral" style={{ fontSize: '0.72rem' }}>

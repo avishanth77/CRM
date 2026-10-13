@@ -96,7 +96,7 @@ export const PartnerDashboardFoundationView: React.FC = () => {
       }}>
         <KPICard
           title="Authorized Partners"
-          value={data?.kpis.total_partners ?? 0}
+          value={data?.kpis?.total_partners ?? 0}
           subtitle="Registered partner organizations"
           badge="Network"
           badgeType="info"
@@ -104,15 +104,15 @@ export const PartnerDashboardFoundationView: React.FC = () => {
         />
         <KPICard
           title="Deal Registrations"
-          value={data?.kpis.deal_registrations ?? 0}
-          subtitle={`${data?.kpis.approved_registrations ?? 0} Approved / ${data?.kpis.pending_registrations ?? 0} Pending`}
+          value={data?.kpis?.deal_registrations ?? 0}
+          subtitle={`${data?.kpis?.approved_registrations ?? 0} Approved / ${data?.kpis?.pending_registrations ?? 0} Pending`}
           badge="Protected Deals"
           badgeType="success"
           icon={<Handshake size={18} />}
         />
         <KPICard
           title="Partner Pipeline"
-          value={data ? formatCurrency(data.kpis.partner_pipeline_value) : '$0'}
+          value={formatCurrency(data?.kpis?.partner_pipeline_value)}
           subtitle="Originating from partner registrations"
           badge="Co-Sell"
           badgeType="info"
@@ -120,8 +120,8 @@ export const PartnerDashboardFoundationView: React.FC = () => {
         />
         <KPICard
           title="Partner Won Revenue"
-          value={data ? formatCurrency(data.kpis.partner_won_value) : '$0'}
-          subtitle={`Commission: ${data ? formatCurrency(data.kpis.commissions_earned) : '$0'}`}
+          value={formatCurrency(data?.kpis?.partner_won_value)}
+          subtitle={`Commission: ${formatCurrency(data?.kpis?.commissions_earned)}`}
           badge="Closed"
           badgeType="success"
           icon={<CheckCircle2 size={18} />}
@@ -161,7 +161,7 @@ export const PartnerDashboardFoundationView: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {data.partner_list.map((pt) => (
+                {(data?.partner_list || []).map((pt) => (
                   <tr key={pt.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                     <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -205,7 +205,7 @@ export const PartnerDashboardFoundationView: React.FC = () => {
       }}>
         <ShieldCheck size={20} color="var(--primary)" />
         <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-          <strong>Future-Ready Architecture Note:</strong> Multi-tier partner attribution, margin calculations, and portal self-service will be fully unlocked in the upcoming Partner Management Phase. No fake placeholder data is displayed.
+          <strong>Future-Ready Architecture Note:</strong> Multi-tier partner attribution, margin calculations, and portal self-service will be fully unlocked in the upcoming Partner Management release. No fake placeholder data is displayed.
         </div>
       </div>
     </div>

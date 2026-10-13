@@ -13,6 +13,7 @@ from apps.evaluations.models import (
 from apps.products.models import Product, ProductModule, ProductCapability
 from apps.pld_engine.models import PipelineStage, PipelineType
 from apps.accounts.models import Contact
+from apps.discovery.models import Discovery, DiscoveryProblem
 from apps.audit_logging.models import AuditLog, AuditAction
 
 
@@ -143,10 +144,17 @@ class DemoValidator:
                 "missing_fields": ["next_action_description", "next_action_due_at"]
             })
         else:
+            due_str = ''
+            if demo.next_action_due_at:
+                if hasattr(demo.next_action_due_at, 'strftime'):
+                    due_str = demo.next_action_due_at.strftime('%Y-%m-%d')
+                else:
+                    due_str = str(demo.next_action_due_at)[:10]
+
             checklist.append({
                 "gate_code": "DEMO_NEXT_ACTION",
                 "name": "Mandatory Next Action",
-                "description": f"Next: '{demo.next_action_description}' due {demo.next_action_due_at.strftime('%Y-%m-%d')}.",
+                "description": f"Next: '{demo.next_action_description}' due {due_str}." if due_str else f"Next: '{demo.next_action_description}'.",
                 "status": "COMPLETED",
                 "is_mandatory": True,
                 "missing_fields": []
@@ -336,7 +344,17 @@ class DemoService:
         if next_action_description:
             demo.next_action_description = next_action_description
         if next_action_due_at:
-            demo.next_action_due_at = next_action_due_at
+            if isinstance(next_action_due_at, str):
+                from django.utils.dateparse import parse_datetime, parse_date
+                parsed_dt = parse_datetime(next_action_due_at)
+                if not parsed_dt:
+                    d = parse_date(next_action_due_at)
+                    if d:
+                        from datetime import datetime, time
+                        parsed_dt = timezone.make_aware(datetime.combine(d, time.min))
+                demo.next_action_due_at = parsed_dt or next_action_due_at
+            else:
+                demo.next_action_due_at = next_action_due_at
 
         # Enforce Backend Readiness Gate
         readiness = DemoValidator.validate_readiness(demo)
@@ -585,7 +603,8 @@ class POCService:
     Manages Proof of Concept trial lifecycle, baseline & target tracking, result verification, and completion gates.
     """
     @staticmethod
-    def create_or_init_poc(lead, account=None, discovery=None, product=None, owner=None, scope_description='', geography='', users_count=5, start_date=None, end_date=None, user=None):
+    def create_or_init_poc(lead, account=None, discovery=None, product=None, owner=None, scope_description='', geography='', users_count=1, start_date=None, end_date=None, user=None):
+        users_count = int(users_count or 1)
         if not account:
             account = lead.account
         if not product:
@@ -598,7 +617,7 @@ class POCService:
             owner = user
 
         if not scope_description:
-            scope_description = f"30-day operational pilot evaluating {product.name if product else 'VanForces'} across {users_count} van drivers."
+            scope_description = f"30-day operational pilot evaluating {product.name if product else 'VanForces'} across {users_count} user(s)."
 
         tenant = (lead.tenant if lead else None) or (account.tenant if account else None)
         poc = POC.objects.filter(lead=lead, account=account).first()
@@ -653,6 +672,32 @@ class POCService:
                         role_title=sh.decision_role or sh.role_name,
                         tenant=tenant
                     )
+
+        # Fallback criterion if none exists
+        if not POCSuccessCriterion.objects.filter(poc=poc).exists():
+            prod_name = product.name if product else 'Operational'
+            POCSuccessCriterion.objects.create(
+                poc=poc,
+                name=f"{prod_name} Workflow Validation",
+                category='OPERATIONAL',
+                measurement_baseline="Legacy manual/unautomated workflows",
+                expected_target="100% digital execution with zero discrepancy",
+                is_met=False,
+                tenant=tenant
+            )
+
+        # Fallback participant if none exists and lead has contact
+        if not POCParticipant.objects.filter(poc=poc).exists() and lead and getattr(lead, 'contact', None):
+            c = lead.contact
+            POCParticipant.objects.create(
+                poc=poc,
+                contact=c,
+                name=f"{c.first_name} {c.last_name or ''}".strip(),
+                email=c.email or '',
+                participant_type='CUSTOMER',
+                role_title=getattr(c, 'job_title', '') or 'Lead Contact',
+                tenant=tenant
+            )
 
         if created:
             AuditLog.objects.create(
@@ -741,7 +786,17 @@ class POCService:
         if next_action_description:
             poc.next_action_description = next_action_description
         if next_action_due_at:
-            poc.next_action_due_at = next_action_due_at
+            if isinstance(next_action_due_at, str):
+                from django.utils.dateparse import parse_datetime, parse_date
+                parsed_dt = parse_datetime(next_action_due_at)
+                if not parsed_dt:
+                    d = parse_date(next_action_due_at)
+                    if d:
+                        from datetime import datetime, time
+                        parsed_dt = timezone.make_aware(datetime.combine(d, time.min))
+                poc.next_action_due_at = parsed_dt or next_action_due_at
+            else:
+                poc.next_action_due_at = next_action_due_at
 
         # Enforce Backend Readiness Gate
         readiness = POCValidator.validate_readiness(poc)

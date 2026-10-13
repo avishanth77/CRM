@@ -222,7 +222,7 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
       }}>
         <KPICard
           title="Won Value"
-          value={data ? formatCurrency(data.kpis.won_value) : '$0'}
+          value={formatCurrency(data?.kpis?.won_value)}
           subtitle={`Win Rate: ${data?.rates?.win_rate ?? data?.kpis?.win_rate ?? 0}%`}
           badge="Revenue"
           badgeType="success"
@@ -231,8 +231,8 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
         />
         <KPICard
           title="Pipeline Value"
-          value={data ? formatCurrency(data.kpis.pipeline_value) : '$0'}
-          subtitle={`Weighted: ${data ? formatCurrency(data.kpis.weighted_pipeline) : '$0'}`}
+          value={formatCurrency(data?.kpis?.pipeline_value)}
+          subtitle={`Weighted: ${formatCurrency(data?.kpis?.weighted_pipeline)}`}
           badge="Active"
           badgeType="info"
           icon={<TrendingUp size={18} />}
@@ -240,8 +240,8 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
         />
         <KPICard
           title="Total Leads"
-          value={data?.kpis.total_leads ?? 0}
-          subtitle={`Target Accounts: ${data?.kpis.target_accounts ?? 0}`}
+          value={data?.kpis?.total_leads ?? 0}
+          subtitle={`Target Accounts: ${data?.kpis?.target_accounts ?? 0}`}
           badge="Inbound & Outbound"
           badgeType="neutral"
           icon={<Users size={18} />}
@@ -249,7 +249,7 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
         />
         <KPICard
           title="PLD Qualified"
-          value={data?.kpis.pld_qualified ?? 0}
+          value={data?.kpis?.pld_qualified ?? 0}
           subtitle={`Qual Rate: ${data?.rates?.lead_to_pld_rate ?? data?.kpis?.qualification_rate ?? 0}%`}
           badge="Qualified"
           badgeType="success"
@@ -258,7 +258,7 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
         />
         <KPICard
           title="SQLs & Accepted"
-          value={`${data?.kpis.sql_count ?? data?.kpis.sqls ?? 0} / ${data?.kpis.sales_accepted ?? 0}`}
+          value={`${data?.kpis?.sql_count ?? data?.kpis?.sqls ?? 0} / ${data?.kpis?.sales_accepted ?? 0}`}
           subtitle={`Acceptance: ${data?.rates?.sql_to_accepted_rate ?? data?.kpis?.acceptance_rate ?? 0}%`}
           badge="Sales Gate"
           badgeType="warning"
@@ -267,8 +267,8 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
         />
         <KPICard
           title="Opportunities"
-          value={data?.kpis.opportunities_count ?? data?.kpis.opportunities ?? 0}
-          subtitle={`Open: ${data?.kpis.open_opportunities ?? 0} • Won: ${data?.kpis.won_opportunities ?? 0}`}
+          value={data?.kpis?.opportunities_count ?? data?.kpis?.opportunities ?? 0}
+          subtitle={`Open: ${data?.kpis?.open_opportunities ?? 0} • Won: ${data?.kpis?.won_opportunities ?? 0}`}
           badge="Deals"
           badgeType="info"
           icon={<BarChart3 size={18} />}
@@ -369,9 +369,9 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
                 No deal type data available.
               </div>
             ) : (
-              data.pipeline_by_type.map((t, idx) => {
-                const totalPipe = data.kpis.pipeline_value || 1;
-                const pct = Math.min(100, Math.round((t.value / totalPipe) * 100));
+              (data?.pipeline_by_type || []).map((t, idx) => {
+                const totalPipe = data?.kpis?.pipeline_value || 1;
+                const pct = Math.min(100, Math.round(((t.value || 0) / totalPipe) * 100));
                 return (
                   <div key={idx} style={{ background: 'var(--bg-surface-elevated)', padding: '12px 14px', borderRadius: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>

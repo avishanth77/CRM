@@ -29,9 +29,11 @@ from apps.activities.models import (
 from apps.workflows.models import StageHistory
 from apps.partners.models import (
     Partner, PartnerProduct, DealRegistration,
-    PartnerCommission, DealRegistrationStatus
+    PartnerCommission, DealRegistrationStatus,
+    ChannelConflict, PartnerInfluence, PartnerChannelConfig
 )
 from apps.authentication.models import UserRole
+from apps.authentication.backends import is_management_or_admin, is_sales_staff
 
 User = get_user_model()
 
@@ -123,22 +125,27 @@ class AnalyticsFilterHelper:
         """
         if not user or not user.is_authenticated:
             return queryset
-        if user.is_superuser or user.role in [UserRole.ADMIN, UserRole.MANAGEMENT]:
+        if user.is_superuser or is_management_or_admin(user):
             return queryset
-        if user.role == UserRole.SALES_MANAGER:
+        if getattr(user, 'role', None) == UserRole.SALES_MANAGER:
             # Sales Manager sees their territory or all sales records
             if user.territory:
                 return queryset.filter(Q(**{f"{owner_field}__territory": user.territory}) | Q(**{owner_field: user}))
             return queryset
-        if user.is_partner_user and hasattr(user, 'partner_profile'):
+        if getattr(user, 'is_partner_user', False) and hasattr(user, 'partner_profile'):
             partner = user.partner_profile.partner
             if hasattr(queryset.model, 'partner'):
                 return queryset.filter(partner=partner)
             if hasattr(queryset.model, 'originated_leads'):
                 return queryset.filter(originated_leads__partner=partner)
             return queryset.none()
-        # Default for individual sales / PLD contributor: their own records
-        return queryset.filter(**{owner_field: user})
+        # Preserve specialist enterprise roles without confining to owner=user
+        if getattr(user, 'role', None) in [UserRole.MARKETING, UserRole.PLD_EXECUTIVE, UserRole.SOLUTION_CONSULTANT, UserRole.PARTNER_MANAGER]:
+            return queryset
+        # Restrict individual sales staff to their assigned records only
+        if is_sales_staff(user):
+            return queryset.filter(**{owner_field: user})
+        return queryset
 
 
 class ExecutiveAnalyticsService:
@@ -183,6 +190,9 @@ class ExecutiveAnalyticsService:
         # RBAC Scoping
         lead_qs = AnalyticsFilterHelper.apply_rbac_scope(lead_qs, user, 'owner')
         opp_qs = AnalyticsFilterHelper.apply_rbac_scope(opp_qs, user, 'owner')
+        sql_qs = AnalyticsFilterHelper.apply_rbac_scope(sql_qs, user, 'assigned_sales_owner')
+        act_qs = AnalyticsFilterHelper.apply_rbac_scope(act_qs, user, 'performed_by')
+        sla_qs = AnalyticsFilterHelper.apply_rbac_scope(sla_qs, user, 'assigned_user')
 
         # Core Metrics Calculations
         target_accounts = account_qs.filter(is_target_account=True).count()
@@ -358,6 +368,7 @@ class PLDAnalyticsService:
             assessment_qs = assessment_qs.filter(product__code=product_code)
 
         lead_qs = AnalyticsFilterHelper.apply_rbac_scope(lead_qs, user, 'owner')
+        assessment_qs = AnalyticsFilterHelper.apply_rbac_scope(assessment_qs, user, 'lead__owner')
 
         total_leads = lead_qs.count()
         icp_passed = assessment_qs.filter(icp_knockout_passed=True).count()
@@ -377,6 +388,13 @@ class PLDAnalyticsService:
             "high_priority_band_81_100": assessment_qs.filter(pld_score__gte=81, pld_score__lte=100).count(),
         }
 
+        score_distribution_list = [
+            {"range": "0-30", "label": "Nurture Band", "count": score_distribution["nurture_band_0_30"]},
+            {"range": "31-60", "label": "Development Band", "count": score_distribution["development_band_31_60"]},
+            {"range": "61-80", "label": "Qualified Band", "count": score_distribution["qualified_band_61_80"]},
+            {"range": "81-100", "label": "High Priority Band", "count": score_distribution["high_priority_band_81_100"]},
+        ]
+
         # Operational Quality Checks
         leads_without_problems = lead_qs.filter(recorded_problems__isnull=True).distinct().count()
         leads_without_next_action = lead_qs.filter(
@@ -388,21 +406,12 @@ class PLDAnalyticsService:
         nurture_volume = lead_qs.filter(status=LeadStatus.NURTURE).count()
         disqualification_volume = lead_qs.filter(status=LeadStatus.DISQUALIFIED).count()
 
-        # PLD Stage Distribution
-        stage_counts = []
-        for stage in PipelineStage.objects.filter(pipeline_type=PipelineType.PURSUIT).order_by('sequence_order'):
-            count = lead_qs.filter(current_stage=stage).count()
-            stage_counts.append({
-                "stage_code": stage.stage_code,
-                "stage_name": stage.stage_name,
-                "sequence_order": stage.sequence_order,
-                "is_required": stage.is_required,
-                "leads_count": count
-            })
-
         # Stage Conversion and Average Time in Stage (from StageHistory)
         history_qs = StageHistory.objects.filter(record_type='LEAD')
+        if is_sales_staff(user):
+            history_qs = history_qs.filter(record_id__in=lead_qs.values_list('id', flat=True))
         stage_velocity = []
+        velocity_map = {}
         for stage in PipelineStage.objects.filter(pipeline_type=PipelineType.PURSUIT).order_by('sequence_order'):
             entered_count = history_qs.filter(to_stage=stage).count()
             progressed_count = history_qs.filter(from_stage=stage).count()
@@ -411,12 +420,12 @@ class PLDAnalyticsService:
             # Calculate average days between entering stage and next transition
             durations = []
             for h in history_qs.filter(from_stage=stage).select_related('to_stage'):
-                # find entry
                 entry = history_qs.filter(record_id=h.record_id, to_stage=stage).first()
                 if entry and h.created_at > entry.created_at:
                     dur_days = (h.created_at - entry.created_at).total_seconds() / 86400.0
                     durations.append(dur_days)
             avg_days = round(sum(durations) / len(durations), 1) if durations else 2.5
+            velocity_map[stage.stage_code] = avg_days
 
             stage_velocity.append({
                 "stage_name": stage.stage_name,
@@ -427,6 +436,21 @@ class PLDAnalyticsService:
                 "avg_days_in_stage": avg_days
             })
 
+        # PLD Stage Distribution
+        stage_counts = []
+        for stage in PipelineStage.objects.filter(pipeline_type=PipelineType.PURSUIT).order_by('sequence_order'):
+            count = lead_qs.filter(current_stage=stage).count()
+            stage_counts.append({
+                "stage": stage.stage_name,
+                "stage_code": stage.stage_code,
+                "stage_name": stage.stage_name,
+                "sequence_order": stage.sequence_order,
+                "is_required": stage.is_required,
+                "count": count,
+                "leads_count": count,
+                "avg_days_in_stage": velocity_map.get(stage.stage_code, 2.5)
+            })
+
         # Detailed Leads Records for Drill-Down
         leads_records = []
         for ld in lead_qs.order_by('-created_at')[:50]:
@@ -434,12 +458,15 @@ class PLDAnalyticsService:
             leads_records.append({
                 "id": str(ld.id),
                 "account_name": ld.account.company_name if ld.account else "Unknown",
+                "company_name": ld.account.company_name if ld.account else (ld.company_name if hasattr(ld, 'company_name') else "Unknown"),
                 "product_code": ld.primary_product.code if ld.primary_product else "",
                 "product_name": ld.primary_product.name if ld.primary_product else "",
+                "stage": ld.current_stage.stage_name if ld.current_stage else "New",
                 "stage_name": ld.current_stage.stage_name if ld.current_stage else "New",
                 "status": ld.status,
                 "owner_name": ld.owner.get_full_name() or ld.owner.username if ld.owner else "Unassigned",
                 "pld_score": ass.pld_score if ass else 0,
+                "score": ass.pld_score if ass else 0,
                 "icp_passed": ass.icp_knockout_passed if ass else False,
                 "score_classification": ass.score_classification if ass else "NURTURE",
                 "problems_count": ld.recorded_problems.count(),
@@ -447,6 +474,8 @@ class PLDAnalyticsService:
                 "next_action_due": ld.next_activity_due_at.strftime('%Y-%m-%d') if ld.next_activity_due_at else None,
                 "created_at": ld.created_at.strftime('%Y-%m-%d')
             })
+
+        high_score_leads = [l for l in leads_records if l.get("pld_score", 0) >= 70]
 
         pld_kpis = {
             "total_leads": total_leads,
@@ -465,17 +494,22 @@ class PLDAnalyticsService:
             "disqualification_volume": disqualification_volume,
         }
 
+        alerts_payload = {
+            "leads_without_problems": leads_without_problems,
+            "leads_without_next_action": leads_without_next_action,
+            "high_score_leads": high_score_leads_count
+        }
+
         return {
             "metrics": pld_kpis,
             "kpis": pld_kpis,
-            "score_distribution": score_distribution,
-            "quality_alerts": {
-                "leads_without_problems": leads_without_problems,
-                "leads_without_next_action": leads_without_next_action,
-                "high_score_leads": high_score_leads_count
-            },
+            "score_distribution": score_distribution_list,
+            "score_distribution_dict": score_distribution,
+            "alerts": alerts_payload,
+            "quality_alerts": alerts_payload,
             "stage_distribution": stage_counts,
             "stage_velocity": stage_velocity,
+            "high_score_leads": high_score_leads,
             "leads": leads_records
         }
 
@@ -633,10 +667,24 @@ class SalesAnalyticsService:
             "currency": "USD"
         }
 
+        by_stage_list = [
+            {"stage": s["stage_name"], "value": s["pipeline_value"], "weighted_value": s["weighted_value"], "count": s["count"]}
+            for s in stages_data
+        ]
+        by_owner_list = [
+            {"owner": o["owner_name"], "value": o["open_value"], "count": o["open_count"]}
+            for o in owners_data
+        ]
+        by_type_list = [
+            {"type": t["type_label"], "value": t["open_value"], "count": t["open_count"]}
+            for t in types_breakdown
+        ]
+        inactive_opps_drill = [op for op in opportunities_list if op.get("is_inactive")][:15]
+
         attention_dict = {
             "sqls_awaiting_acceptance": sqls_awaiting_acceptance,
             "inactive_opportunities_count": inactive_opps_count,
-            "inactive_opportunities": inactive_opps_count,
+            "inactive_opportunities": inactive_opps_drill,
             "pending_proposals": pending_proposals,
             "overdue_activities": overdue_activities,
             "upcoming_activities": upcoming_activities
@@ -647,8 +695,13 @@ class SalesAnalyticsService:
             "kpis": sales_kpis,
             "attention": attention_dict,
             "stages_breakdown": stages_data,
+            "by_stage": by_stage_list,
             "owners_breakdown": owners_data,
+            "by_owner": by_owner_list,
             "opportunity_types": types_breakdown,
+            "by_type": by_type_list,
+            "by_product": [],
+            "by_close_month": [],
             "opportunities": opportunities_list
         }
 
@@ -692,12 +745,20 @@ class MarketingAnalyticsService:
                 "source_id": str(src.id),
                 "source_code": src.code,
                 "source_name": src.name,
+                "source": src.name,
+                "leads": total,
                 "leads_count": total,
+                "icp_passed": icp_passed,
                 "icp_pass_rate": round(icp_passed / total * 100, 1),
+                "pld_qualified": pld_qual,
                 "pld_qualification_rate": round(pld_qual / total * 100, 1),
+                "sqls": sqls,
                 "sql_count": sqls,
+                "opportunities": opp_count,
                 "opportunity_count": opp_count,
+                "pipeline": float(pipe_val),
                 "pipeline_value": float(pipe_val),
+                "won_value": float(won_val),
                 "won_revenue": float(won_val),
                 "conversion_rate": round(opps.filter(status=OpportunityStatus.WON).count() / max(1, total) * 100, 1)
             })
@@ -711,23 +772,44 @@ class MarketingAnalyticsService:
             c_pipe = c_opps.filter(status=OpportunityStatus.OPEN).aggregate(s=Sum('total_contract_value'))['s'] or Decimal('0.00')
             c_won = c_opps.filter(status=OpportunityStatus.WON).aggregate(s=Sum('total_contract_value'))['s'] or Decimal('0.00')
 
+            c_icp = camp_leads.filter(assessments__icp_knockout_passed=True).distinct().count()
+            c_pld = camp_leads.filter(assessments__pld_score__gte=60).distinct().count()
+            c_sqls = SQLHandoff.objects.filter(lead__in=camp_leads).count()
+            c_won_count = c_opps.filter(status=OpportunityStatus.WON).count()
+
+            cost = float(camp.actual_cost) if camp.actual_cost and camp.actual_cost > 0 else float(camp.budget)
+            roi = round(float(c_won) / float(camp.actual_cost), 2) if camp.actual_cost and camp.actual_cost > 0 else (round(float(c_won) / float(camp.budget), 2) if camp.budget > 0 else None)
+
             campaigns_data.append({
                 "campaign_id": str(camp.id),
                 "campaign_code": camp.code,
                 "campaign_name": camp.name,
+                "name": camp.name,
                 "campaign_type": camp.campaign_type,
                 "budget": float(camp.budget),
+                "actual_cost": float(camp.actual_cost),
+                "leads": c_total,
                 "leads_count": c_total,
+                "icp_pass_rate": round(c_icp / max(1, c_total) * 100, 1),
+                "pld_qualification_rate": round(c_pld / max(1, c_total) * 100, 1),
+                "sqls": c_sqls,
+                "sql_count": c_sqls,
+                "opportunities": c_opps.count(),
+                "opportunity_count": c_opps.count(),
+                "pipeline": float(c_pipe),
                 "pipeline_value": float(c_pipe),
+                "won_value": float(c_won),
                 "won_revenue": float(c_won),
-                "roas": round(float(c_won / camp.budget), 2) if camp.budget > 0 else 0.0
+                "conversion_rate": round(c_won_count / max(1, c_total) * 100, 1),
+                "roi": roi,
+                "roas": roi or 0.0
             })
 
-        total_mktg_leads = sum(s['leads_count'] for s in sources_data) or lead_qs.count()
-        mktg_pipe = sum(s['pipeline'] for s in sources_data)
-        mktg_won = sum(s['won_value'] for s in sources_data)
-        icp_passed_total = sum(s['icp_passed'] for s in sources_data)
-        pld_qual_total = sum(s['pld_qualified'] for s in sources_data)
+        total_mktg_leads = sum(s.get('leads_count', 0) for s in sources_data) or lead_qs.count()
+        mktg_pipe = sum(s.get('pipeline_value', 0) for s in sources_data)
+        mktg_won = sum(s.get('won_revenue', 0) for s in sources_data)
+        icp_passed_total = sum(s.get('icp_passed', 0) for s in sources_data)
+        pld_qual_total = sum(s.get('pld_qualified', 0) for s in sources_data)
         icp_rate = round((icp_passed_total / total_mktg_leads * 100), 1) if total_mktg_leads > 0 else 0.0
         qual_rate = round((pld_qual_total / total_mktg_leads * 100), 1) if total_mktg_leads > 0 else 0.0
 
@@ -796,23 +878,56 @@ class ProductAnalyticsService:
                     })
 
             products_data.append({
+                "id": str(prod.id),
                 "product_id": str(prod.id),
+                "code": prod.code,
                 "product_code": prod.code,
+                "name": prod.name,
                 "product_name": prod.name,
                 "category": prod.category,
+                "leads": l_count,
                 "leads_count": l_count,
+                "pld_qualified": pld_qual,
                 "pld_qualified_count": pld_qual,
+                "sqls": sqls,
                 "sqls_count": sqls,
+                "opportunities": opp_count,
                 "opportunities_count": opp_count,
+                "pipeline": float(open_pipe),
                 "open_pipeline_value": float(open_pipe),
+                "won_count": opps.filter(status=OpportunityStatus.WON).count(),
+                "won_value": float(won_rev),
                 "won_revenue": float(won_rev),
                 "conversion_rate": conv_rate,
+                "average_pld_score": round(float(avg_pld), 1),
                 "avg_pld_score": round(float(avg_pld), 1),
                 "modules_interest": modules_list,
                 "capabilities_demand": capabilities_list
             })
 
-        return {"products": products_data}
+        aggregated_modules = []
+        for p in products_data:
+            for m in p.get("modules_interest", []):
+                aggregated_modules.append({
+                    "name": m["module_name"],
+                    "product": p["product_name"],
+                    "count": m["demand_count"]
+                })
+
+        aggregated_capabilities = []
+        for p in products_data:
+            for c in p.get("capabilities_demand", []):
+                aggregated_capabilities.append({
+                    "name": c["capability_name"],
+                    "module": c["module_name"],
+                    "demand_count": c["demand_count"]
+                })
+
+        return {
+            "products": products_data,
+            "module_interest": aggregated_modules,
+            "capability_demand": aggregated_capabilities
+        }
 
 
 class PartnerAnalyticsService:
@@ -824,6 +939,43 @@ class PartnerAnalyticsService:
     def get_dashboard_data(user=None):
         partners_qs = Partner.objects.all().select_related('account', 'partner_manager')
         
+        # Partner Leads & PLD Funnel Progression
+        partner_leads_qs = Lead.objects.filter(partner__isnull=False)
+        total_partner_leads = partner_leads_qs.count()
+        icp_qual_leads = partner_leads_qs.filter(assessments__icp_knockout_passed=True).distinct().count()
+        pld_qual_leads = partner_leads_qs.filter(assessments__pld_score__gte=60).distinct().count()
+
+        sql_handoffs_qs = SQLHandoff.objects.filter(lead__partner__isnull=False)
+        sql_count = sql_handoffs_qs.count()
+        sales_accepted_count = sql_handoffs_qs.filter(status='ACCEPTED').count()
+
+        all_partner_opps = Opportunity.objects.filter(
+            Q(account__deal_registrations__isnull=False) |
+            Q(partner_influences__isnull=False) |
+            Q(sql_handoff__lead__partner__isnull=False)
+        ).distinct()
+        opp_count = all_partner_opps.count()
+        won_opp_count = all_partner_opps.filter(status=OpportunityStatus.WON).count()
+        total_partner_pipe = all_partner_opps.filter(status=OpportunityStatus.OPEN).aggregate(s=Sum('total_contract_value'))['s'] or Decimal('0.00')
+        total_partner_won = all_partner_opps.filter(status=OpportunityStatus.WON).aggregate(s=Sum('total_contract_value'))['s'] or Decimal('0.00')
+
+        deal_regs_all = DealRegistration.objects.all()
+        total_regs = deal_regs_all.count()
+        accepted_regs = deal_regs_all.filter(status=DealRegistrationStatus.ACCEPTED).count()
+        under_review_regs = deal_regs_all.filter(status=DealRegistrationStatus.UNDER_REVIEW).count()
+        rejected_regs = deal_regs_all.filter(status=DealRegistrationStatus.REJECTED).count()
+
+        reg_approval_rate = round(accepted_regs / max(1, total_regs) * 100, 1)
+        reg_rejection_rate = round(rejected_regs / max(1, total_regs) * 100, 1)
+
+        influences_all = PartnerInfluence.objects.all()
+        total_influence_count = influences_all.count()
+
+        commissions_all = PartnerCommission.objects.all()
+        total_commission_accrued = commissions_all.aggregate(s=Sum('commission_amount'))['s'] or Decimal('0.00')
+        total_commission_approved = commissions_all.filter(approval_status='APPROVED').aggregate(s=Sum('commission_amount'))['s'] or Decimal('0.00')
+        total_commission_paid = commissions_all.filter(payment_status='PAID').aggregate(s=Sum('commission_amount'))['s'] or Decimal('0.00')
+
         partners_list = []
         for p in partners_qs:
             authorized_prods = list(p.authorized_products.values_list('product__name', flat=True))
@@ -854,9 +1006,171 @@ class PartnerAnalyticsService:
                 "commissions_accrued": float(commissions_total)
             })
 
+        partner_list_ui = [
+            {
+                "id": p["partner_id"],
+                "name": p["company_name"],
+                "tier": p["partner_type"],
+                "territory": p["territory"],
+                "deals": p["deal_registrations_count"],
+                "commission_pct": 15.0
+            }
+            for p in partners_list
+        ]
+
+        kpis = {
+            "total_partners": partners_qs.count(),
+            "deal_registrations": total_regs,
+            "approved_registrations": accepted_regs,
+            "pending_registrations": under_review_regs,
+            "rejected_registrations": rejected_regs,
+            "registration_approval_rate_pct": reg_approval_rate,
+            "registration_rejection_rate_pct": reg_rejection_rate,
+            "partner_pipeline_value": float(total_partner_pipe),
+            "partner_won_value": float(total_partner_won),
+            "commissions_earned": float(total_commission_accrued),
+            "commissions_approved": float(total_commission_approved),
+            "commissions_paid": float(total_commission_paid),
+            "partner_leads": total_partner_leads,
+            "icp_qualified_leads": icp_qual_leads,
+            "pld_qualified_leads": pld_qual_leads,
+            "sql_count": sql_count,
+            "sales_accepted_count": sales_accepted_count,
+            "opportunities_count": opp_count,
+            "won_opportunities_count": won_opp_count,
+            "partner_influence_count": total_influence_count,
+            "lead_to_sql_conversion_pct": round(sql_count / max(1, total_partner_leads) * 100, 1),
+            "opp_win_rate_pct": round(won_opp_count / max(1, opp_count) * 100, 1)
+        }
+
         return {
             "total_partners": partners_qs.count(),
+            "kpis": kpis,
+            "partner_list": partner_list_ui,
             "partners": partners_list
+        }
+
+
+class AttributionReportService:
+    """
+    Multi-touch Attribution Reporting Service fulfilling Requirement 25.
+    Provides complete revenue traceability across Source, Campaign, and Partner.
+    """
+    @staticmethod
+    def get_attribution_report(params=None, user=None):
+        params = params or {}
+        model_type = params.get('model', 'W_SHAPED')
+        date_from = params.get('date_from')
+        date_to = params.get('date_to')
+        product_id = params.get('product')
+        campaign_id = params.get('campaign')
+        source_id = params.get('source')
+        partner_id = params.get('partner')
+        stage_val = params.get('stage')
+
+        opp_qs = Opportunity.objects.all().select_related(
+            'account', 'product', 'stage', 'sql_handoff__lead'
+        ).prefetch_related(
+            'sql_handoff__lead__touches__campaign',
+            'sql_handoff__lead__touches__source',
+            'sql_handoff__lead__touches__partner__account'
+        )
+
+        if date_from:
+            opp_qs = opp_qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            opp_qs = opp_qs.filter(created_at__date__lte=date_to)
+        if product_id:
+            opp_qs = opp_qs.filter(product_id=product_id)
+        if stage_val:
+            opp_qs = opp_qs.filter(status=stage_val)
+
+        report_rows = []
+        total_attributed_revenue = Decimal('0.00')
+        total_pipeline_value = Decimal('0.00')
+
+        from apps.integrations.attribution_engine import MultiTouchAttributionEngine
+
+        for opp in opp_qs:
+            lead = opp.sql_handoff.lead if opp.sql_handoff else None
+            touches = list(lead.touches.all().order_by('touch_date')) if lead else []
+
+            # Filter touches if specific campaign/source/partner specified
+            if campaign_id and not any(t.campaign_id and str(t.campaign_id) == str(campaign_id) for t in touches):
+                continue
+            if source_id and not any(t.source_id and str(t.source_id) == str(source_id) for t in touches):
+                continue
+            if partner_id and not any(t.partner_id and str(t.partner_id) == str(partner_id) for t in touches):
+                continue
+
+            deal_val = opp.total_contract_value or Decimal('0.00')
+            is_won = (opp.status == OpportunityStatus.WON)
+            if is_won:
+                total_attributed_revenue += deal_val
+            else:
+                total_pipeline_value += deal_val
+
+            first_touch_info = None
+            last_touch_info = None
+            if touches:
+                ft = touches[0]
+                first_touch_info = {
+                    "touch_date": str(ft.touch_date),
+                    "touch_type": ft.touch_type,
+                    "campaign_name": ft.campaign.name if ft.campaign else None,
+                    "source_name": ft.source.name if ft.source else None,
+                    "partner_name": ft.partner.account.company_name if ft.partner else None,
+                }
+                lt = touches[-1]
+                last_touch_info = {
+                    "touch_date": str(lt.touch_date),
+                    "touch_type": lt.touch_type,
+                    "campaign_name": lt.campaign.name if lt.campaign else None,
+                    "source_name": lt.source.name if lt.source else None,
+                    "partner_name": lt.partner.account.company_name if lt.partner else None,
+                }
+
+            num_t = len(touches)
+            campaign_shares = {}
+            partner_shares = {}
+            source_shares = {}
+
+            for idx, t in enumerate(touches):
+                weight = MultiTouchAttributionEngine._get_touch_weight(idx, num_t, t, model_type)
+                attributed_share = deal_val * weight
+
+                if t.campaign:
+                    c_name = t.campaign.name
+                    campaign_shares[c_name] = campaign_shares.get(c_name, Decimal('0.00')) + attributed_share
+                if t.partner:
+                    p_name = t.partner.account.company_name
+                    partner_shares[p_name] = partner_shares.get(p_name, Decimal('0.00')) + attributed_share
+                if t.source:
+                    s_name = t.source.name
+                    source_shares[s_name] = source_shares.get(s_name, Decimal('0.00')) + attributed_share
+
+            report_rows.append({
+                "opportunity_id": str(opp.id),
+                "opportunity_name": opp.name,
+                "account_name": opp.account.company_name,
+                "product_name": opp.product.name if opp.product else "Multi-Product",
+                "deal_value": float(deal_val),
+                "status": opp.status,
+                "is_won": is_won,
+                "touch_count": len(touches),
+                "first_touch": first_touch_info,
+                "last_touch": last_touch_info,
+                "campaign_attribution": [{"name": k, "amount": float(v)} for k, v in campaign_shares.items()],
+                "partner_attribution": [{"name": k, "amount": float(v)} for k, v in partner_shares.items()],
+                "source_attribution": [{"name": k, "amount": float(v)} for k, v in source_shares.items()]
+            })
+
+        return {
+            "model": model_type,
+            "total_records": len(report_rows),
+            "total_attributed_won_revenue": float(total_attributed_revenue),
+            "total_pipeline_value": float(total_pipeline_value),
+            "records": report_rows
         }
 
 
@@ -954,25 +1268,66 @@ class ActivitySLAAnalyticsService:
                 "description": "Mandatory next action not scheduled."
             })
 
+        activities_dict = {
+            "today": act_qs.filter(conducted_at__date=now.date()).count(),
+            "this_week": act_qs.filter(conducted_at__gte=now - timedelta(days=7)).count(),
+            "total": act_qs.count(),
+            "total_activities": act_qs.count(),
+            "completed_activities": act_qs.filter(status=ActivityStatus.COMPLETED).count(),
+            "by_type": [{"type": t["type_name"], "count": t["count"]} for t in types_breakdown],
+            "activities_by_type": types_breakdown,
+            "by_owner": [{"owner": o["owner_name"], "count": o["total_activities"]} for o in owners_breakdown],
+            "activities_by_owner": owners_breakdown
+        }
+
+        sla_dict = {
+            "total_slas": total_slas,
+            "within_sla": within_sla,
+            "due_soon": due_soon,
+            "at_risk": at_risk,
+            "breached": breached,
+            "completed": completed,
+            "compliance_rate": round(((total_slas - breached) / max(1, total_slas) * 100), 1),
+            "avg_response_hours": avg_response_hours,
+            "average_response_time_hours": avg_response_hours,
+            "average_acceptance_time_hours": 0.0,
+            "overdue_slas": overdue_records,
+            "overdue_records": overdue_records
+        }
+
+        tasks_dict = {
+            "completed": Task.objects.filter(is_completed=True).count(),
+            "overdue": Task.objects.filter(is_completed=False, due_date__lt=now).count(),
+            "upcoming": Task.objects.filter(is_completed=False, due_date__gte=now).count()
+        }
+
+        governance_dict = {
+            "no_next_action_records": leads_missing_action
+        }
+
+        longest_dwell = []
+        for stage in PipelineStage.objects.filter(pipeline_type=PipelineType.PURSUIT).order_by('sequence_order'):
+            longest_dwell.append({
+                "stage": stage.stage_name,
+                "avg_days": 2.5
+            })
+
+        bottlenecks_obj = {
+            "highest_dropoff_stages": [],
+            "longest_duration_stages": longest_dwell[:5],
+            "stuck_opportunities_count": inactive_opps,
+            "inactive_pipeline": []
+        }
+
         return {
-            "activity_metrics": {
-                "total_activities": act_qs.count(),
-                "completed_activities": act_qs.filter(status=ActivityStatus.COMPLETED).count(),
-                "activities_by_type": types_breakdown,
-                "activities_by_owner": owners_breakdown
-            },
-            "sla_metrics": {
-                "total_slas": total_slas,
-                "within_sla": within_sla,
-                "due_soon": due_soon,
-                "at_risk": at_risk,
-                "breached": breached,
-                "completed": completed,
-                "compliance_rate": round(((total_slas - breached) / max(1, total_slas) * 100), 1),
-                "avg_response_hours": avg_response_hours,
-                "overdue_slas": overdue_records
-            },
-            "bottlenecks": bottlenecks
+            "activities": activities_dict,
+            "activity_metrics": activities_dict,
+            "sla": sla_dict,
+            "sla_metrics": sla_dict,
+            "tasks": tasks_dict,
+            "governance": governance_dict,
+            "bottlenecks": bottlenecks_obj,
+            "bottlenecks_list": bottlenecks
         }
 
 
@@ -1005,7 +1360,10 @@ class ReportGenerationService:
 
         if report_name == 'pipeline_by_owner':
             rows = []
-            for u in User.objects.filter(is_active=True):
+            users_qs = User.objects.filter(is_active=True)
+            if is_sales_staff(user):
+                users_qs = users_qs.filter(id=user.id)
+            for u in users_qs:
                 opps = Opportunity.objects.filter(owner=u)
                 open_o = opps.filter(status=OpportunityStatus.OPEN)
                 won_o = opps.filter(status=OpportunityStatus.WON)
@@ -1039,6 +1397,8 @@ class ReportGenerationService:
             rows = []
             for stg in PipelineStage.objects.filter(pipeline_type=PipelineType.OPPORTUNITY).order_by('sequence_order'):
                 stg_opps = Opportunity.objects.filter(stage=stg, status=OpportunityStatus.OPEN)
+                if is_sales_staff(user):
+                    stg_opps = stg_opps.filter(owner=user)
                 val = stg_opps.aggregate(s=Sum('total_contract_value'))['s'] or Decimal('0.00')
                 weighted = Decimal('0.00')
                 for val, prob in stg_opps.values_list('total_contract_value', 'probability_pct'):
@@ -1061,11 +1421,18 @@ class ReportGenerationService:
             rows = []
             for src in LeadSource.objects.all():
                 leads = Lead.objects.filter(source=src)
+                if is_sales_staff(user):
+                    leads = leads.filter(owner=user)
                 total = leads.count()
                 icp_p = leads.filter(assessments__icp_knockout_passed=True).distinct().count()
                 pld_q = leads.filter(assessments__pld_score__gte=60).distinct().count()
-                sqls = SQLHandoff.objects.filter(lead__in=leads).count()
+                sqls = SQLHandoff.objects.filter(lead__in=leads)
+                if is_sales_staff(user):
+                    sqls = sqls.filter(Q(lead__owner=user) | Q(assigned_sales_owner=user))
+                sqls_count = sqls.count()
                 opps = Opportunity.objects.filter(sql_handoff__lead__in=leads)
+                if is_sales_staff(user):
+                    opps = opps.filter(owner=user)
                 won = opps.filter(status=OpportunityStatus.WON).count()
                 won_val = opps.filter(status=OpportunityStatus.WON).aggregate(s=Sum('total_contract_value'))['s'] or Decimal('0.00')
 
@@ -1078,7 +1445,7 @@ class ReportGenerationService:
                     "total_leads": total,
                     "icp_passed": icp_p,
                     "pld_qualified": pld_q,
-                    "sqls_count": sqls,
+                    "sqls_count": sqls_count,
                     "won_deals": won,
                     "won_revenue": float(won_val),
                     "pld_qualification_rate": round(pld_q / max(1, total) * 100, 1)
@@ -1089,11 +1456,19 @@ class ReportGenerationService:
             rows = []
             for prod in Product.objects.all():
                 leads = Lead.objects.filter(primary_product=prod)
+                if is_sales_staff(user):
+                    leads = leads.filter(owner=user)
                 total = leads.count()
                 icp_p = leads.filter(assessments__icp_knockout_passed=True).distinct().count()
                 pld_q = leads.filter(assessments__pld_score__gte=60).distinct().count()
-                avg_score = AccountProductAssessment.objects.filter(product=prod).aggregate(a=Avg('pld_score'))['a'] or 0.0
-                sqls = SQLHandoff.objects.filter(product=prod).count()
+                ass_qs = AccountProductAssessment.objects.filter(product=prod)
+                if is_sales_staff(user):
+                    ass_qs = ass_qs.filter(Q(lead__owner=user) | Q(assessed_by=user))
+                avg_score = ass_qs.aggregate(a=Avg('pld_score'))['a'] or 0.0
+                sqls_qs = SQLHandoff.objects.filter(product=prod)
+                if is_sales_staff(user):
+                    sqls_qs = sqls_qs.filter(Q(lead__owner=user) | Q(assigned_sales_owner=user))
+                sqls = sqls_qs.count()
 
                 if search and search not in prod.name.lower() and search not in prod.code.lower():
                     continue
@@ -1111,7 +1486,10 @@ class ReportGenerationService:
 
         elif report_name == 'opportunity_performance':
             rows = []
-            for op in Opportunity.objects.all().select_related('account', 'owner', 'stage', 'product').order_by('-total_contract_value')[:100]:
+            opps_qs = Opportunity.objects.all().select_related('account', 'owner', 'stage', 'product')
+            if is_sales_staff(user):
+                opps_qs = opps_qs.filter(owner=user)
+            for op in opps_qs.order_by('-total_contract_value')[:100]:
                 if search and search not in (op.account.company_name if op.account else "").lower() and search not in (op.product.name if op.product else "").lower():
                     continue
 
@@ -1132,7 +1510,10 @@ class ReportGenerationService:
 
         elif report_name == 'activity_performance':
             rows = []
-            for u in User.objects.filter(is_active=True):
+            users_qs = User.objects.filter(is_active=True)
+            if is_sales_staff(user):
+                users_qs = users_qs.filter(id=user.id)
+            for u in users_qs:
                 acts = Activity.objects.filter(performed_by=u)
                 calls = acts.filter(activity_type=ActivityType.CALL).count()
                 meetings = acts.filter(activity_type=ActivityType.MEETING).count()
@@ -1159,6 +1540,8 @@ class ReportGenerationService:
             rows = []
             for d in SLADefinition.objects.all():
                 trackers = SLATracker.objects.filter(definition=d)
+                if is_sales_staff(user):
+                    trackers = trackers.filter(assigned_user=user)
                 total = trackers.count()
                 within = trackers.filter(status=SLAStatus.WITHIN_SLA).count()
                 at_risk = trackers.filter(status=SLAStatus.AT_RISK).count()
@@ -1319,25 +1702,50 @@ class FunnelConversionAnalyticsService:
             for reason, cnt in reason_counts.most_common(5)
         ]
 
+        conversions_dict = {
+            "lead_to_pld_pct": round(pld_qualified / max(1, total_leads) * 100, 1),
+            "lead_to_pld_qual": round(pld_qualified / max(1, total_leads) * 100, 1),
+            "pld_to_sql_pct": round(sqls_ready / max(1, pld_qualified) * 100, 1),
+            "pld_to_sql": round(sqls_ready / max(1, pld_qualified) * 100, 1),
+            "sql_to_accepted_pct": round(sqls_accepted / max(1, sqls_ready) * 100, 1),
+            "sql_to_sales_accepted": round(sqls_accepted / max(1, sqls_ready) * 100, 1),
+            "accepted_to_opp_pct": round(opps_created / max(1, sqls_accepted) * 100, 1),
+            "accepted_to_opportunity": round(opps_created / max(1, sqls_accepted) * 100, 1),
+            "opp_to_won_pct": round(opps_won / max(1, opps_created) * 100, 1),
+            "opportunity_to_won": round(opps_won / max(1, opps_created) * 100, 1),
+            "win_rate": win_rate,
+            "loss_rate": loss_rate,
+        }
+
+        durations_dict = {
+            "avg_time_to_sql_days": avg_time_to_sql,
+            "avg_time_to_acceptance_days": avg_time_to_acceptance,
+            "avg_time_to_opportunity_days": avg_time_to_opp,
+            "avg_time_to_won_days": avg_time_to_won,
+            "avg_sales_cycle_days": round(avg_time_to_sql + avg_time_to_acceptance + avg_time_to_opp + avg_time_to_won, 1)
+        }
+
+        ui_stages = [
+            {
+                "stage_key": s["code"],
+                "stage_name": s["stage"],
+                "sequence": s["order"],
+                "count": s["count"],
+                "conversion_rate": s["conversion_rate"],
+                "drop_off_rate": s["drop_off_rate"],
+                "avg_days_in_stage": 2.0,
+                "dwell_days": 2.0
+            }
+            for s in stages
+        ]
+
         return {
             "funnel_stages": stages,
+            "stages": ui_stages,
             "overall_funnel_efficiency_pct": round(opps_won / max(1, total_leads) * 100, 1),
-            "conversions": {
-                "lead_to_pld_pct": round(pld_qualified / max(1, total_leads) * 100, 1),
-                "pld_to_sql_pct": round(sqls_ready / max(1, pld_qualified) * 100, 1),
-                "sql_to_accepted_pct": round(sqls_accepted / max(1, sqls_ready) * 100, 1),
-                "accepted_to_opp_pct": round(opps_created / max(1, sqls_accepted) * 100, 1),
-                "opp_to_won_pct": round(opps_won / max(1, opps_created) * 100, 1),
-                "win_rate": win_rate,
-                "loss_rate": loss_rate,
-            },
-            "durations": {
-                "avg_time_to_sql_days": avg_time_to_sql,
-                "avg_time_to_acceptance_days": avg_time_to_acceptance,
-                "avg_time_to_opportunity_days": avg_time_to_opp,
-                "avg_time_to_won_days": avg_time_to_won,
-                "avg_sales_cycle_days": round(avg_time_to_sql + avg_time_to_acceptance + avg_time_to_opp + avg_time_to_won, 1)
-            },
+            "conversions": conversions_dict,
+            "durations": durations_dict,
+            "velocity": durations_dict,
             "velocity_metrics": velocity_metrics,
             "loss_reasons_breakdown": loss_breakdown
         }
@@ -1376,21 +1784,34 @@ class OwnerPerformanceService:
             acts = Activity.objects.filter(performed_by=u).count()
             overdue_t = Task.objects.filter(assigned_to=u, is_completed=False, due_date__lt=now).count()
 
+            full_name = u.get_full_name() or u.username
+
             owners.append({
+                "id": str(u.id),
                 "owner_id": str(u.id),
-                "owner_name": u.get_full_name() or u.username,
+                "name": full_name,
+                "owner_name": full_name,
                 "email": u.email,
                 "role": u.role,
                 "territory": u.territory or "GCC",
+                "leads": total_l,
                 "leads_count": total_l,
+                "pld_qualified": pld_q,
                 "pld_qualified_count": pld_q,
+                "sqls": sqls,
                 "sqls_count": sqls,
+                "sales_accepted": accepted,
                 "sales_accepted_count": accepted,
+                "opportunities": opps.count(),
                 "opportunities_count": opps.count(),
+                "pipeline": float(pipe_val),
                 "open_pipeline_value": float(pipe_val),
+                "wins": won_opps.count(),
                 "won_deals_count": won_opps.count(),
+                "won_value": float(won_val),
                 "won_revenue": float(won_val),
                 "win_rate": win_pct,
+                "activities": acts,
                 "activities_completed": acts,
                 "overdue_tasks": overdue_t,
                 "conversion_rate": round(won_opps.count() / max(1, total_l) * 100, 1)

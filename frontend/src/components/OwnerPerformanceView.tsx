@@ -141,50 +141,66 @@ export const OwnerPerformanceView: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {data.owners.map((ow) => (
-                  <tr key={ow.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '50%',
-                          background: 'rgba(59, 130, 246, 0.2)',
-                          color: 'var(--primary)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 700,
-                          fontSize: '0.75rem'
-                        }}>
-                          {ow.name.slice(0, 2).toUpperCase()}
+                {data.owners.map((ow, idx) => {
+                  const ownerName = ow.name || (ow as any).owner_name || 'Representative';
+                  const initials = ownerName.trim().slice(0, 2).toUpperCase() || 'AE';
+                  const leads = ow.leads ?? (ow as any).leads_count ?? 0;
+                  const pldQual = ow.pld_qualified ?? (ow as any).pld_qualified_count ?? 0;
+                  const sqls = ow.sqls ?? (ow as any).sqls_count ?? 0;
+                  const accepted = ow.sales_accepted ?? (ow as any).sales_accepted_count ?? 0;
+                  const opps = ow.opportunities ?? (ow as any).opportunities_count ?? 0;
+                  const acts = ow.activities ?? (ow as any).activities_completed ?? 0;
+                  const overdue = ow.overdue_tasks ?? 0;
+                  const pipe = ow.pipeline ?? (ow as any).open_pipeline_value ?? 0;
+                  const wins = ow.wins ?? (ow as any).won_deals_count ?? 0;
+                  const wonVal = ow.won_value ?? (ow as any).won_revenue ?? 0;
+                  const rowKey = ow.id || (ow as any).owner_id || `owner-${idx}`;
+
+                  return (
+                    <tr key={rowKey} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            background: 'rgba(59, 130, 246, 0.2)',
+                            color: 'var(--primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '0.75rem'
+                          }}>
+                            {initials}
+                          </div>
+                          <span>{ownerName}</span>
                         </div>
-                        <span>{ow.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>{ow.leads}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span className="badge badge-success" style={{ fontSize: '0.72rem' }}>{ow.pld_qualified}</span>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>{ow.sqls}</td>
-                    <td style={{ padding: '12px 14px' }}>{ow.sales_accepted}</td>
-                    <td style={{ padding: '12px 14px', fontWeight: 600 }}>{ow.opportunities}</td>
-                    <td style={{ padding: '12px 14px', color: 'var(--text-muted)' }}>{ow.activities}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {ow.overdue_tasks > 0 ? (
-                        <span className="badge badge-danger">{ow.overdue_tasks}</span>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>0</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>
-                      {formatCurrency(ow.pipeline)}
-                    </td>
-                    <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--success)', textAlign: 'right' }}>
-                      {ow.wins} ({formatCurrency(ow.won_value)})
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>{leads}</td>
+                      <td style={{ padding: '12px 14px' }}>
+                        <span className="badge badge-success" style={{ fontSize: '0.72rem' }}>{pldQual}</span>
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>{sqls}</td>
+                      <td style={{ padding: '12px 14px' }}>{accepted}</td>
+                      <td style={{ padding: '12px 14px', fontWeight: 600 }}>{opps}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text-muted)' }}>{acts}</td>
+                      <td style={{ padding: '12px 14px' }}>
+                        {overdue > 0 ? (
+                          <span className="badge badge-danger">{overdue}</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>0</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>
+                        {formatCurrency(pipe)}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--success)', textAlign: 'right' }}>
+                        {wins} ({formatCurrency(wonVal)})
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

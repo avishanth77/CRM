@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Phone, Mail, MessageSquare, Users, Compass, Monitor, 
   FlaskConical, Clock, AlertTriangle, Plus, 
@@ -7,6 +8,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Activity, ActivityType, ActivityStatus } from '../services/api';
+import { inAppAlert } from './common/InAppAlert';
 
 export interface UnifiedActivityTimelineProps {
   entityType?: 'lead' | 'opportunity' | 'account' | 'proposal';
@@ -40,8 +42,15 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   // New Activity Form State
+  const getLocalDatetimeString = (date?: Date) => {
+    const d = date || new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   const [subject, setSubject] = useState('');
   const [activityType, setActivityType] = useState<ActivityType>('CALL');
+  const [conductedAt, setConductedAt] = useState<string>(getLocalDatetimeString());
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [descriptionNotes, setDescriptionNotes] = useState('');
   const [outcomeNotes, setOutcomeNotes] = useState('');
@@ -78,15 +87,32 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
 
     setSubmitting(true);
     try {
+      let validConductedAt = new Date().toISOString();
+      if (conductedAt) {
+        try {
+          const d = new Date(conductedAt);
+          if (!isNaN(d.getTime())) validConductedAt = d.toISOString();
+        } catch {}
+      }
+
+      let validNextDue: string | undefined = undefined;
+      if (hasNextAction && nextActionDue) {
+        try {
+          const d = new Date(nextActionDue);
+          if (!isNaN(d.getTime())) validNextDue = d.toISOString();
+        } catch {}
+      }
+
       const payload: Partial<Activity> = {
         subject: subject.trim(),
         activity_type: activityType,
+        conducted_at: validConductedAt,
         duration_minutes: durationMinutes,
         description_notes: descriptionNotes,
         outcome_notes: outcomeNotes,
         status: activityStatus,
-        next_action_description: hasNextAction ? nextActionDesc : undefined,
-        next_action_due_at: hasNextAction && nextActionDue ? new Date(nextActionDue).toISOString() : undefined,
+        next_action_description: hasNextAction && nextActionDesc.trim() ? nextActionDesc.trim() : undefined,
+        next_action_due_at: validNextDue,
         [actualEntityType]: actualEntityId
       };
       if (relatedEntity?.accountId && !payload.account) {
@@ -97,9 +123,10 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
       setShowLogModal(false);
       resetForm();
       await loadActivities();
+      inAppAlert.success("Activity logged successfully!");
       if (onActivityLogged) onActivityLogged();
     } catch (err: any) {
-      alert(err.message || "Failed to log activity");
+      inAppAlert.error(err.message || "Failed to log activity");
     } finally {
       setSubmitting(false);
     }
@@ -108,6 +135,7 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
   const resetForm = () => {
     setSubject('');
     setActivityType('CALL');
+    setConductedAt(getLocalDatetimeString());
     setDurationMinutes(30);
     setDescriptionNotes('');
     setOutcomeNotes('');
@@ -185,7 +213,7 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
       {/* Header & Controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Clock size={18} color="var(--primary)" />
             Unified Activity Timeline {actualEntityName ? `• ${actualEntityName}` : ''}
             <span className="badge badge-neutral" style={{ fontSize: '0.72rem' }}>{filteredActivities.length}</span>
@@ -322,16 +350,20 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#FFFFFF' }}>{act.subject}</span>
+                        <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{act.subject}</span>
                         <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>
                           {act.activity_type.replace('_', ' ')}
                         </span>
                         <span className={`badge ${act.status === 'COMPLETED' ? 'badge-success' : act.status === 'PLANNED' ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: '0.65rem' }}>
                           {act.status}
                         </span>
+                        <span className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          <Clock size={11} color="var(--primary)" />
+                          {formattedDate}
+                        </span>
                       </div>
                       <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '3px' }}>
-                        Conducted by <strong style={{ color: 'var(--text-secondary)' }}>{act.performed_by_name || 'System / Unassigned'}</strong> • {formattedDate} • {act.duration_minutes || 30} mins
+                        Conducted by <strong style={{ color: 'var(--text-secondary)' }}>{act.performed_by_name || 'System / Unassigned'}</strong> • {act.duration_minutes || 30} mins
                       </div>
                     </div>
 
@@ -377,205 +409,202 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
       )}
 
       {/* LOG ACTIVITY MODAL */}
-      {showLogModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div className="glass-panel" style={{
-            width: '100%',
-            maxWidth: '640px',
-            background: '#0B0F19',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '14px',
-            padding: '28px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '18px',
-            maxHeight: '90vh',
-            overflowY: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {showLogModal && typeof document !== 'undefined' && createPortal(
+        <div className="modal-overlay">
+          <div className="modal-card" style={{ width: '100%', maxWidth: '640px', margin: 'auto', maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header-accent" />
+            <div className="modal-card-header" style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
               <div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#FFFFFF' }}>Log Customer Activity</h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Log Customer Activity</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
                   Record interaction outcome and schedule mandatory next action for {entityName || 'record'}.
                 </p>
               </div>
               <button 
+                type="button"
+                className="modal-close-btn"
                 onClick={() => setShowLogModal(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                title="Close"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleLogActivity} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                    Activity Subject *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    className="input-field"
-                    placeholder="e.g. Solution Demo with VP Supply Chain"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    style={{ width: '100%', fontSize: '0.85rem' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                    Activity Type *
-                  </label>
-                  <select
-                    className="input-field"
-                    value={activityType}
-                    onChange={(e) => setActivityType(e.target.value as ActivityType)}
-                    style={{ width: '100%', fontSize: '0.85rem' }}
-                  >
-                    <option value="CALL">Phone Call</option>
-                    <option value="EMAIL">Email</option>
-                    <option value="WHATSAPP">WhatsApp</option>
-                    <option value="MEETING">Meeting</option>
-                    <option value="DISCOVERY">Discovery Session</option>
-                    <option value="DEMO">Product Demo</option>
-                    <option value="POC">POC Check-in</option>
-                    <option value="PROPOSAL_REVIEW">Proposal Review</option>
-                    <option value="NEGOTIATION">Negotiation</option>
-                    <option value="FOLLOW_UP">Follow-up</option>
-                    <option value="SITE_VISIT">Site Visit</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                    Duration (Minutes)
-                  </label>
-                  <input
-                    type="number"
-                    min={5}
-                    step={5}
-                    className="input-field"
-                    value={durationMinutes}
-                    onChange={(e) => setDurationMinutes(parseInt(e.target.value) || 30)}
-                    style={{ width: '100%', fontSize: '0.85rem' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                    Status
-                  </label>
-                  <select
-                    className="input-field"
-                    value={activityStatus}
-                    onChange={(e) => setActivityStatus(e.target.value as ActivityStatus)}
-                    style={{ width: '100%', fontSize: '0.85rem' }}
-                  >
-                    <option value="COMPLETED">Completed</option>
-                    <option value="PLANNED">Planned / Scheduled</option>
-                    <option value="CANCELLED">Cancelled</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                  Interaction Details / Discussion Notes
-                </label>
-                <textarea
-                  className="input-field"
-                  rows={2}
-                  placeholder="Key topics discussed, stakeholder questions, operational findings..."
-                  value={descriptionNotes}
-                  onChange={(e) => setDescriptionNotes(e.target.value)}
-                  style={{ width: '100%', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
-                  Documented Outcome *
-                </label>
-                <input
-                  type="text"
-                  required
-                  className="input-field"
-                  placeholder="e.g. Customer agreed to 30-day POC; procurement documents received"
-                  value={outcomeNotes}
-                  onChange={(e) => setOutcomeNotes(e.target.value)}
-                  style={{ width: '100%', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Mandatory Next Action Section */}
-              <div style={{
-                padding: '16px',
-                borderRadius: '10px',
-                background: 'rgba(59, 130, 246, 0.05)',
-                border: '1px solid rgba(59, 130, 246, 0.2)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Calendar size={15} color="var(--primary)" />
-                    Mandatory Next Action
-                  </span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                    <input 
-                      type="checkbox"
-                      checked={createTaskFlag}
-                      onChange={(e) => setCreateTaskFlag(e.target.checked)}
-                    />
-                    Generate Actionable Task
-                  </label>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
+            <form onSubmit={handleLogActivity} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, margin: 0 }}>
+              <div className="modal-scroll-body" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', flex: '1 1 auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      Next Action Description *
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
+                      Activity Subject *
                     </label>
                     <input
                       type="text"
                       required
                       className="input-field"
-                      placeholder="e.g. Send revised commercial proposal v2"
-                      value={nextActionDesc}
-                      onChange={(e) => setNextActionDesc(e.target.value)}
-                      style={{ width: '100%', fontSize: '0.82rem' }}
+                      placeholder="e.g. Solution Demo with VP Supply Chain"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      style={{ width: '100%', fontSize: '0.85rem' }}
                     />
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      Due Date *
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
+                      Activity Type *
+                    </label>
+                    <select
+                      className="input-field"
+                      value={activityType}
+                      onChange={(e) => setActivityType(e.target.value as ActivityType)}
+                      style={{ width: '100%', fontSize: '0.85rem' }}
+                    >
+                      <option value="CALL">Phone Call</option>
+                      <option value="EMAIL">Email</option>
+                      <option value="WHATSAPP">WhatsApp</option>
+                      <option value="MEETING">Meeting</option>
+                      <option value="DISCOVERY">Discovery Session</option>
+                      <option value="DEMO">Product Demo</option>
+                      <option value="POC">POC Check-in</option>
+                      <option value="PROPOSAL_REVIEW">Proposal Review</option>
+                      <option value="NEGOTIATION">Negotiation</option>
+                      <option value="FOLLOW_UP">Follow-up</option>
+                      <option value="SITE_VISIT">Site Visit</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
+                      Activity Date &amp; Time *
                     </label>
                     <input
-                      type="date"
+                      type="datetime-local"
                       required
                       className="input-field"
-                      value={nextActionDue}
-                      onChange={(e) => setNextActionDue(e.target.value)}
-                      style={{ width: '100%', fontSize: '0.82rem' }}
+                      value={conductedAt}
+                      onChange={(e) => setConductedAt(e.target.value)}
+                      style={{ width: '100%', fontSize: '0.85rem' }}
                     />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
+                      Duration (Minutes)
+                    </label>
+                    <input
+                      type="number"
+                      min={5}
+                      step={5}
+                      className="input-field"
+                      value={durationMinutes}
+                      onChange={(e) => setDurationMinutes(parseInt(e.target.value) || 30)}
+                      style={{ width: '100%', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
+                      Status
+                    </label>
+                    <select
+                      className="input-field"
+                      value={activityStatus}
+                      onChange={(e) => setActivityStatus(e.target.value as ActivityStatus)}
+                      style={{ width: '100%', fontSize: '0.85rem' }}
+                    >
+                      <option value="COMPLETED">Completed</option>
+                      <option value="PLANNED">Planned / Scheduled</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
+                    Interaction Details / Discussion Notes
+                  </label>
+                  <textarea
+                    className="input-field"
+                    rows={2}
+                    placeholder="Key topics discussed, stakeholder questions, operational findings..."
+                    value={descriptionNotes}
+                    onChange={(e) => setDescriptionNotes(e.target.value)}
+                    style={{ width: '100%', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: '6px' }}>
+                    Documented Outcome *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="input-field"
+                    placeholder="e.g. Customer agreed to 30-day POC; procurement documents received"
+                    value={outcomeNotes}
+                    onChange={(e) => setOutcomeNotes(e.target.value)}
+                    style={{ width: '100%', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                {/* Mandatory Next Action Section */}
+                <div style={{
+                  padding: '16px',
+                  borderRadius: '10px',
+                  background: 'rgba(59, 130, 246, 0.05)',
+                  border: '1px solid rgba(59, 130, 246, 0.2)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Calendar size={15} color="var(--primary)" />
+                      Mandatory Next Action
+                    </span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox"
+                        checked={createTaskFlag}
+                        onChange={(e) => setCreateTaskFlag(e.target.checked)}
+                      />
+                      Generate Actionable Task
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        Next Action Description *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        className="input-field"
+                        placeholder="e.g. Send revised commercial proposal v2"
+                        value={nextActionDesc}
+                        onChange={(e) => setNextActionDesc(e.target.value)}
+                        style={{ width: '100%', fontSize: '0.82rem' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                        Due Date &amp; Time *
+                      </label>
+                      <input
+                        type="datetime-local"
+                        required
+                        className="input-field"
+                        value={nextActionDue}
+                        onChange={(e) => setNextActionDue(e.target.value)}
+                        style={{ width: '100%', fontSize: '0.82rem' }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '16px 24px', borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg-surface-elevated)' }}>
                 <button
                   type="button"
                   className="btn btn-outline"
@@ -595,7 +624,8 @@ export const UnifiedActivityTimeline: React.FC<UnifiedActivityTimelineProps> = (
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

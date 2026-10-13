@@ -46,7 +46,7 @@ export const FunnelChartWidget: React.FC<FunnelChartWidgetProps> = ({
     );
   }
 
-  const maxCount = Math.max(...stages.map(s => s.count), 1);
+  const maxCount = Math.max(...stages.map(s => Number(s?.count || 0)), 1);
 
   const getStageColor = (index: number) => {
     const colors = [
@@ -67,7 +67,7 @@ export const FunnelChartWidget: React.FC<FunnelChartWidgetProps> = ({
     <div className="glass-panel" style={{ padding: '24px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
         <div>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: '#FFFFFF' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
             {title}
           </h3>
           {subtitle && (

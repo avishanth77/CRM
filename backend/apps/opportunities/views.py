@@ -16,24 +16,48 @@ from apps.opportunities.serializers import (
 )
 from apps.opportunities.services import OpportunityService, ProposalService
 from apps.sales_handoff.models import SQLHandoff, HandoffStatus
+from django.utils import timezone
 from apps.pld_engine.models import PipelineStage
-from apps.accounts.models import AccountProduct, AccountProductStatus
+from apps.accounts.models import AccountProduct, AccountProductStatus, AccountType
 from apps.activities.models import Activity
 from apps.activities.serializers import ActivitySerializer
 from apps.workflows.models import StageHistory
 from apps.audit_logging.models import AuditLog
 from apps.audit_logging.serializers import AuditLogSerializer
+from apps.authentication.models import User, UserRole
+from apps.authentication.backends import get_request_user, is_management_or_admin, is_sales_staff
 
 
 class OpportunityViewSet(viewsets.ModelViewSet):
-    queryset = Opportunity.objects.all().prefetch_related(
-        'product_lines__product',
-        'selected_modules__module',
-        'required_capabilities__capability',
-        'proposals'
-    ).select_related('account', 'owner', 'stage', 'product', 'primary_contact')
     serializer_class = OpportunitySerializer
     permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        user = get_request_user(self.request)
+        partner = None
+        if user and (getattr(user, 'is_partner_user', False) or getattr(user, 'role', None) == 'PARTNER_USER'):
+            partner_prof = getattr(user, 'partner_profile', None)
+            partner = partner_prof.partner if partner_prof else None
+
+        qs = Opportunity.objects.all().prefetch_related(
+            'product_lines__product',
+            'selected_modules__module',
+            'required_capabilities__capability',
+            'proposals',
+            'partner_influences__partner'
+        ).select_related('account', 'owner', 'stage', 'product', 'primary_contact')
+
+        if partner:
+            qs = qs.filter(
+                Q(account__deal_registrations__partner=partner) |
+                Q(partner_influences__partner=partner) |
+                Q(sql_handoff__lead__partner=partner)
+            ).distinct()
+
+        if is_sales_staff(user):
+            qs = qs.filter(owner=user)
+
+        return qs
 
     @action(detail=False, methods=['post'], url_path='create-from-sql')
     def create_from_sql(self, request):
@@ -81,11 +105,20 @@ class OpportunityViewSet(viewsets.ModelViewSet):
             return Response({'error': f"Stage with id {target_stage_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
 
         try:
+            send_stage_email = request.data.get('send_stage_email', True)
+            custom_subject = request.data.get('custom_email_subject') or request.data.get('subject')
+            custom_body = request.data.get('custom_email_body') or request.data.get('body')
+            custom_recipient_email = request.data.get('custom_recipient_email') or request.data.get('recipient_email')
+
             opp = OpportunityService.transition_stage(
                 opportunity=opp,
                 target_stage=target_stage,
                 reason=reason,
-                user=request.user if request.user.is_authenticated else None
+                user=request.user if request.user.is_authenticated else None,
+                send_stage_email=send_stage_email,
+                custom_subject=custom_subject,
+                custom_body=custom_body,
+                custom_recipient_email=custom_recipient_email
             )
             return Response({
                 'message': f"Stage updated to {target_stage.stage_name}.",
@@ -95,6 +128,56 @@ class OpportunityViewSet(viewsets.ModelViewSet):
             return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as ex:
             return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path='stage-email-preview')
+    def stage_email_preview(self, request, pk=None):
+        """
+        Returns preview of the stage completion email that will be sent to the customer for this opportunity.
+        """
+        opp = self.get_object()
+        stage_id = request.query_params.get('stage_id')
+        stage = None
+        if stage_id:
+            stage = PipelineStage.objects.filter(id=stage_id).first()
+        if not stage:
+            stage = opp.stage or 'OPP_PROPOSAL'
+        status_override = request.query_params.get('status')
+        from apps.integrations.stage_notifications import CustomerStageEmailService
+        preview = CustomerStageEmailService.get_stage_email_preview(
+            record=opp,
+            stage=stage,
+            status_override=status_override
+        )
+        return Response(preview, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='send-stage-email')
+    def send_stage_email(self, request, pk=None):
+        """
+        Manually trigger / resend customer stage notification email for this opportunity.
+        """
+        opp = self.get_object()
+        stage_id = request.data.get('stage_id')
+        stage = None
+        if stage_id:
+            stage = PipelineStage.objects.filter(id=stage_id).first()
+        if not stage:
+            stage = opp.stage or 'OPP_PROPOSAL'
+        custom_subject = request.data.get('subject') or request.data.get('custom_subject')
+        custom_body = request.data.get('body') or request.data.get('custom_body')
+        custom_recipient = request.data.get('recipient_email') or request.data.get('custom_recipient_email')
+        status_override = request.data.get('status')
+
+        from apps.integrations.stage_notifications import CustomerStageEmailService
+        res = CustomerStageEmailService.send_stage_email(
+            record=opp,
+            stage=stage,
+            user=request.user if request.user.is_authenticated else None,
+            custom_subject=custom_subject,
+            custom_body=custom_body,
+            custom_recipient_email=custom_recipient,
+            status_override=status_override
+        )
+        return Response(res, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post', 'patch'], url_path='update-commercials')
     def update_commercials(self, request, pk=None):
@@ -150,41 +233,84 @@ class OpportunityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='mark-won')
     def mark_won(self, request, pk=None):
         opp = self.get_object()
-        opp.status = OpportunityStatus.WON
-        opp.save(update_fields=['status'])
-
-        # Auto-create or promote AccountProduct relationship to CUSTOMER
-        for line in opp.product_lines.all():
-            AccountProduct.objects.update_or_create(
-                account=opp.account,
-                product=line.product,
-                defaults={
-                    'status': AccountProductStatus.CUSTOMER,
-                    'contract_value': line.total_amount,
-                    'arr_mrr': opp.arr_mrr
-                }
+        user = get_request_user(request)
+        try:
+            latest_proposal = opp.proposals.order_by('-version_number', '-created_at').first()
+            opp = ProposalService.mark_opportunity_won(
+                opportunity=opp,
+                final_proposal=latest_proposal,
+                user=user
             )
 
-        return Response({
-            'message': 'Opportunity won. Customer account product relationship established.',
-            'opportunity': OpportunitySerializer(opp).data
-        }, status=status.HTTP_200_OK)
+            # Auto-create or promote AccountProduct relationship to CUSTOMER
+            if opp.product:
+                AccountProduct.objects.update_or_create(
+                    account=opp.account,
+                    product=opp.product,
+                    defaults={
+                        'status': AccountProductStatus.CUSTOMER,
+                        'contract_value': opp.total_contract_value,
+                        'arr_mrr': opp.arr_mrr or opp.arr or opp.total_contract_value
+                    }
+                )
+            for line in opp.product_lines.all():
+                AccountProduct.objects.update_or_create(
+                    account=opp.account,
+                    product=line.product,
+                    defaults={
+                        'status': AccountProductStatus.CUSTOMER,
+                        'contract_value': line.total_amount,
+                        'arr_mrr': opp.arr_mrr
+                    }
+                )
+
+            return Response({
+                'message': 'Opportunity won. Customer account product relationship established.',
+                'opportunity': OpportunitySerializer(opp).data
+            }, status=status.HTTP_200_OK)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='mark-lost')
     def mark_lost(self, request, pk=None):
         opp = self.get_object()
         category = request.data.get('loss_reason_category')
-        notes = request.data.get('loss_reason_notes')
+        notes = request.data.get('loss_reason_notes', '')
+        competitor = request.data.get('competitor', '')
 
         if not category:
             return Response({'error': 'Loss reason category is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        opp.status = OpportunityStatus.LOST
-        opp.loss_reason_category = category
-        opp.loss_reason_notes = notes
-        opp.save(update_fields=['status', 'loss_reason_category', 'loss_reason_notes'])
+        user = get_request_user(request)
+        try:
+            opp = ProposalService.mark_opportunity_lost(
+                opportunity=opp,
+                loss_reason_category=category,
+                loss_reason_notes=notes,
+                competitor=competitor,
+                user=user
+            )
 
-        return Response(OpportunitySerializer(opp).data, status=status.HTTP_200_OK)
+            # Automated Customer Notification Email for Closed Lost
+            try:
+                from apps.integrations.stage_notifications import CustomerStageEmailService
+                CustomerStageEmailService.send_stage_email(
+                    record=opp,
+                    stage='OPP_CLOSED_LOST',
+                    user=user,
+                    status_override='LOST'
+                )
+            except Exception as email_err:
+                import logging
+                logging.getLogger(__name__).warning(f"Opportunity lost customer email failed: {email_err}")
+
+            return Response(OpportunitySerializer(opp).data, status=status.HTTP_200_OK)
+        except ValidationError as ve:
+            return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as ex:
+            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], url_path='to-negotiation')
     def to_negotiation(self, request, pk=None):
@@ -202,8 +328,31 @@ class OpportunityViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_200_OK)
         except ValidationError as ve:
             return Response({'error': str(ve.message if hasattr(ve, 'message') else ve)}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as ex:
-            return Response({'error': str(ex)}, status=status.HTTP_400_BAD_REQUEST)
+    @action(detail=True, methods=['post'], url_path='re-engage')
+    def re_engage(self, request, pk=None):
+        opp = self.get_object()
+        target_stage_code = request.data.get('stage_code', 'OPP_NEGOTIATION')
+        reason = request.data.get('reason', 'Customer requested re-evaluation / competitor contract review.')
+
+        stage = PipelineStage.objects.filter(stage_code__in=[target_stage_code, 'OPP_NEGOTIATION', 'NEGOTIATION']).first()
+        opp.status = OpportunityStatus.OPEN
+        if stage:
+            opp.stage = stage
+        opp.loss_reason_category = None
+        opp.save(update_fields=['status', 'stage', 'loss_reason_category'])
+
+        user = get_request_user(request)
+        StageHistory.objects.create(
+            record_type='OPPORTUNITY',
+            record_id=opp.id,
+            to_stage=stage,
+            transition_reason=f"Opportunity revived from Nurture pool: {reason}",
+            changed_by=user if user and user.is_authenticated else None
+        )
+        return Response({
+            'message': 'Opportunity reopened successfully.',
+            'opportunity': OpportunitySerializer(opp).data
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get', 'post'], url_path='proposals')
     def opportunity_proposals(self, request, pk=None):
@@ -244,17 +393,32 @@ class OpportunityCapabilityViewSet(viewsets.ModelViewSet):
 
 
 class ProposalViewSet(viewsets.ModelViewSet):
-    queryset = Proposal.objects.all().prefetch_related('versions__items')
     serializer_class = ProposalSerializer
     permission_classes = [permissions.AllowAny]
 
+    def get_queryset(self):
+        qs = Proposal.objects.all().prefetch_related('versions__items')
+        user = get_request_user(self.request)
+        if is_sales_staff(user):
+            qs = qs.filter(Q(owner=user) | Q(opportunity__owner=user))
+        opp_id = self.request.query_params.get('opportunity')
+        if opp_id:
+            qs = qs.filter(opportunity_id=opp_id)
+        account_id = self.request.query_params.get('account')
+        if account_id:
+            qs = qs.filter(account_id=account_id)
+        return qs
+
     def create(self, request, *args, **kwargs):
+        user = get_request_user(request)
         opp_id = request.data.get('opportunity')
         if not opp_id:
             return Response({'error': 'Opportunity ID is required to generate a proposal.'}, status=status.HTTP_400_BAD_REQUEST)
         opp = Opportunity.objects.filter(id=opp_id).first()
         if not opp:
             return Response({'error': f'Opportunity {opp_id} not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if is_sales_staff(user) and opp.owner_id != getattr(user, 'id', None):
+            return Response({'error': 'Permission denied. You can only create proposals for your own opportunities.'}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             proposal = ProposalService.create_proposal(
@@ -339,15 +503,18 @@ class ProposalViewSet(viewsets.ModelViewSet):
         if not version:
             return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        user = get_request_user(request)
         try:
             version = ProposalService.approve_proposal(
                 proposal_version=version,
-                user=request.user,
+                user=user,
                 comments=request.data.get('comments', '')
             )
+            # Re-fetch proposal with preloaded relationships to ensure latest status is serialized
+            fresh_proposal = Proposal.objects.prefetch_related('versions__items').get(id=proposal.id)
             return Response({
                 'message': f"Proposal version {version.version_number} approved successfully.",
-                'proposal': ProposalSerializer(proposal).data
+                'proposal': ProposalSerializer(fresh_proposal).data
             }, status=status.HTTP_200_OK)
         except PermissionDenied as pd:
             return Response({'error': str(pd)}, status=status.HTTP_403_FORBIDDEN)
@@ -364,16 +531,18 @@ class ProposalViewSet(viewsets.ModelViewSet):
         if not version:
             return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        user = get_request_user(request)
         reason = request.data.get('rejection_reason')
         try:
             version = ProposalService.reject_proposal(
                 proposal_version=version,
-                user=request.user,
+                user=user,
                 rejection_reason=reason
             )
+            fresh_proposal = Proposal.objects.prefetch_related('versions__items').get(id=proposal.id)
             return Response({
                 'message': f"Proposal version {version.version_number} rejected.",
-                'proposal': ProposalSerializer(proposal).data
+                'proposal': ProposalSerializer(fresh_proposal).data
             }, status=status.HTTP_200_OK)
         except PermissionDenied as pd:
             return Response({'error': str(pd)}, status=status.HTTP_403_FORBIDDEN)

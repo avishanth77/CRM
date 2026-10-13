@@ -23,11 +23,12 @@ class ContactSerializer(serializers.ModelSerializer):
 class AccountProductSerializer(serializers.ModelSerializer):
     product_name = serializers.ReadOnlyField(source='product.name')
     product_code = serializers.ReadOnlyField(source='product.code')
+    account_name = serializers.ReadOnlyField(source='account.company_name')
 
     class Meta:
         model = AccountProduct
         fields = [
-            'id', 'account', 'product', 'product_name', 'product_code',
+            'id', 'account', 'account_name', 'product', 'product_name', 'product_code',
             'status', 'contract_value', 'arr_mrr', 'renewal_date', 'health_score'
         ]
 

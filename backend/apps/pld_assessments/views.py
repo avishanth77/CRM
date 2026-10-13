@@ -1,6 +1,8 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db.models import Q
+from apps.authentication.backends import get_request_user, is_sales_staff
 from apps.pld_assessments.models import AccountProductAssessment, ScoreAssessment, ScoreClassification
 from apps.pld_assessments.serializers import AccountProductAssessmentSerializer, ScoreAssessmentSerializer
 from apps.pld_engine.services import PLDScoreCalculator
@@ -16,6 +18,10 @@ class AccountProductAssessmentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        user = get_request_user(self.request)
+        if is_sales_staff(user):
+            qs = qs.filter(Q(lead__owner=user) | Q(assessed_by=user))
+
         account_id = self.request.query_params.get('account')
         lead_id = self.request.query_params.get('lead')
         product_id = self.request.query_params.get('product')

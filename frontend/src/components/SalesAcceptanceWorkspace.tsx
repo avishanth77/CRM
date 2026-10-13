@@ -4,6 +4,7 @@ import {
   ShieldCheck, RefreshCw, ExternalLink, CheckSquare, AlertCircle
 } from 'lucide-react';
 import { api } from '../services/api';
+import { Modal } from './common/Modal';
 import type { SQLHandoff } from '../services/api';
 
 interface SalesAcceptanceWorkspaceProps {
@@ -68,16 +69,17 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
     setFeedbackMsg(null);
     try {
       const res = await api.acceptSQLHandoff(selectedHandoff.id);
+      setSelectedHandoff(res.handoff);
       setFeedbackMsg({
         type: 'success',
         text: `SQL Handoff accepted! Commercial Opportunity #${res.opportunity_id.substring(0, 8)} created successfully.`
       });
       await fetchHandoffs();
-      if (res.opportunity_id && onNavigateToOpportunity) {
-        // Optional quick prompt
+      if (onNavigateToOpportunity) {
+        onNavigateToOpportunity(res.opportunity_id);
       }
     } catch (err: any) {
-      setFeedbackMsg({ type: 'error', text: err?.message || 'Failed to accept SQL handoff.' });
+      setFeedbackMsg({ type: 'error', text: err?.error || err?.message || 'Failed to accept SQL handoff.' });
     } finally {
       setAccepting(false);
     }
@@ -86,17 +88,17 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
   const handleReject = async () => {
     if (!selectedHandoff) return;
     if (!rejectionReason.trim()) {
-      setFeedbackMsg({ type: 'error', text: 'Rejection reason is mandatory when declining an SQL handoff.' });
+      setFeedbackMsg({ type: 'error', text: 'A documented rejection reason is mandatory.' });
       return;
     }
     setRejecting(true);
     setFeedbackMsg(null);
     try {
-      await api.rejectSQLHandoff(selectedHandoff.id, rejectionReason.trim(), returnTarget);
-      setFeedbackMsg({
-        type: 'success',
-        text: `SQL Handoff rejected and returned to ${returnTarget}. Lead updated with audit trail.`
+      await api.rejectSQLHandoff(selectedHandoff.id, {
+        rejection_reason: rejectionReason.trim(),
+        return_to_stage: returnTarget
       });
+      setFeedbackMsg({ type: 'success', text: `SQL Handoff rejected and lead rerouted to ${returnTarget}.` });
       setShowRejectModal(false);
       setRejectionReason('');
       await fetchHandoffs();
@@ -113,67 +115,87 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
   });
 
   return (
-    <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              Sales Acceptance Review Workspace
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Review qualified SQL handoffs from PLD, monitor SLAs, and accept or reject with full governance.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">
-            {(['PENDING', 'ACCEPTED', 'REJECTED', 'ALL'] as const).map((st) => (
-              <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 rounded-lg transition-colors ${
-                  statusFilter === st
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                {st}
-              </button>
-            ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Top Header Banner */}
+      <div className="glass-panel" style={{ padding: '24px', borderLeft: '4px solid var(--success)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ padding: '10px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ShieldCheck size={28} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+                  Sales Acceptance Review Workspace
+                </h1>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '4px 0 0' }}>
+                Review qualified SQL handoffs from PLD, monitor SLAs, and accept or reject with full governance.
+              </p>
+            </div>
           </div>
 
-          <button
-            onClick={fetchHandoffs}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Refresh Queue"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', background: 'var(--bg-surface)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-subtle)', gap: '4px' }}>
+              {(['PENDING', 'ACCEPTED', 'REJECTED', 'ALL'] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setStatusFilter(st)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: statusFilter === st ? 'var(--primary)' : 'transparent',
+                    color: statusFilter === st ? '#FFFFFF' : 'var(--text-secondary)',
+                    border: 'none',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={fetchHandoffs}
+              className="btn btn-secondary"
+              style={{ padding: '8px 12px' }}
+              title="Refresh Queue"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
       </div>
 
       {feedbackMsg && (
         <div
-          className={`p-4 rounded-xl flex items-start gap-3 text-sm ${
-            feedbackMsg.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-              : 'bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-800'
-          }`}
+          className="glass-panel"
+          style={{
+            padding: '14px 18px',
+            background: feedbackMsg.type === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)',
+            border: `1px solid ${feedbackMsg.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            borderRadius: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}
         >
-          {feedbackMsg.type === 'success' ? (
-            <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" />
-          ) : (
-            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-red-600" />
-          )}
-          <div className="flex-1 font-medium">{feedbackMsg.text}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {feedbackMsg.type === 'success' ? (
+              <CheckCircle2 size={18} color="var(--success)" />
+            ) : (
+              <AlertCircle size={18} color="var(--danger)" />
+            )}
+            <span style={{ fontSize: '0.88rem', fontWeight: 600, color: feedbackMsg.type === 'success' ? 'var(--success)' : 'var(--danger)' }}>
+              {feedbackMsg.text}
+            </span>
+          </div>
           <button
             onClick={() => setFeedbackMsg(null)}
-            className="text-xs font-semibold hover:underline opacity-70"
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
           >
             Dismiss
           </button>
@@ -181,18 +203,18 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
       )}
 
       {/* Main Grid: Queue on left (1 col), Detail on right (2 cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px' }}>
         {/* Queue List */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em', margin: 0 }}>
               Handoff Queue ({filteredHandoffs.length})
             </h3>
           </div>
 
-          <div className="space-y-2.5 max-h-[750px] overflow-y-auto pr-1">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '750px', overflowY: 'auto' }}>
             {filteredHandoffs.length === 0 ? (
-              <div className="p-8 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
+              <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                 No SQL handoffs match the selected filter.
               </div>
             ) : (
@@ -202,46 +224,54 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
                   <div
                     key={h.id}
                     onClick={() => setSelectedHandoff(h)}
-                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-500 shadow-sm'
-                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                    }`}
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: '10px',
+                      background: isSelected ? 'var(--bg-surface-elevated)' : 'var(--bg-surface)',
+                      border: isSelected ? '1.5px solid var(--primary)' : '1px solid var(--border-subtle)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                       <div>
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                          <Building2 className="w-3.5 h-3.5 text-indigo-500" />
+                        <h4 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Building2 size={14} color="var(--primary)" />
                           {h.company_name}
                         </h4>
-                        <span className="text-xs text-slate-500 block mt-0.5">
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
                           {h.product_name}
                         </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                        className={`badge ${
                           h.status === 'ACCEPTED'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            ? 'badge-success'
                             : h.status === 'REJECTED'
-                            ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
-                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                            ? 'badge-danger'
+                            : 'badge-warning'
                         }`}
+                        style={{ fontSize: '0.65rem' }}
                       >
                         {h.status}
                       </span>
                     </div>
 
-                    <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-900 dark:text-slate-100">
-                        {h.estimated_value} {h.currency}
+                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                      <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {Number(h.estimated_value).toLocaleString()} {h.currency}
                       </span>
                       {h.status === 'PENDING' && (
                         <span
-                          className={`font-semibold flex items-center gap-1 text-[11px] ${
-                            h.is_sla_overdue ? 'text-red-600 font-bold' : 'text-slate-500'
-                          }`}
+                          style={{
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            color: h.is_sla_overdue ? 'var(--danger)' : 'var(--text-muted)'
+                          }}
                         >
-                          <Clock className="w-3 h-3" />
+                          <Clock size={12} />
                           {h.is_sla_overdue ? 'SLA OVERDUE' : `${h.sla_remaining_hours}h left`}
                         </span>
                       )}
@@ -254,75 +284,81 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
         </div>
 
         {/* Selected Handoff Review (2 cols) */}
-        <div className="lg:col-span-2">
+        <div>
           {selectedHandoff ? (
-            <div className="space-y-6">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Context Header */}
-              <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', paddingBottom: '14px', borderBottom: '1px solid var(--border-subtle)' }}>
                   <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
+                    <span style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--primary)', letterSpacing: '0.04em', display: 'block' }}>
                       SQL HANDOFF RECORD #{selectedHandoff.id.substring(0, 8)}
                     </span>
-                    <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100 mt-1">
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text-primary)', margin: '4px 0 2px' }}>
                       {selectedHandoff.company_name}
                     </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
                       Submitted on {new Date(selectedHandoff.created_at).toLocaleDateString()} by{' '}
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                         {selectedHandoff.pld_executive_name || 'PLD Executive'}
                       </span>
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     {onNavigateToLead && (
                       <button
                         onClick={() => onNavigateToLead(selectedHandoff.lead)}
-                        className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.78rem' }}
                       >
                         View Lead
-                        <ExternalLink className="w-3.5 h-3.5" />
+                        <ExternalLink size={13} />
                       </button>
                     )}
                     {selectedHandoff.opportunity_id && onNavigateToOpportunity && (
                       <button
                         onClick={() => onNavigateToOpportunity(selectedHandoff.opportunity_id!)}
-                        className="px-4 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold text-xs hover:bg-indigo-100 transition-colors flex items-center gap-1.5"
+                        className="btn btn-primary"
+                        style={{ fontSize: '0.78rem' }}
                       >
                         Open Opportunity
-                        <ExternalLink className="w-3.5 h-3.5" />
+                        <ExternalLink size={13} />
                       </button>
                     )}
                   </div>
                 </div>
 
                 {/* Key Metrics Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400 block font-medium">ESTIMATED VALUE</span>
-                    <span className="text-slate-900 dark:text-slate-100 font-black text-base mt-0.5 block">
-                      {selectedHandoff.estimated_value} {selectedHandoff.currency}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                  <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>ESTIMATED VALUE</span>
+                    <span style={{ fontSize: '1.15rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: '2px', display: 'block' }}>
+                      {Number(selectedHandoff.estimated_value).toLocaleString()} {selectedHandoff.currency}
                     </span>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400 block font-medium">PRODUCT</span>
-                    <span className="text-slate-900 dark:text-slate-100 font-bold text-sm mt-0.5 block">
+                  <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>PRODUCT</span>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary)', marginTop: '2px', display: 'block' }}>
                       {selectedHandoff.product_name}
                     </span>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400 block font-medium">ASSIGNED SALES OWNER</span>
-                    <span className="text-slate-900 dark:text-slate-100 font-semibold text-sm mt-0.5 block">
+                  <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>SALES OWNER</span>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px', display: 'block' }}>
                       {selectedHandoff.sales_owner_name || 'Pending Acceptance'}
                     </span>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400 block font-medium">SLA DEADLINE</span>
+                  <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>SLA DEADLINE</span>
                     <span
-                      className={`font-bold text-sm mt-0.5 block ${
-                        selectedHandoff.is_sla_overdue ? 'text-red-600' : 'text-emerald-600'
-                      }`}
+                      style={{
+                        fontSize: '0.9rem',
+                        fontWeight: 800,
+                        marginTop: '2px',
+                        display: 'block',
+                        color: selectedHandoff.is_sla_overdue ? 'var(--danger)' : 'var(--success)'
+                      }}
                     >
                       {selectedHandoff.is_sla_overdue
                         ? 'OVERDUE'
@@ -333,13 +369,13 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
 
                 {/* Authorized Override Notice if applied */}
                 {selectedHandoff.is_override && (
-                  <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div style={{ padding: '12px 16px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '0.78rem', color: '#FDE68A', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <AlertTriangle size={16} color="var(--warning)" style={{ flexShrink: 0, marginTop: '2px' }} />
                     <div>
-                      <span className="font-bold">Authorized Override Applied at Submission:</span>
-                      <p className="mt-0.5">{selectedHandoff.override_reason}</p>
+                      <span style={{ fontWeight: 800 }}>Authorized Override Applied at Submission:</span>
+                      <p style={{ margin: '2px 0 0' }}>{selectedHandoff.override_reason}</p>
                       {selectedHandoff.override_approved_by_name && (
-                        <span className="text-[11px] text-amber-700 dark:text-amber-400 block mt-1">
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
                           Approved by {selectedHandoff.override_approved_by_name}
                         </span>
                       )}
@@ -349,51 +385,64 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
               </div>
 
               {/* Qualification Evidence Snapshot */}
-              <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <CheckSquare className="w-4 h-4 text-indigo-500" />
+              <div className="glass-panel" style={{ padding: '24px' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 16px' }}>
+                  <CheckSquare size={16} color="var(--primary)" />
                   Verified Qualification Evidence (What We Know)
                 </h3>
 
                 {selectedHandoff.qualification_evidence?.what_we_know &&
                 selectedHandoff.qualification_evidence.what_we_know.length > 0 ? (
-                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
                     {selectedHandoff.qualification_evidence.what_we_know.map((item, idx) => (
-                      <li
+                      <div
                         key={idx}
-                        className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-xs text-slate-800 dark:text-slate-200 flex items-start gap-2"
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                          fontSize: '0.78rem',
+                          color: 'var(--text-primary)',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '8px'
+                        }}
                       >
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                        <CheckCircle2 size={15} color="var(--success)" style={{ flexShrink: 0, marginTop: '2px' }} />
                         <span>{item}</span>
-                      </li>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 ) : (
-                  <p className="text-xs text-slate-400 italic">No evidence summary available.</p>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>No evidence summary available.</p>
                 )}
 
                 {/* Gate Audit Breakdown */}
                 {Array.isArray(selectedHandoff.gate_audit_results) && (
-                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em', display: 'block', marginBottom: '10px' }}>
                       9-Gate Snapshot Results
                     </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
                       {selectedHandoff.gate_audit_results.map((g: any, i: number) => (
                         <div
                           key={i}
-                          className="p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 flex items-center justify-between"
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: 'var(--bg-surface)',
+                            border: '1px solid var(--border-subtle)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontSize: '0.78rem'
+                          }}
                         >
-                          <span className="font-medium text-slate-700 dark:text-slate-300 truncate mr-2">
+                          <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
                             {g.name}
                           </span>
-                          <span
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                              g.status === 'PASS'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
+                          <span className={g.status === 'PASS' ? 'badge badge-success' : 'badge badge-warning'} style={{ fontSize: '0.65rem' }}>
                             {g.status}
                           </span>
                         </div>
@@ -405,47 +454,67 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
 
               {/* Sales Decision Panel (Only active if PENDING) */}
               {selectedHandoff.status === 'PENDING' ? (
-                <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white shadow-xl space-y-4">
-                  <div>
-                    <h3 className="text-lg font-bold">Sales Acceptance Decision</h3>
-                    <p className="text-xs text-slate-300 mt-1">
-                      Accepting this handoff confirms Sales ownership, converts the lead, and creates the commercial Opportunity with all carried-forward technical context.
-                    </p>
-                  </div>
+                <div
+                  className="glass-panel"
+                  style={{
+                    padding: '24px',
+                    borderRadius: '14px',
+                    background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, var(--bg-surface-elevated) 100%)',
+                    border: '1px solid var(--border-subtle)'
+                  }}
+                >
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>
+                    Sales Acceptance Decision
+                  </h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 16px' }}>
+                    Accepting this handoff confirms Sales ownership, converts the lead, and creates the commercial Opportunity with all carried-forward technical context.
+                  </p>
 
-                  <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                     <button
                       onClick={handleAccept}
                       disabled={accepting}
-                      className="w-full sm:w-auto px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-sm transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2"
+                      className="btn btn-primary"
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '0.88rem',
+                        background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                        boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
+                      }}
                     >
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 size={16} />
                       {accepting ? 'Accepting & Converting...' : 'ACCEPT SQL & CREATE OPPORTUNITY'}
                     </button>
 
                     <button
                       onClick={() => setShowRejectModal(true)}
-                      className="w-full sm:w-auto px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-red-300 font-semibold text-sm transition-all border border-red-500/30 flex items-center justify-center gap-2"
+                      className="btn btn-secondary"
+                      style={{
+                        padding: '12px 20px',
+                        fontSize: '0.88rem',
+                        color: 'var(--danger)',
+                        borderColor: 'rgba(239, 68, 68, 0.3)'
+                      }}
                     >
-                      <XCircle className="w-4 h-4 text-red-400" />
+                      <XCircle size={16} />
                       REJECT SQL HANDOFF
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-xs flex items-center justify-between">
-                  <span className="text-slate-500">
+                <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>
                     Decision concluded on{' '}
                     {selectedHandoff.decision_date
                       ? new Date(selectedHandoff.decision_date).toLocaleString()
                       : 'N/A'}{' '}
                     — Status:{' '}
-                    <strong className="text-slate-900 dark:text-slate-100">
+                    <strong style={{ color: selectedHandoff.status === 'ACCEPTED' ? 'var(--success)' : 'var(--danger)' }}>
                       {selectedHandoff.status}
                     </strong>
                   </span>
                   {selectedHandoff.rejection_reason && (
-                    <span className="text-red-600 font-medium">
+                    <span style={{ color: 'var(--danger)', fontWeight: 600 }}>
                       Reason: {selectedHandoff.rejection_reason}
                     </span>
                   )}
@@ -453,7 +522,7 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
               )}
             </div>
           ) : (
-            <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 text-sm">
+            <div className="glass-panel" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
               Select an SQL Handoff from the queue to review commercial qualification details.
             </div>
           )}
@@ -461,69 +530,75 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
       </div>
 
       {/* Sales Rejection Modal */}
-      {showRejectModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-red-300 dark:border-red-900 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="p-2.5 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600">
-                <XCircle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                  Reject SQL Handoff
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Sales rejection requires an auditable reason and routing target.
-                </p>
-              </div>
-            </div>
+      <Modal
+        isOpen={showRejectModal}
+        onClose={() => setShowRejectModal(false)}
+        title="Reject SQL Handoff"
+        subtitle="Sales rejection requires an auditable reason and routing target."
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <XCircle size={20} />
+          </div>
+        }
+        maxWidth="500px"
+        accentGradient="linear-gradient(90deg, #EF4444 0%, #DC2626 100%)"
+        footer={
+          <>
+            <button
+              onClick={() => setShowRejectModal(false)}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.82rem' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleReject}
+              disabled={rejecting || !rejectionReason.trim()}
+              className="btn btn-primary"
+              style={{
+                fontSize: '0.82rem',
+                background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                boxShadow: '0 2px 10px rgba(239, 68, 68, 0.3)',
+                border: 'none',
+              }}
+            >
+              {rejecting ? 'Recording Rejection...' : 'Confirm Rejection'}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              Mandatory Rejection Reason *
+            </label>
+            <textarea
+              rows={4}
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="e.g., Economic decision maker deferred project indefinitely; fleet size is under target qualification threshold."
+              className="form-textarea"
+              style={{ width: '100%', fontSize: '0.82rem' }}
+            />
+          </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                Mandatory Rejection Reason *
-              </label>
-              <textarea
-                rows={3}
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="e.g., Economic decision maker deferred project indefinitely; fleet size is under target qualification threshold."
-                className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                Return Pursuit To Stage:
-              </label>
-              <select
-                value={returnTarget}
-                onChange={(e: any) => setReturnTarget(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="NURTURE">Nurture Pipeline (Deferred timeline / inactive)</option>
-                <option value="DISCOVERY">Technical Discovery (Requires problem refinement)</option>
-                <option value="PLD">PLD Qualification (Requires further prospecting)</option>
-              </select>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                onClick={() => setShowRejectModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={rejecting || !rejectionReason.trim()}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors shadow-lg shadow-red-600/20"
-              >
-                {rejecting ? 'Recording Rejection...' : 'Confirm Rejection'}
-              </button>
-            </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              Return Pursuit To Stage:
+            </label>
+            <select
+              value={returnTarget}
+              onChange={(e: any) => setReturnTarget(e.target.value)}
+              className="form-select"
+              style={{ width: '100%', fontSize: '0.82rem' }}
+            >
+              <option value="NURTURE">Nurture Pipeline (Deferred timeline / inactive)</option>
+              <option value="DISCOVERY">Technical Discovery (Requires problem refinement)</option>
+              <option value="PLD">PLD Qualification (Requires further prospecting)</option>
+            </select>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };
