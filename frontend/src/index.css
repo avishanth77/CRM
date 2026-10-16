@@ -476,11 +476,11 @@ body.modal-open {
 .modal-overlay,
 .modal-backdrop,
 div[data-modal-overlay="true"],
-div[style*="position: fixed"][style*="inset: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-div[style*="position: fixed"][style*="inset: 0px"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-div[style*="position: 'fixed'"][style*="inset: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-div[style*="position: fixed"][style*="top: 0"][style*="bottom: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-div[style*="position: 'fixed'"][style*="top: 0"][style*="bottom: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) {
+div[style*="position: fixed"][style*="inset: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+div[style*="position: fixed"][style*="inset: 0px"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+div[style*="position: 'fixed'"][style*="inset: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+div[style*="position: fixed"][style*="top: 0"][style*="bottom: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+div[style*="position: 'fixed'"][style*="top: 0"][style*="bottom: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) {
   position: fixed !important;
   inset: 0 !important;
   top: 0 !important;
@@ -508,11 +508,11 @@ div[style*="position: 'fixed'"][style*="top: 0"][style*="bottom: 0"]:not(.in-app
 [data-theme="dark"] .modal-overlay,
 [data-theme="dark"] .modal-backdrop,
 [data-theme="dark"] div[data-modal-overlay="true"],
-[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0px"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-[data-theme="dark"] div[style*="position: 'fixed'"][style*="inset: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-[data-theme="dark"] div[style*="position: fixed"][style*="top: 0"][style*="bottom: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
-[data-theme="dark"] div[style*="position: 'fixed'"][style*="top: 0"][style*="bottom: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) {
+[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0px"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+[data-theme="dark"] div[style*="position: 'fixed'"][style*="inset: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+[data-theme="dark"] div[style*="position: fixed"][style*="top: 0"][style*="bottom: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav),
+[data-theme="dark"] div[style*="position: 'fixed'"][style*="top: 0"][style*="bottom: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) {
   background: rgba(4, 7, 16, 0.88) !important;
   backdrop-filter: blur(10px) !important;
   -webkit-backdrop-filter: blur(10px) !important;
@@ -523,8 +523,8 @@ div[style*="position: 'fixed'"][style*="top: 0"][style*="bottom: 0"]:not(.in-app
 .modal-overlay > div,
 .modal-backdrop > div,
 div[data-modal-overlay="true"] > div,
-div[style*="position: fixed"][style*="inset: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel,
-div[style*="position: fixed"][style*="inset: 0px"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel {
+div[style*="position: fixed"][style*="inset: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel,
+div[style*="position: fixed"][style*="inset: 0px"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel {
   background: var(--bg-surface, #FFFFFF) !important;
   border: 1px solid var(--border-subtle, #E2E8F0) !important;
   border-radius: 16px !important;
@@ -544,8 +544,8 @@ div[style*="position: fixed"][style*="inset: 0px"]:not(.in-app-alert-container):
 [data-theme="dark"] .modal-overlay > div,
 [data-theme="dark"] .modal-backdrop > div,
 [data-theme="dark"] div[data-modal-overlay="true"] > div,
-[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel,
-[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0px"]:not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel {
+[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel,
+[data-theme="dark"] div[style*="position: fixed"][style*="inset: 0px"]:not(.print-invoice-modal-overlay):not(.in-app-alert-container):not(.in-app-alert-item):not(aside):not(header):not(nav) > .glass-panel {
   background: #111726 !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 35px rgba(99, 102, 241, 0.2) !important;

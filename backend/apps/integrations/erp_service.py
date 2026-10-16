@@ -22,9 +22,9 @@ class ERPSyncService:
             'industry': account.industry,
             'country': account.country,
             'city': account.city,
-            'employee_count': account.employee_count,
-            'annual_revenue': float(account.annual_revenue) if account.annual_revenue else 0.0,
-            'lifecycle_stage': account.account_stage,
+            'employee_count': getattr(account, 'employees_count', 0),
+            'annual_revenue': float(getattr(account, 'annual_revenue', 0.0) or 0.0),
+            'lifecycle_stage': getattr(account, 'account_type', 'PROSPECT'),
             'currency': 'SAR',
             'payment_terms': 'NET30',
             'sync_timestamp': timezone.now().isoformat()

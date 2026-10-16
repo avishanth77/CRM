@@ -3,12 +3,12 @@ import {
   FileText, CheckCircle2, Clock, ShieldCheck, AlertCircle,
   Plus, X, RefreshCw, Send,
   TrendingUp, Building, ArrowRight,
-  Sliders, History, Printer
+  Sliders, History, Printer, Edit3
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Modal } from './common/Modal';
 import { CommercialInvoiceModal } from './CommercialInvoiceModal';
-import type { Proposal, ProposalVersion, Opportunity, ApprovalRule } from '../services/api';
+import type { Proposal, ProposalVersion, Opportunity, ApprovalRule, ProposalItem } from '../services/api';
 
 interface ProposalWorkspaceProps {
   initialOpportunityId?: string;
@@ -86,6 +86,15 @@ export const ProposalWorkspace: React.FC<ProposalWorkspaceProps> = ({
   const [ruleThreshold, setRuleThreshold] = useState(15);
   const [ruleRole, setRuleRole] = useState('SALES_MANAGER');
   const [savingRule, setSavingRule] = useState(false);
+
+  // Edit Line Item Modal
+  const [editingItem, setEditingItem] = useState<ProposalItem | null>(null);
+  const [editItemQty, setEditItemQty] = useState<number>(1);
+  const [editItemUnitPrice, setEditItemUnitPrice] = useState<number | ''>('');
+  const [editItemDiscountPct, setEditItemDiscountPct] = useState<number>(0);
+  const [editItemDescription, setEditItemDescription] = useState<string>('');
+  const [savingItem, setSavingItem] = useState(false);
+  const [syncingSeats, setSyncingSeats] = useState(false);
 
   // Initial Data Loading
   const loadWorkspaceData = async () => {
@@ -219,6 +228,59 @@ export const ProposalWorkspace: React.FC<ProposalWorkspaceProps> = ({
       notifyUser('error', err?.message || 'Failed to create new proposal version.');
     } finally {
       setCreatingVersion(false);
+    }
+  };
+
+  // Sync seats with Opportunity
+  const handleSyncSeats = async () => {
+    if (!selectedProposal || !selectedVersion) return;
+    const opp = opportunities.find(o => o.id === selectedProposal.opportunity);
+    if (!opp?.seat_units_count) return;
+    setSyncingSeats(true);
+    try {
+      const res = await api.syncProposalSeats(selectedProposal.id, {
+        version_number: selectedVersion.version_number,
+        quantity: opp.seat_units_count
+      });
+      notifyUser('success', res.message || `Successfully synced to ${opp.seat_units_count} seats.`);
+      await loadWorkspaceData();
+      selectProposalRecord(res.proposal, selectedVersion.version_number);
+    } catch (err: any) {
+      notifyUser('error', err?.message || 'Failed to sync seats with opportunity.');
+    } finally {
+      setSyncingSeats(false);
+    }
+  };
+
+  // Open Edit Line Item Modal
+  const handleOpenEditItem = (item: ProposalItem) => {
+    setEditingItem(item);
+    setEditItemQty(item.quantity);
+    setEditItemUnitPrice(Number(item.unit_price));
+    setEditItemDiscountPct(Number(item.discount_pct || 0));
+    setEditItemDescription(item.description || '');
+  };
+
+  // Save Line Item Updates
+  const handleSaveItem = async () => {
+    if (!editingItem || !selectedProposal) return;
+    setSavingItem(true);
+    try {
+      await api.updateProposalItem(editingItem.id, {
+        quantity: editItemQty,
+        unit_price: editItemUnitPrice !== '' ? Number(editItemUnitPrice) : undefined,
+        discount_pct: editItemDiscountPct,
+        description: editItemDescription
+      });
+      notifyUser('success', 'Line item updated and proposal recalculated successfully.');
+      setEditingItem(null);
+      await loadWorkspaceData();
+      const updatedProp = await api.getProposal(selectedProposal.id);
+      selectProposalRecord(updatedProp, selectedVersion?.version_number);
+    } catch (err: any) {
+      notifyUser('error', err?.message || 'Failed to update line item.');
+    } finally {
+      setSavingItem(false);
     }
   };
 
@@ -551,7 +613,8 @@ export const ProposalWorkspace: React.FC<ProposalWorkspaceProps> = ({
                       setVerTermMonths(selectedVersion.contract_term_months || 12);
                       setVerPaymentTerms(selectedVersion.payment_terms || 'Net 30 Days');
                       const firstItem = selectedVersion.items?.[0];
-                      setVerQuantity(firstItem?.quantity || 1);
+                      const opp = opportunities.find(o => o.id === selectedProposal.opportunity);
+                      setVerQuantity(opp?.seat_units_count || firstItem?.quantity || 1);
                       setVerUnitPrice(firstItem ? Number(firstItem.unit_price) : '');
                       setShowVersionModal(true);
                     }}
@@ -744,10 +807,31 @@ export const ProposalWorkspace: React.FC<ProposalWorkspaceProps> = ({
             {activeTab === 'DETAILS' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div className="glass-panel" style={{ padding: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
-                      Proposal Line Items (Version {selectedVersion.version_number})
-                    </h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                        Proposal Line Items (Version {selectedVersion.version_number})
+                      </h3>
+                      {(() => {
+                        const opp = opportunities.find(o => o.id === selectedProposal.opportunity);
+                        const firstQty = selectedVersion.items?.[0]?.quantity;
+                        if (opp?.seat_units_count && firstQty && firstQty !== opp.seat_units_count) {
+                          return (
+                            <button
+                              className="btn btn-outline"
+                              style={{ fontSize: '0.74rem', padding: '3px 10px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', borderColor: 'var(--primary)', background: 'rgba(59, 130, 246, 0.08)' }}
+                              onClick={handleSyncSeats}
+                              disabled={syncingSeats}
+                              title={`Synchronize line item quantity with Opportunity's ${opp.seat_units_count} seats`}
+                            >
+                              <RefreshCw size={12} className={syncingSeats ? 'animate-spin' : ''} />
+                              Sync with Opportunity ({opp.seat_units_count} Seats)
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                     <button
                       className="btn btn-outline"
                       style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -773,6 +857,7 @@ export const ProposalWorkspace: React.FC<ProposalWorkspaceProps> = ({
                             <th style={{ padding: '10px 12px', textAlign: 'right' }}>Unit Price</th>
                             <th style={{ padding: '10px 12px', textAlign: 'right' }}>Disc %</th>
                             <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'center' }}>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -798,6 +883,17 @@ export const ProposalWorkspace: React.FC<ProposalWorkspaceProps> = ({
                               </td>
                               <td style={{ padding: '12px', textAlign: 'right', fontWeight: 800, color: 'var(--success)' }}>
                                 {selectedVersion.currency} {Number(item.line_total).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'center' }}>
+                                <button
+                                  className="btn btn-outline"
+                                  style={{ padding: '4px 8px', fontSize: '0.74rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                  onClick={() => handleOpenEditItem(item)}
+                                  title="Edit line item quantity and unit price"
+                                >
+                                  <Edit3 size={12} />
+                                  Edit
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1631,6 +1727,94 @@ export const ProposalWorkspace: React.FC<ProposalWorkspaceProps> = ({
             </div>
           </div>
         </div>
+      </Modal>
+
+      {/* Edit Line Item Modal */}
+      <Modal
+        isOpen={!!editingItem}
+        onClose={() => setEditingItem(null)}
+        title="Edit Proposal Line Item"
+        maxWidth="500px"
+      >
+        {editingItem && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.85rem' }}>
+            <div>
+              <label style={{ display: 'block', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>
+                Product / Description
+              </label>
+              <input
+                type="text"
+                value={editItemDescription}
+                onChange={(e) => setEditItemDescription(e.target.value)}
+                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)' }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>
+                  Quantity / Seats *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editItemQty}
+                  onChange={(e) => setEditItemQty(Math.max(1, Number(e.target.value)))}
+                  style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>
+                  Unit Price ({selectedVersion?.currency || 'USD'}) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editItemUnitPrice}
+                  onChange={(e) => setEditItemUnitPrice(e.target.value ? Number(e.target.value) : '')}
+                  style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600, padding: '8px 12px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '6px' }}>
+              Subtotal: {selectedVersion?.currency || 'USD'} {((editItemQty || 0) * (Number(editItemUnitPrice) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+
+            <div>
+              <label style={{ display: 'block', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>
+                Item Discount (%)
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={editItemDiscountPct}
+                onChange={(e) => setEditItemDiscountPct(Number(e.target.value))}
+                style={{ width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text-primary)' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+              <button
+                className="btn btn-outline"
+                onClick={() => setEditingItem(null)}
+                disabled={savingItem}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveItem}
+                disabled={savingItem || editItemQty < 1}
+              >
+                {savingItem ? 'Saving...' : 'Save Line Item'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Final Commercial Invoice Modal (Print Ready) */}

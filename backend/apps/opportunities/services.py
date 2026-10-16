@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from apps.authentication.models import UserRole
 
 User = get_user_model()
 
@@ -109,7 +110,7 @@ class OpportunityService:
             mrr=mrr_val,
             arr_mrr=val,
             pricing_plan="Enterprise Annual Subscription",
-            seat_units_count=int(getattr(latest_poc, 'users_count', 1) or 1) if latest_poc else 1,
+            seat_units_count=int(getattr(handoff, 'target_seats', None) or getattr(latest_poc, 'users_count', None) or 1),
             contract_term_months=contract_term,
             currency=handoff.currency or 'USD',
             probability_pct=50,
@@ -355,7 +356,29 @@ class OpportunityService:
                     changes_json=changes
                 )
 
+            if 'seat_units_count' in changes:
+                cls.sync_opportunity_proposals_to_seats(opportunity)
+
         return opportunity
+
+    @classmethod
+    def sync_opportunity_proposals_to_seats(cls, opportunity):
+        """
+        Synchronizes all proposals for this opportunity so that primary subscription
+        line items reflect the updated opportunity.seat_units_count.
+        """
+        new_seats = opportunity.seat_units_count or 1
+        for prop in opportunity.proposals.all():
+            for v in prop.versions.all():
+                items = list(v.items.all())
+                if len(items) == 1:
+                    it = items[0]
+                    it.quantity = new_seats
+                    if v.gross_amount > 0:
+                        it.unit_price = (v.gross_amount / Decimal(str(new_seats))).quantize(Decimal('0.01'))
+                    it.calculate_line_total()
+                    it.save()
+                    ProposalService.recalculate_version_totals(v)
 
 
 class ProposalService:
@@ -396,11 +419,45 @@ class ProposalService:
                     if proposal_version.discount_pct > 0 or proposal_version.contract_term_months > 24:
                         return True, rule, f"Commercial term exception triggered under rule '{rule.rule_name}'."
         else:
-            # Default fallback governance: discount >= 15% requires approval
-            if proposal_version.discount_pct >= Decimal('15.00'):
-                return True, None, f"Discount of {proposal_version.discount_pct}% exceeds default threshold (15%)."
+            # Section 9.5: Sales BDM self-approves up to 15.00%. Over 15.00% requires formal approval workflow.
+            if proposal_version.discount_pct > Decimal('15.00'):
+                return True, None, f"Discount of {proposal_version.discount_pct}% exceeds self-approval threshold (15.00%)."
 
         return False, None, ""
+
+    @classmethod
+    def recalculate_version_totals(cls, version):
+        """
+        Recalculates gross, discount, tax, and net amounts for a proposal version,
+        and syncs the parent proposal envelope if this is the active version.
+        """
+        gross = sum(i.line_total for i in version.items.all())
+        discount_pct = version.discount_pct or Decimal('0.00')
+        tax_pct = version.tax_pct or Decimal('0.00')
+
+        if discount_pct > 0:
+            disc_amt = (gross * (discount_pct / Decimal('100'))).quantize(Decimal('0.01'))
+        else:
+            disc_amt = (version.discount_amount or Decimal('0.00')).quantize(Decimal('0.01'))
+        tax_amt = (((gross - disc_amt) * (tax_pct / Decimal('100')))).quantize(Decimal('0.01'))
+        net = max(Decimal('0.00'), (gross - disc_amt + tax_amt)).quantize(Decimal('0.01'))
+
+        version.gross_amount = gross
+        version.discount_amount = disc_amt
+        version.tax_amount = tax_amt
+        version.net_amount = net
+        version.save(update_fields=['gross_amount', 'discount_amount', 'tax_amount', 'net_amount'])
+
+        proposal = version.proposal
+        if version.version_number == proposal.version_number:
+            proposal.gross_amount = version.gross_amount
+            proposal.discount_pct = version.discount_pct
+            proposal.discount_amount = version.discount_amount
+            proposal.tax_pct = version.tax_pct
+            proposal.tax_amount = version.tax_amount
+            proposal.net_amount = version.net_amount
+            proposal.save(update_fields=['gross_amount', 'discount_pct', 'discount_amount', 'tax_pct', 'tax_amount', 'net_amount'])
+        return version
 
     @classmethod
     @transaction.atomic
@@ -768,20 +825,47 @@ class ProposalService:
     @transaction.atomic
     def approve_proposal(cls, proposal_version, user=None, comments=""):
         """
-        Approves a proposal version. Enforces RBAC permissions with graceful fallback.
+        Approves a proposal version according to Section 9.5 Discount Governance Matrix:
+        - <= 15.00%: Self-Approved by Sales BDM / AE (or higher)
+        - 15.01% - 25.00%: Approved by Sales Manager, Management, or Platform Admin
+        - > 25.00%: Executive Discretionary Authority (TEXOL Management or Platform Admin) with mandatory justification
+        - Deals >= $100,000 or non-standard payment terms: Flagged for Finance review
         """
-        if not user or not getattr(user, 'is_authenticated', True):
-            user = User.objects.filter(Q(is_superuser=True) | Q(role__in=['ADMIN', 'SALES_MANAGER', 'MANAGEMENT'])).first()
+        if not user or not getattr(user, 'is_authenticated', False):
+            raise PermissionDenied("Authentication required to approve commercial proposals.")
 
-        is_approver = (
-            user and (
-                user.is_superuser or
-                user.is_staff or
-                getattr(user, 'role', '') in ['ADMIN', 'SALES_MANAGER', 'VP_SALES', 'FINANCE_HEAD', 'MANAGEMENT']
-            )
-        )
-        if not is_approver:
-            raise PermissionDenied("Unauthorized: Only Sales Management or System Administrators can approve commercial proposals.")
+        canonical_role = getattr(user, 'canonical_role', str(getattr(user, 'role', '') or '')).upper()
+        discount_pct = proposal_version.discount_pct or Decimal('0.00')
+        net_amount = proposal_version.net_amount or Decimal('0.00')
+
+        # Threshold 1: <= 15.00%
+        if discount_pct <= Decimal('15.00'):
+            allowed_roles = [UserRole.SALES_BDM, UserRole.SALES_MANAGER, UserRole.MANAGEMENT, UserRole.ADMIN]
+            if not (user.is_superuser or canonical_role in allowed_roles):
+                raise PermissionDenied("Unauthorized: Role lacks authority to approve commercial discounts.")
+
+        # Threshold 2: 15.01% - 25.00%
+        elif discount_pct <= Decimal('25.00'):
+            allowed_roles = [UserRole.SALES_MANAGER, UserRole.MANAGEMENT, UserRole.ADMIN]
+            if not (user.is_superuser or canonical_role in allowed_roles):
+                raise PermissionDenied(
+                    f"Unauthorized: Discounts between 15.01% and 25.00% (requested: {discount_pct}%) "
+                    "require approval by a Sales Manager, TEXOL Management, or Platform Administrator."
+                )
+
+        # Threshold 3: > 25.00% (Executive Approval with Mandatory Justification)
+        else:
+            allowed_roles = [UserRole.MANAGEMENT, UserRole.ADMIN]
+            if not (user.is_superuser or canonical_role in allowed_roles):
+                raise PermissionDenied(
+                    f"Unauthorized: Discounts exceeding 25.00% (requested: {discount_pct}%) "
+                    "require Executive Approval by TEXOL Management or Platform Administrator."
+                )
+            if not comments or not str(comments).strip():
+                raise ValidationError("Executive justification is mandatory when approving discounts exceeding 25.00%.")
+
+        # Threshold 4: Deals >= $100,000 or non-standard payment terms
+        finance_review_required = (net_amount >= Decimal('100000.00')) or (proposal_version.payment_terms != 'Net 30 Days')
 
         approval = proposal_version.approval_request
         if approval:
@@ -793,34 +877,36 @@ class ProposalService:
 
         proposal_version.status = ProposalStatus.APPROVED
         proposal_version.approved_at = timezone.now()
-        proposal_version.save(update_fields=['status', 'approved_at'])
+        proposal_version.approval_required_flag = False
+        proposal_version.save(update_fields=['status', 'approved_at', 'approval_required_flag'])
 
         proposal = proposal_version.proposal
         if proposal.version_number == proposal_version.version_number:
             proposal.status = ProposalStatus.APPROVED
             proposal.approved_at = timezone.now()
-            proposal.save(update_fields=['status', 'approved_at'])
-
-        actor = user if (user and hasattr(user, 'id')) else None
-        actor_email = getattr(user, 'email', 'admin@texol.com') if user else 'admin@texol.com'
-        actor_role = getattr(user, 'role', 'ADMIN') if user else 'ADMIN'
+            proposal.approval_required_flag = False
+            proposal.save(update_fields=['status', 'approved_at', 'approval_required_flag'])
 
         AuditLog.objects.create(
-            actor=actor,
-            actor_email=actor_email,
-            actor_role=actor_role,
-            action=AuditAction.PROPOSAL_APPROVE,
+            actor=user,
+            actor_email=user.email,
+            actor_role=canonical_role,
+            action=AuditAction.DISCOUNT_APPROVE if discount_pct > 0 else AuditAction.PROPOSAL_APPROVE,
             entity_type='ProposalVersion',
             entity_id=proposal_version.id,
             changes_json={
                 'proposal_number': proposal.proposal_number,
                 'version': proposal_version.version_number,
+                'discount_pct': str(discount_pct),
+                'net_amount': str(net_amount),
+                'finance_review_flag': finance_review_required,
                 'decision': 'APPROVED',
                 'comments': comments
             }
         )
 
         return proposal_version
+
 
     @classmethod
     @transaction.atomic

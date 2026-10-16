@@ -87,11 +87,36 @@ class BaseAdapter:
 
 class EmailNotificationAdapter(BaseAdapter):
     """
-    Standard Email adapter supporting Mock and pluggable SMTP/SES.
+    Standard Email adapter supporting real SMTP / console delivery.
     """
     def send(self, recipient: str, template: Dict[str, Any], context: Dict[str, Any], lead=None, account=None) -> CommunicationMessage:
+        from django.core.mail import send_mail
+        from django.conf import settings
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         subject = template['subject'].format(**context)
         body = template['email_body'].format(**context)
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'notifications@texol.com')
+
+        comm_status = CommStatus.DELIVERED
+        error_msg = ""
+        delivered_at = timezone.now()
+
+        try:
+            send_mail(
+                subject=subject,
+                message=body,
+                from_email=from_email,
+                recipient_list=[recipient],
+                fail_silently=False
+            )
+        except Exception as e:
+            logger.warning(f"Email delivery failed to {recipient}: {str(e)}")
+            comm_status = CommStatus.FAILED
+            error_msg = str(e)
+            delivered_at = None
 
         msg = CommunicationMessage.objects.create(
             channel=CommChannel.EMAIL,
@@ -102,10 +127,11 @@ class EmailNotificationAdapter(BaseAdapter):
             template_code=template['code'],
             subject=subject,
             body=body,
-            status=CommStatus.DELIVERED,
+            status=comm_status,
             provider='TEXOL SMTP/SES Adapter',
             provider_message_id=f"email_{uuid.uuid4().hex[:12]}",
-            delivered_at=timezone.now()
+            delivered_at=delivered_at,
+            error_message=error_msg
         )
         return msg
 

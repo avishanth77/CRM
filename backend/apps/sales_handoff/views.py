@@ -12,25 +12,29 @@ from apps.sales_handoff.services import SQLReadinessValidator, SQLHandoffService
 from apps.leads.models import Lead
 from apps.workflows.models import StageHistory
 
-from apps.authentication.backends import get_request_user, is_management_or_admin, is_sales_staff
+from apps.authentication.permissions import (
+    DomainOperationPermission, ScopedQuerySetMixin,
+    apply_data_scoping, can_override_stage_gate
+)
+from apps.audit_logging.models import AuditLog, AuditAction
+
 User = get_user_model()
 
 
-class SQLHandoffViewSet(viewsets.ModelViewSet):
+class SQLHandoffViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     queryset = SQLHandoff.objects.all().select_related(
         'lead__account', 'lead__contact', 'product', 'pld_executive',
         'assigned_sales_owner', 'previous_owner', 'override_approved_by'
     ).order_by('-created_at')
     serializer_class = SQLHandoffSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
+    domain_name = 'SQL_HANDOFF'
 
     def get_queryset(self):
         qs = super().get_queryset()
-        user = get_request_user(self.request)
-
-        if is_sales_staff(user):
-            qs = qs.filter(Q(lead__owner=user) | Q(assigned_sales_owner=user))
-
+        user = getattr(self.request, 'user', None) or get_request_user(self.request)
+        if user and user.is_authenticated:
+            qs = apply_data_scoping(qs, user, domain='SQL_HANDOFF')
         return qs
 
     @action(detail=False, methods=['get', 'post'], url_path='readiness')
@@ -86,12 +90,19 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         if sales_owner_id:
             sales_owner = User.objects.filter(id=sales_owner_id).first()
 
-        if not is_management_or_admin(user):
+        user_role = str(getattr(user, 'role', '') or '').upper()
+        is_pld_or_mgmt = is_management_or_admin(user) or user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST']
+        if not is_pld_or_mgmt:
             if sales_owner and getattr(sales_owner, 'id', None) != getattr(user, 'id', None):
-                return Response({'error': 'Staff members cannot assign handoffs to other owners. Only managers can assign leads.'}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': 'Staff members cannot assign handoffs to other owners. Only managers and PLD specialists can assign leads.'}, status=status.HTTP_403_FORBIDDEN)
 
-        if not user:
-            user = lead.owner or User.objects.first()
+        if is_override:
+            if not can_override_stage_gate(request.user, lead):
+                return Response({'error': 'Permission denied: Frontline users cannot override mandatory stage gates. Sales Manager or Executive authority required.'}, status=status.HTTP_403_FORBIDDEN)
+            if not override_reason or not str(override_reason).strip():
+                return Response({'error': 'Override reason is mandatory for stage-gate overrides.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = getattr(request, 'user', None) or user or lead.owner or User.objects.first()
 
         try:
             handoff = SQLHandoffService.submit_sql(
@@ -103,6 +114,22 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
                 is_override=is_override,
                 override_reason=override_reason
             )
+
+            if is_override:
+                AuditLog.objects.create(
+                    actor=request.user,
+                    actor_email=getattr(request.user, 'email', ''),
+                    actor_role=getattr(request.user, 'canonical_role', ''),
+                    action=AuditAction.OVERRIDE,
+                    entity_type='SQLHandoff',
+                    entity_id=handoff.id,
+                    changes_json={
+                        'stage_gate_override': True,
+                        'lead_id': str(lead.id),
+                        'justification': override_reason
+                    }
+                )
+
             return Response({
                 'message': 'SQL Handoff submitted successfully for Sales Acceptance review.',
                 'handoff': SQLHandoffSerializer(handoff).data
@@ -121,9 +148,9 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         """
         handoff = self.get_object()
         reason = request.data.get('override_reason')
-        user = get_request_user(request)
-        if not is_management_or_admin(user):
-            return Response({'error': 'User is not authorized to grant SQL overrides.'}, status=status.HTTP_403_FORBIDDEN)
+        user = getattr(request, 'user', None) or get_request_user(request)
+        if not can_override_stage_gate(user, handoff):
+            return Response({'error': 'Permission denied: User is not authorized to grant SQL overrides.'}, status=status.HTTP_403_FORBIDDEN)
 
         if not reason or not reason.strip():
             return Response({'error': 'Override reason is mandatory.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -134,6 +161,20 @@ class SQLHandoffViewSet(viewsets.ModelViewSet):
         handoff.override_approved_at = timezone.now()
         handoff.readiness_status = 'OVERRIDDEN'
         handoff.save(update_fields=['is_override', 'override_reason', 'override_approved_by', 'override_approved_at', 'readiness_status'])
+
+        AuditLog.objects.create(
+            actor=user,
+            actor_email=getattr(user, 'email', ''),
+            actor_role=getattr(user, 'canonical_role', ''),
+            action=AuditAction.OVERRIDE,
+            entity_type='SQLHandoff',
+            entity_id=handoff.id,
+            changes_json={
+                'stage_gate_override': True,
+                'status': 'OVERRIDDEN',
+                'justification': reason.strip()
+            }
+        )
 
         return Response({
             'message': 'SQL Handoff override approved successfully.',

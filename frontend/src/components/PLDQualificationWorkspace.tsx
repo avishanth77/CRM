@@ -3,7 +3,7 @@ import {
   ShieldCheck, AlertTriangle, CheckCircle2, XCircle, Clock, 
   HelpCircle, Plus, FileText, 
   ArrowRight, RefreshCw, UserCheck, Scale, History, AlertCircle, Sliders,
-  Calendar, Search, ChevronDown, ChevronUp, User, RotateCcw, MapPin, Share2
+  Calendar, Search, ChevronDown, ChevronUp, User, RotateCcw, MapPin, Share2, UserPlus
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { 
@@ -38,6 +38,19 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
   const [savingScore, setSavingScore] = useState(false);
   const [evaluatingICP, setEvaluatingICP] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
+
+  // Salesman / Sales Owner Assignment state
+  const [staffUsers, setStaffUsers] = useState<any[]>([]);
+  const [showAssignSalesModal, setShowAssignSalesModal] = useState<boolean>(false);
+  const [selectedSalesUserId, setSelectedSalesUserId] = useState<string>(lead.owner || '');
+  const [assignHandoffNotes, setAssignHandoffNotes] = useState<string>('');
+  const [scheduleFollowupTask, setScheduleFollowupTask] = useState<boolean>(true);
+  const [savingAssignment, setSavingAssignment] = useState<boolean>(false);
+  const [currentLeadOwner, setCurrentLeadOwner] = useState<{ id?: string; name?: string; email?: string } | null>({
+    id: lead.owner,
+    name: lead.owner_name,
+    email: lead.owner_email
+  });
 
   // Score Override Modal state
   const [showOverrideModal, setShowOverrideModal] = useState(false);
@@ -249,6 +262,21 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
         console.warn('Error loading lead sources:', err);
       }
 
+      // Load Staff Users for sales assignment
+      try {
+        const uRes = await api.getUsers();
+        const uList = uRes.results || [];
+        setStaffUsers(uList);
+        if (!lead.owner && uList.length > 0) {
+          const firstSales = uList.find((u: any) => 
+            u.role === 'SALES_BDM' || u.role === 'ACCOUNT_EXECUTIVE' || u.role === 'SALES_REP' || u.role === 'SALES_MANAGER'
+          ) || uList[0];
+          if (firstSales) setSelectedSalesUserId(firstSales.id);
+        }
+      } catch (err) {
+        console.warn('Failed to load users for sales assignment:', err);
+      }
+
       // 4. Validate Stage Gate readiness
       try {
         const configs = await api.getConfigurations();
@@ -268,6 +296,51 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
       console.error('Failed to load PLD Workspace data:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setCurrentLeadOwner({
+      id: lead.owner,
+      name: lead.owner_name,
+      email: lead.owner_email
+    });
+    if (lead.owner) {
+      setSelectedSalesUserId(lead.owner);
+    }
+  }, [lead.id, lead.owner, lead.owner_name]);
+
+  const handleAssignToSalesman = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedSalesUserId) {
+      showNotification('error', 'Please select a sales representative to assign.');
+      return;
+    }
+
+    setSavingAssignment(true);
+    try {
+      const res = await api.assignLeadSalesOwner(lead.id, {
+        sales_user_id: selectedSalesUserId,
+        notes: assignHandoffNotes.trim(),
+        schedule_task: scheduleFollowupTask
+      });
+
+      const assignedUser = res.assigned_user;
+      setCurrentLeadOwner({
+        id: assignedUser?.id || selectedSalesUserId,
+        name: assignedUser?.name || 'Sales Representative',
+        email: assignedUser?.email
+      });
+
+      showNotification('success', res.message || `Lead successfully assigned to ${assignedUser?.name || 'sales representative'}!`);
+      setShowAssignSalesModal(false);
+      setAssignHandoffNotes('');
+      if (onLeadUpdated) onLeadUpdated();
+      loadWorkspaceData();
+    } catch (err: any) {
+      showNotification('error', err.message || 'Failed to assign lead to sales representative.');
+    } finally {
+      setSavingAssignment(false);
     }
   };
 
@@ -521,11 +594,14 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
         throw new Error('Target Discovery pipeline stage not found in product configuration.');
       }
 
+      const targetSalesOwnerId = selectedSalesUserId || currentLeadOwner?.id || lead.owner;
       const res = await api.transitionLeadStage(
         lead.id,
         discoveryStage.id,
         `Passed ICP and PLD Qualification Engine gates (Score: ${assessment?.pld_score || 0}).`,
-        true
+        true,
+        undefined,
+        targetSalesOwnerId
       );
 
       let successMsg = res.message || 'Lead successfully advanced to Discovery!';
@@ -685,7 +761,32 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.8rem', marginTop: '6px', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
                 <UserCheck size={14} color="var(--primary)" />
-                <span>Assigned Owner: <strong style={{ color: 'var(--text-primary)' }}>{lead.owner_name || 'Unassigned'}</strong></span>
+                <span>Assigned Salesman: <strong style={{ color: 'var(--text-primary)' }}>{currentLeadOwner?.name || lead.owner_name || 'Unassigned'}</strong></span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentLeadOwner?.id) setSelectedSalesUserId(currentLeadOwner.id);
+                    setShowAssignSalesModal(true);
+                  }}
+                  style={{
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    color: 'var(--primary)',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginLeft: '4px'
+                  }}
+                  title="Assign or change sales representative"
+                >
+                  <UserPlus size={11} />
+                  {currentLeadOwner?.name || lead.owner_name ? 'Change Salesman' : '+ Assign to Salesman'}
+                </button>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
                 <User size={14} color="#10B981" />
@@ -987,6 +1088,74 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
               </div>
             </div>
             <span className="badge" style={{ background: 'var(--accent-purple)', color: '#FFFFFF' }}>OVERRIDDEN</span>
+          </div>
+        )}
+
+        {/* POST-PLD QUALIFICATION SALES ASSIGNMENT BANNER */}
+        {(assessment?.icp_result === 'PASS' || assessment?.is_overridden) && (
+          <div style={{
+            marginTop: '14px',
+            padding: '14px 18px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.35)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '8px',
+                background: 'rgba(16, 185, 129, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#10B981',
+                flexShrink: 0
+              }}>
+                <UserCheck size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  PLD Qualification Cleared — Sales Assignment
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Assigned Sales Representative: <strong style={{ color: currentLeadOwner?.name ? '#10B981' : '#F59E0B' }}>
+                    {currentLeadOwner?.name || lead.owner_name || 'No Salesman Assigned Yet'}
+                  </strong>
+                  {currentLeadOwner?.email && <span style={{ color: 'var(--text-muted)' }}> ({currentLeadOwner.email})</span>}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  if (currentLeadOwner?.id) setSelectedSalesUserId(currentLeadOwner.id);
+                  setShowAssignSalesModal(true);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  padding: '7px 14px',
+                  background: '#10B981',
+                  borderColor: '#10B981',
+                  color: '#FFFFFF'
+                }}
+              >
+                <UserPlus size={14} />
+                {currentLeadOwner?.name || lead.owner_name ? 'Reassign Salesman' : 'Assign to Salesman'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -3007,6 +3176,162 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
                 + Create
               </button>
             </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* MODAL: ASSIGN LEAD TO SALES REPRESENTATIVE */}
+      <Modal
+        isOpen={showAssignSalesModal}
+        onClose={() => setShowAssignSalesModal(false)}
+        title="Assign Lead to Sales Representative"
+        subtitle="Hand off qualified lead to a dedicated Salesman / Account Executive for Discovery & Commercial Pursuit"
+        icon={
+          <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <UserCheck size={20} />
+          </div>
+        }
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowAssignSalesModal(false)}
+              disabled={savingAssignment}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleAssignToSalesman}
+              disabled={savingAssignment || !selectedSalesUserId}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#10B981',
+                borderColor: '#10B981',
+                color: '#FFFFFF'
+              }}
+            >
+              {savingAssignment ? <RefreshCw className="animate-spin" size={15} /> : <UserCheck size={15} />}
+              {savingAssignment ? 'Assigning...' : 'Confirm Sales Assignment'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          {/* Lead Context Summary */}
+          <div style={{
+            padding: '12px 16px',
+            borderRadius: '8px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-subtle)',
+            fontSize: '0.85rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <strong style={{ color: 'var(--text-primary)', fontSize: '0.95rem' }}>{lead.account_name}</strong>
+              <span className="badge badge-info">{lead.primary_product_name || 'VanForces'}</span>
+            </div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+              PLD Score: <strong style={{ color: 'var(--primary)' }}>{assessment?.pld_score ?? 0}/100</strong> • ICP Status: <strong style={{ color: '#10B981' }}>{assessment?.icp_result || 'PASSED'}</strong>
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '4px' }}>
+              Currently Assigned To: <strong style={{ color: 'var(--text-primary)' }}>{currentLeadOwner?.name || lead.owner_name || 'Unassigned'}</strong>
+            </div>
+          </div>
+
+          {/* Sales Representative Selector */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+              Select Sales Representative <span style={{ color: 'var(--danger)' }}>*</span>
+            </label>
+            <select
+              className="input-field"
+              value={selectedSalesUserId}
+              onChange={(e) => setSelectedSalesUserId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-primary)',
+                fontSize: '0.88rem'
+              }}
+            >
+              <option value="">-- Choose Sales Representative --</option>
+              {/* Sales Team Members First */}
+              <optgroup label="Sales Team (BDMs & Account Executives)">
+                {staffUsers
+                  .filter((u: any) => u.role === 'SALES_BDM' || u.role === 'ACCOUNT_EXECUTIVE' || u.role === 'SALES_MANAGER' || u.role === 'SALES_REP' || u.role === 'SALES_EXECUTIVE')
+                  .map((u: any) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.username} ({u.role_display || u.role}) - {u.email}
+                    </option>
+                  ))
+                }
+              </optgroup>
+              {/* Other Staff Members */}
+              <optgroup label="Other Commercial & Presales Staff">
+                {staffUsers
+                  .filter((u: any) => !(u.role === 'SALES_BDM' || u.role === 'ACCOUNT_EXECUTIVE' || u.role === 'SALES_MANAGER' || u.role === 'SALES_REP' || u.role === 'SALES_EXECUTIVE'))
+                  .map((u: any) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.username} ({u.role_display || u.role}) - {u.email}
+                    </option>
+                  ))
+                }
+              </optgroup>
+            </select>
+          </div>
+
+          {/* Handoff / Discovery Notes */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+              Handoff Notes & Instructions for Salesman (Optional)
+            </label>
+            <textarea
+              className="input-field"
+              rows={3}
+              placeholder="e.g. Qualified for route execution. Primary pain point is SAR 40k monthly duplicate orders in wholesale van dispatch. Client expects discovery call this week."
+              value={assignHandoffNotes}
+              onChange={(e) => setAssignHandoffNotes(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-primary)',
+                fontSize: '0.85rem',
+                resize: 'vertical'
+              }}
+            />
+          </div>
+
+          {/* Schedule Followup Task Checkbox */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            padding: '12px 14px',
+            borderRadius: '8px',
+            background: 'rgba(59, 130, 246, 0.08)',
+            border: '1px solid rgba(59, 130, 246, 0.2)'
+          }}>
+            <input
+              type="checkbox"
+              id="schedule_task_checkbox"
+              checked={scheduleFollowupTask}
+              onChange={(e) => setScheduleFollowupTask(e.target.checked)}
+              style={{ marginTop: '3px', cursor: 'pointer' }}
+            />
+            <label htmlFor="schedule_task_checkbox" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', cursor: 'pointer', lineHeight: '1.4' }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Initialize 48-Hour Sales Outreach Task</strong>
+              <div>Automatically adds a high-priority Discovery follow-up task into the selected salesman's Work Queue with SLA deadline tracking.</div>
+            </label>
           </div>
         </div>
       </Modal>

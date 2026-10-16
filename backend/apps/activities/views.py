@@ -38,7 +38,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
         'performed_by', 'assigned_to'
     )
     serializer_class = ActivitySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -226,7 +226,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         'assigned_to', 'created_by', 'related_lead', 'related_opportunity', 'related_account'
     )
     serializer_class = TaskSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -317,7 +317,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
     """
     queryset = Notification.objects.all().select_related('recipient')
     serializer_class = NotificationSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -362,7 +362,7 @@ class SLADefinitionViewSet(viewsets.ModelViewSet):
     """
     queryset = SLADefinition.objects.all()
     serializer_class = SLADefinitionSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class SLATrackerViewSet(viewsets.ReadOnlyModelViewSet):
@@ -371,7 +371,7 @@ class SLATrackerViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = SLATracker.objects.all().select_related('definition', 'assigned_user')
     serializer_class = SLATrackerSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -400,7 +400,7 @@ class AutomationRuleViewSet(viewsets.ModelViewSet):
     """
     queryset = AutomationRule.objects.all()
     serializer_class = AutomationRuleSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     @action(detail=False, methods=['post'], url_path='run-all')
     def run_all(self, request):
@@ -413,7 +413,7 @@ class WorkQueueView(APIView):
     Delivers action-oriented MY WORK queue: Today, Overdue, At Risk,
     No Next Action, and Upcoming, with role-based filtering.
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = get_request_user(request)

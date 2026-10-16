@@ -88,7 +88,7 @@ export const CustomerLifecycleWorkspace: React.FC<CustomerLifecycleWorkspaceProp
       setAccountProducts(apRes.results || []);
       setAccounts(accRes.results || []);
       setProducts(prodRes.results || []);
-      setWonOpportunities(oppRes.results || []);
+      setWonOpportunities((oppRes.results || []).filter(o => o.status === 'WON'));
     } catch (err: any) {
       console.error(err);
       inAppAlert.error(err?.message || 'Failed to load customer lifecycle data.');

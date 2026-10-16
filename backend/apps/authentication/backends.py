@@ -13,9 +13,21 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
 
 class HeaderUserAuthentication(BaseAuthentication):
     """
-    Authenticates requests passing X-User-Id or X-User-Email header from the SPA client.
+    Development/Testing helper: Authenticates requests passing X-User-Id or X-User-Email
+    ONLY when running in DEBUG mode and NO conflicting Authorization header is present.
+    In production or when Bearer tokens are used, SimpleJWT is strictly authoritative.
     """
     def authenticate(self, request):
+        from django.conf import settings
+        # Never allow header-based auth bypass in production
+        if not getattr(settings, 'DEBUG', False):
+            return None
+
+        # If a Bearer Authorization header is passed, let JWTAuthentication handle it
+        auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
+        if auth_header and auth_header.strip().startswith('Bearer '):
+            return None
+
         user_id = request.headers.get('X-User-Id') or request.headers.get('x-user-id')
         if user_id:
             try:
@@ -37,14 +49,25 @@ class HeaderUserAuthentication(BaseAuthentication):
         return None
 
 
+
 def get_request_user(request):
     """
-    Universally resolves authenticated User from request session or X-User-Id/X-User-Email headers.
+    Universally resolves authenticated User from request session, JWT Bearer token, or X-User-Id/X-User-Email headers.
     """
     if not request:
         return None
     if getattr(request, 'user', None) and request.user.is_authenticated:
         return request.user
+
+    auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        try:
+            from rest_framework_simplejwt.authentication import JWTAuthentication
+            auth_res = JWTAuthentication().authenticate(request)
+            if auth_res:
+                return auth_res[0]
+        except Exception:
+            pass
 
     user_id = (
         request.headers.get('X-User-Id') or

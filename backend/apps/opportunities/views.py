@@ -1,7 +1,10 @@
 from django.core.exceptions import ValidationError, PermissionDenied
+from django.db.models import Q
+from decimal import Decimal
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 
 from apps.opportunities.models import (
     Opportunity, OpportunityProduct, OpportunityModule,
@@ -22,23 +25,24 @@ from apps.accounts.models import AccountProduct, AccountProductStatus, AccountTy
 from apps.activities.models import Activity
 from apps.activities.serializers import ActivitySerializer
 from apps.workflows.models import StageHistory
-from apps.audit_logging.models import AuditLog
+from apps.audit_logging.models import AuditLog, AuditAction
 from apps.audit_logging.serializers import AuditLogSerializer
 from apps.authentication.models import User, UserRole
 from apps.authentication.backends import get_request_user, is_management_or_admin, is_sales_staff
+from apps.authentication.permissions import (
+    DomainOperationPermission, ScopedQuerySetMixin,
+    apply_data_scoping, can_override_stage_gate
+)
 
 
-class OpportunityViewSet(viewsets.ModelViewSet):
+class OpportunityViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     serializer_class = OpportunitySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated, DomainOperationPermission]
+    domain_name = 'OPPORTUNITIES'
+
 
     def get_queryset(self):
-        user = get_request_user(self.request)
-        partner = None
-        if user and (getattr(user, 'is_partner_user', False) or getattr(user, 'role', None) == 'PARTNER_USER'):
-            partner_prof = getattr(user, 'partner_profile', None)
-            partner = partner_prof.partner if partner_prof else None
-
+        user = getattr(self.request, 'user', None) or get_request_user(self.request)
         qs = Opportunity.objects.all().prefetch_related(
             'product_lines__product',
             'selected_modules__module',
@@ -47,15 +51,30 @@ class OpportunityViewSet(viewsets.ModelViewSet):
             'partner_influences__partner'
         ).select_related('account', 'owner', 'stage', 'product', 'primary_contact')
 
-        if partner:
-            qs = qs.filter(
-                Q(account__deal_registrations__partner=partner) |
-                Q(partner_influences__partner=partner) |
-                Q(sql_handoff__lead__partner=partner)
-            ).distinct()
+        if user and user.is_authenticated:
+            qs = apply_data_scoping(qs, user, domain='OPPORTUNITIES')
 
-        if is_sales_staff(user):
-            qs = qs.filter(owner=user)
+        query_params = getattr(self.request, 'query_params', None)
+        if query_params is None:
+            query_params = getattr(self.request, 'GET', {})
+
+        status_param = query_params.get('status')
+        if status_param:
+            statuses = [s.strip().upper() for s in status_param.split(',') if s.strip()]
+            if statuses:
+                qs = qs.filter(status__in=statuses)
+
+        stage_code = query_params.get('stage_code')
+        if stage_code:
+            qs = qs.filter(stage__stage_code=stage_code)
+
+        product_id = query_params.get('product')
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+
+        account_id = query_params.get('account')
+        if account_id:
+            qs = qs.filter(account_id=account_id)
 
         return qs
 
@@ -90,11 +109,12 @@ class OpportunityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='transition-stage')
     def transition_stage(self, request, pk=None):
         """
-        Transitions Opportunity to a new pipeline stage. Enforces mandatory reason for backward moves.
+        Transitions Opportunity to a new pipeline stage. Enforces Section 9.5 stage-gate override governance.
         """
         opp = self.get_object()
         target_stage_id = request.data.get('target_stage_id')
         reason = request.data.get('reason')
+        is_override = bool(request.data.get('is_override', False))
 
         if not target_stage_id:
             return Response({'error': 'target_stage_id is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -103,6 +123,23 @@ class OpportunityViewSet(viewsets.ModelViewSet):
             target_stage = PipelineStage.objects.get(id=target_stage_id)
         except PipelineStage.DoesNotExist:
             return Response({'error': f"Stage with id {target_stage_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
+
+        from_stage = opp.stage
+        is_gate_bypass = False
+        if from_stage and target_stage.sequence_order > (from_stage.sequence_order + 1):
+            is_gate_bypass = True
+
+        if is_override or is_gate_bypass:
+            if not can_override_stage_gate(request.user, opp):
+                return Response(
+                    {'error': 'Permission denied: Frontline users cannot override mandatory stage gates. Sales Manager or Executive authority required.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if not reason or not str(reason).strip():
+                return Response(
+                    {'error': 'Documented business justification reason is mandatory for stage-gate overrides.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         try:
             send_stage_email = request.data.get('send_stage_email', True)
@@ -120,6 +157,23 @@ class OpportunityViewSet(viewsets.ModelViewSet):
                 custom_body=custom_body,
                 custom_recipient_email=custom_recipient_email
             )
+
+            if is_override or is_gate_bypass:
+                AuditLog.objects.create(
+                    actor=request.user,
+                    actor_email=getattr(request.user, 'email', ''),
+                    actor_role=getattr(request.user, 'canonical_role', ''),
+                    action=AuditAction.GATE_OVERRIDE,
+                    entity_type='Opportunity',
+                    entity_id=opp.id,
+                    changes_json={
+                        'stage_gate_override': True,
+                        'from_stage': from_stage.stage_name if from_stage else None,
+                        'to_stage': target_stage.stage_name,
+                        'justification': reason
+                    }
+                )
+
             return Response({
                 'message': f"Stage updated to {target_stage.stage_name}.",
                 'opportunity': OpportunitySerializer(opp).data
@@ -377,30 +431,31 @@ class OpportunityViewSet(viewsets.ModelViewSet):
 class OpportunityProductViewSet(viewsets.ModelViewSet):
     queryset = OpportunityProduct.objects.all()
     serializer_class = OpportunityProductSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
 class OpportunityModuleViewSet(viewsets.ModelViewSet):
     queryset = OpportunityModule.objects.all()
     serializer_class = OpportunityModuleSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
 class OpportunityCapabilityViewSet(viewsets.ModelViewSet):
     queryset = OpportunityCapability.objects.all()
     serializer_class = OpportunityCapabilitySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
-class ProposalViewSet(viewsets.ModelViewSet):
+class ProposalViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     serializer_class = ProposalSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated, DomainOperationPermission]
+    domain_name = 'PROPOSALS'
 
     def get_queryset(self):
         qs = Proposal.objects.all().prefetch_related('versions__items')
-        user = get_request_user(self.request)
-        if is_sales_staff(user):
-            qs = qs.filter(Q(owner=user) | Q(opportunity__owner=user))
+        user = getattr(self.request, 'user', None) or get_request_user(self.request)
+        if user and user.is_authenticated:
+            qs = apply_data_scoping(qs, user, domain='PROPOSALS')
         opp_id = self.request.query_params.get('opportunity')
         if opp_id:
             qs = qs.filter(opportunity_id=opp_id)
@@ -580,20 +635,64 @@ class ProposalViewSet(viewsets.ModelViewSet):
         ).order_by('-timestamp')
         return Response(AuditLogSerializer(logs, many=True).data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='sync-seats')
+    def sync_seats(self, request, pk=None):
+        proposal = self.get_object()
+        opp = proposal.opportunity
+        seats = int(request.data.get('quantity') or opp.seat_units_count or 1)
+        version_num = request.data.get('version_number', proposal.version_number)
+        version = proposal.versions.filter(version_number=version_num).first()
+        if not version:
+            return Response({'error': f"Proposal version {version_num} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        unit_price = request.data.get('unit_price')
+        for it in version.items.all():
+            it.quantity = seats
+            if unit_price is not None and str(unit_price).strip() != '':
+                it.unit_price = Decimal(str(unit_price))
+            elif version.gross_amount > 0 and version.items.count() == 1:
+                it.unit_price = (version.gross_amount / Decimal(str(seats))).quantize(Decimal('0.01'))
+            it.calculate_line_total()
+            it.save()
+
+        ProposalService.recalculate_version_totals(version)
+        fresh_proposal = Proposal.objects.prefetch_related('versions__items').get(id=proposal.id)
+        return Response({
+            'message': f"Synced proposal version {version.version_number} to {seats} seats from opportunity.",
+            'proposal': ProposalSerializer(fresh_proposal).data
+        }, status=status.HTTP_200_OK)
+
 
 class ProposalVersionViewSet(viewsets.ModelViewSet):
     queryset = ProposalVersion.objects.all().prefetch_related('items')
     serializer_class = ProposalVersionSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
 class ProposalItemViewSet(viewsets.ModelViewSet):
     queryset = ProposalItem.objects.all()
     serializer_class = ProposalItemSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        item = serializer.save()
+        item.calculate_line_total()
+        item.save()
+        ProposalService.recalculate_version_totals(item.proposal_version)
+
+    def perform_update(self, serializer):
+        item = serializer.save()
+        item.calculate_line_total()
+        item.save()
+        ProposalService.recalculate_version_totals(item.proposal_version)
+
+    def perform_destroy(self, instance):
+        version = instance.proposal_version
+        instance.delete()
+        ProposalService.recalculate_version_totals(version)
 
 
 class ApprovalRuleViewSet(viewsets.ModelViewSet):
     queryset = ApprovalRule.objects.all().order_by('approval_sequence', '-created_at')
     serializer_class = ApprovalRuleSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]

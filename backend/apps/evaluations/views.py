@@ -17,6 +17,12 @@ from apps.evaluations.services import DemoService, DemoValidator, POCService, PO
 from apps.audit_logging.models import AuditLog, AuditAction
 
 
+from apps.authentication.permissions import (
+    DomainOperationPermission, ScopedQuerySetMixin,
+    apply_data_scoping
+)
+
+
 def get_request_user(request):
     if request.user and request.user.is_authenticated:
         return request.user
@@ -47,7 +53,7 @@ def get_request_user(request):
     return None
 
 
-class DemoViewSet(viewsets.ModelViewSet):
+class DemoViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     queryset = Demo.objects.all().select_related(
         'account', 'lead', 'discovery', 'opportunity', 'product', 'presenter'
     ).prefetch_related(
@@ -56,7 +62,8 @@ class DemoViewSet(viewsets.ModelViewSet):
         'use_cases__capability__module'
     )
     serializer_class = DemoSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
+    domain_name = 'DEMO'
 
     def get_queryset(self):
         lead_id = self.request.query_params.get('lead')
@@ -80,18 +87,9 @@ class DemoViewSet(viewsets.ModelViewSet):
                     )
 
         qs = super().get_queryset()
-        user = get_request_user(self.request)
-
-        is_manager_or_admin = (
-            user and (
-                user.is_superuser or
-                user.is_staff or
-                getattr(user, 'role', None) in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.MANAGEMENT] or
-                'MANAGER' in getattr(user, 'role', '')
-            )
-        )
-        if user and not is_manager_or_admin and getattr(user, 'role', None) in [UserRole.SALES_BDM, 'SALES_BDM', 'SALES_REP', 'ACCOUNT_EXECUTIVE', 'SALES_EXECUTIVE']:
-            qs = qs.filter(Q(lead__owner=user) | Q(presenter=user))
+        user = getattr(self.request, 'user', None) or get_request_user(self.request)
+        if user and user.is_authenticated:
+            qs = apply_data_scoping(qs, user, domain='DEMO')
 
         if lead_id:
             qs = qs.filter(lead_id=lead_id)
@@ -242,7 +240,7 @@ class DemoViewSet(viewsets.ModelViewSet):
 class DemoParticipantViewSet(viewsets.ModelViewSet):
     queryset = DemoParticipant.objects.all().select_related('demo', 'contact', 'user')
     serializer_class = DemoParticipantSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class DemoUseCaseMappingViewSet(viewsets.ModelViewSet):
@@ -250,10 +248,10 @@ class DemoUseCaseMappingViewSet(viewsets.ModelViewSet):
         'demo', 'discovery_problem', 'module', 'capability'
     )
     serializer_class = DemoUseCaseMappingSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
-class POCViewSet(viewsets.ModelViewSet):
+class POCViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     queryset = POC.objects.all().select_related(
         'account', 'lead', 'discovery', 'opportunity', 'product', 'owner'
     ).prefetch_related(
@@ -261,22 +259,14 @@ class POCViewSet(viewsets.ModelViewSet):
         'criteria_items'
     )
     serializer_class = POCSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
+    domain_name = 'POC'
 
     def get_queryset(self):
         qs = super().get_queryset()
-        user = get_request_user(self.request)
-
-        is_manager_or_admin = (
-            user and (
-                user.is_superuser or
-                user.is_staff or
-                getattr(user, 'role', None) in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.MANAGEMENT] or
-                'MANAGER' in getattr(user, 'role', '')
-            )
-        )
-        if user and not is_manager_or_admin and getattr(user, 'role', None) in [UserRole.SALES_BDM, 'SALES_BDM', 'SALES_REP', 'ACCOUNT_EXECUTIVE', 'SALES_EXECUTIVE']:
-            qs = qs.filter(Q(lead__owner=user) | Q(owner=user))
+        user = getattr(self.request, 'user', None) or get_request_user(self.request)
+        if user and user.is_authenticated:
+            qs = apply_data_scoping(qs, user, domain='POC')
 
         lead_id = self.request.query_params.get('lead')
         account_id = self.request.query_params.get('account')
@@ -462,10 +452,10 @@ class POCViewSet(viewsets.ModelViewSet):
 class POCParticipantViewSet(viewsets.ModelViewSet):
     queryset = POCParticipant.objects.all().select_related('poc', 'contact', 'user')
     serializer_class = POCParticipantSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class POCSuccessCriterionViewSet(viewsets.ModelViewSet):
     queryset = POCSuccessCriterion.objects.all().select_related('poc')
     serializer_class = POCSuccessCriterionSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]

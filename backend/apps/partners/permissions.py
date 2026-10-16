@@ -37,8 +37,8 @@ class PartnerScopedPermission(permissions.BasePermission):
     - Partner users CANNOT access other partners, internal margins, or review workflows.
     """
     def has_permission(self, request, view):
-        # Allow read for unauthenticated users in tests/initial setup if AllowAny is set,
-        # but once authenticated, enforce role isolation
+        if not request.user or not request.user.is_authenticated:
+            return False
         return True
 
     def has_object_permission(self, request, view, obj):

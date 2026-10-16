@@ -4,7 +4,7 @@ from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from apps.integrations.models import CommunicationMessage, ERPConnectorConfig, ERPSyncRecord
 from apps.integrations.serializers import (
@@ -18,18 +18,20 @@ from apps.accounts.models import Account, Contact
 from apps.leads.models import Lead, LeadProductInterest, LeadStatus, Campaign, LeadTouch, LeadSource
 from apps.products.models import Product
 from apps.pld_engine.services import ICPEvaluator
+from apps.authentication.permissions import IsAdminOrFinance, can_sync_erp
+from apps.audit_logging.models import AuditLog, AuditAction
 
 
 class CampaignViewSet(viewsets.ModelViewSet):
     queryset = Campaign.objects.all()
     serializer_class = CampaignSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
 class LeadTouchViewSet(viewsets.ModelViewSet):
     queryset = LeadTouch.objects.select_related('lead', 'campaign', 'partner', 'source').all()
     serializer_class = LeadTouchSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -47,7 +49,7 @@ class AttributionAnalyticsView(APIView):
     Computes multi-touch campaign attribution across different algorithms
     (First Touch, Last Touch, Linear, W-Shaped, Partner-Weighted).
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         model_type = request.query_params.get('model', AttributionModelType.W_SHAPED).upper()
@@ -262,22 +264,30 @@ class CommunicationViewSet(viewsets.ModelViewSet):
             msg = adapter.send(recipient=recipient, template=template, context=context, lead=lead, account=account)
 
         return Response({
-            'success': True,
+            'success': msg.status != CommStatus.FAILED,
             'message_id': str(msg.id),
             'channel': msg.channel,
             'status': msg.status,
             'subject': msg.subject,
-            'body': msg.body
-        }, status=status.HTTP_201_CREATED)
+            'body': msg.body,
+            'error': msg.error_message if msg.status == CommStatus.FAILED else None
+        }, status=status.HTTP_201_CREATED if msg.status != CommStatus.FAILED else status.HTTP_200_OK)
 
 
 class ERPConnectorViewSet(viewsets.ModelViewSet):
     queryset = ERPConnectorConfig.objects.all()
     serializer_class = ERPConnectorConfigSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, IsAdminOrFinance]
 
     @action(detail=True, methods=['post'], url_path='sync-account')
     def sync_account(self, request, pk=None):
+        user = getattr(request, 'user', None)
+        if not can_sync_erp(user):
+            return Response(
+                {'error': 'Permission denied: Only Platform Administrators and Finance roles are authorized for ERP sync operations.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         connector = self.get_object()
         account_id = request.data.get('account_id')
         account = Account.objects.filter(id=account_id).first() if account_id else Account.objects.first()
@@ -286,10 +296,32 @@ class ERPConnectorViewSet(viewsets.ModelViewSet):
             return Response({'error': 'No account available for ERP sync'}, status=status.HTTP_400_BAD_REQUEST)
 
         sync_record = ERPSyncService.sync_account_to_erp(account=account, connector=connector)
+
+        AuditLog.objects.create(
+            actor=user,
+            actor_email=getattr(user, 'email', ''),
+            actor_role=getattr(user, 'canonical_role', ''),
+            action=AuditAction.ERP_SYNC,
+            entity_type='ERPSyncRecord',
+            entity_id=sync_record.id,
+            changes_json={
+                'connector': connector.system_name,
+                'account': account.company_name,
+                'status': sync_record.status
+            }
+        )
+
         return Response(ERPSyncRecordSerializer(sync_record).data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='resolve-conflict')
     def resolve_conflict(self, request):
+        user = getattr(request, 'user', None)
+        if not can_sync_erp(user):
+            return Response(
+                {'error': 'Permission denied: Only Platform Administrators and Finance roles are authorized for ERP sync operations.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         record_id = request.data.get('sync_record_id')
         resolution = request.data.get('resolution', 'CRM_WINS')
         sync_record = ERPSyncRecord.objects.filter(id=record_id).first()
@@ -298,10 +330,24 @@ class ERPConnectorViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Sync record not found'}, status=status.HTTP_404_NOT_FOUND)
 
         resolved = ERPSyncService.resolve_conflict(sync_record, resolution)
+
+        AuditLog.objects.create(
+            actor=user,
+            actor_email=getattr(user, 'email', ''),
+            actor_role=getattr(user, 'canonical_role', ''),
+            action=AuditAction.ERP_SYNC,
+            entity_type='ERPSyncRecord',
+            entity_id=sync_record.id,
+            changes_json={
+                'resolution': resolution,
+                'status': resolved.sync_status
+            }
+        )
+
         return Response(ERPSyncRecordSerializer(resolved).data, status=status.HTTP_200_OK)
 
 
 class ERPSyncRecordViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ERPSyncRecord.objects.select_related('connector').all()
     serializer_class = ERPSyncRecordSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, IsAdminOrFinance]

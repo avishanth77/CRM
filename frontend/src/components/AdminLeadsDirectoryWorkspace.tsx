@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   Building2, Users, UserCheck, ShieldCheck, Search, 
   RotateCcw, Download, Eye, ArrowRight, AlertCircle, 
-  Clock, DollarSign, MapPin, X, ExternalLink, Share2, PlusCircle
+  Clock, DollarSign, MapPin, X, ExternalLink, Share2
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Lead, AuthUser, Product, LeadSource } from '../services/api';

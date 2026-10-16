@@ -512,7 +512,7 @@ class CustomerStageEmailService:
                 logger.warning(f"Stage email delivery encountered warning for {recipient_email}: {str(e)}")
                 # We do not crash the transaction; we log and record status
                 error_msg = str(e)
-                comm_status = CommStatus.SENT
+                comm_status = CommStatus.FAILED
         else:
             comm_status = CommStatus.FAILED
             error_msg = "Customer contact email address not found on record. Logged for sales rep review."

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Send, Smartphone, RefreshCw, CheckCircle, AlertCircle, Eye, Filter } from 'lucide-react';
+import { Mail, Send, Smartphone, RefreshCw, CheckCircle, AlertCircle, Eye } from 'lucide-react';
 import { api } from '../services/api';
 import type { CommunicationMessage, Lead } from '../services/api';
 import { inAppAlert } from './common/InAppAlert';

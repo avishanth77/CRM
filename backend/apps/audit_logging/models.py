@@ -37,6 +37,18 @@ class AuditAction(models.TextChoices):
     COMMISSION_STATUS = 'COMMISSION_STATUS', 'Commission Status Changed'
     CAMPAIGN_CHANGE = 'CAMPAIGN_CHANGE', 'Campaign Modified'
     LEAD_ACTION = 'LEAD_ACTION', 'Lead Action'
+    USER_CREATE = 'USER_CREATE', 'User Created'
+    USER_UPDATE = 'USER_UPDATE', 'User Updated'
+    USER_DELETE = 'USER_DELETE', 'User Deleted'
+    ROLE_CHANGE = 'ROLE_CHANGE', 'Role Assignment Changed'
+    PASSWORD_CHANGE = 'PASSWORD_CHANGE', 'Password Changed'
+    DISCOUNT_APPROVE = 'DISCOUNT_APPROVE', 'Discount Approved'
+    CONFIG_PUBLISH = 'CONFIG_PUBLISH', 'Product Configuration Published'
+    ERP_SYNC = 'ERP_SYNC', 'ERP Synchronized'
+
+
+# Documented alias for Stage-Gate Override
+AuditAction.OVERRIDE = AuditAction.GATE_OVERRIDE
 
 
 class AuditLog(models.Model):
@@ -69,3 +81,41 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M')}] {self.actor_email or 'System'} {self.action} {self.entity_type} #{str(self.entity_id)[:8]}"
+
+
+def log_audit_event(actor=None, action=AuditAction.UPDATE, entity_type='', entity_id=None, changes_json=None, request=None):
+    """
+    Centralized helper for creating immutable audit records without leaking sensitive credentials.
+    """
+    ip = None
+    if request:
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+        if ip and ',' in ip:
+            ip = ip.split(',')[0].strip()
+
+    actor_email = getattr(actor, 'email', None) if actor else 'system'
+    actor_role = getattr(actor, 'role', None) if actor else 'SYSTEM'
+
+    # Sanitize changes_json so passwords, tokens, and secrets are NEVER logged
+    sanitized_changes = {}
+    if isinstance(changes_json, dict):
+        sensitive_keys = {'password', 'token', 'access', 'refresh', 'secret', 'key'}
+        for k, v in changes_json.items():
+            if any(s in k.lower() for s in sensitive_keys):
+                sanitized_changes[k] = '[REDACTED]'
+            else:
+                sanitized_changes[k] = v
+    else:
+        sanitized_changes = {'details': str(changes_json)}
+
+    return AuditLog.objects.create(
+        actor=actor if (actor and getattr(actor, 'is_authenticated', False)) else None,
+        actor_email=actor_email,
+        actor_role=actor_role,
+        ip_address=ip if (ip and len(ip) <= 45) else None,
+        entity_type=entity_type or 'General',
+        entity_id=entity_id or uuid.uuid4(),
+        action=action,
+        changes_json=sanitized_changes
+    )
+

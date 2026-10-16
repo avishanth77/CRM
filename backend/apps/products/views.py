@@ -9,22 +9,22 @@ from apps.products.serializers import (
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all().prefetch_related('modules__capabilities')
     serializer_class = ProductSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class ProductModuleViewSet(viewsets.ModelViewSet):
     queryset = ProductModule.objects.all().prefetch_related('capabilities')
     serializer_class = ProductModuleSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class ProductCapabilityViewSet(viewsets.ModelViewSet):
     queryset = ProductCapability.objects.all()
     serializer_class = ProductCapabilitySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class ProblemViewSet(viewsets.ModelViewSet):
     queryset = Problem.objects.all().prefetch_related('capability_mappings__capability__module')
     serializer_class = ProblemSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]

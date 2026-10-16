@@ -19,7 +19,7 @@ from django.utils import timezone
 from django.db.models import Q
 from apps.authentication.models import User, UserRole
 from apps.audit_logging.models import AuditLog, AuditAction
-from apps.activities.models import Activity, ActivityType, ActivityStatus, Task
+from apps.activities.models import Activity, ActivityType, ActivityStatus, Task, TaskPriority, TaskStatus
 from apps.activities.services import ActivityService
 
 
@@ -57,55 +57,30 @@ def get_request_user(request):
 
 
 from apps.authentication.backends import get_request_user, is_management_or_admin, is_sales_staff
+from apps.authentication.permissions import ScopedQuerySetMixin, DomainOperationPermission, apply_data_scoping
 
 
-class LeadViewSet(viewsets.ModelViewSet):
+class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'LEADS'
     serializer_class = LeadSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
 
     def get_queryset(self):
-        user = get_request_user(self.request)
-        partner = None
-        if user and (getattr(user, 'is_partner_user', False) or getattr(user, 'role', None) == 'PARTNER_USER'):
-            partner_prof = getattr(user, 'partner_profile', None)
-            partner = partner_prof.partner if partner_prof else None
-
+        user = self.request.user if (self.request and self.request.user and self.request.user.is_authenticated) else get_request_user(self.request)
         qs = Lead.objects.all().prefetch_related(
             'product_interests__product', 'recorded_problems__problem',
             'touches__source', 'touches__campaign', 'touches__partner'
         ).select_related('account', 'contact', 'primary_product', 'current_stage', 'owner', 'partner__account', 'source')
 
-        if partner:
-            return qs.filter(partner=partner)
-
-        # Staff members (Sales / BDM / Reps) can strictly only see leads assigned to their authenticated user account
         if user:
-            if is_sales_staff(user):
-                return qs.filter(owner=user)
-            if is_management_or_admin(user):
-                return qs
-            # Retain appropriate functional scopes for specialist roles:
-            # MARKETING, PLD_EXECUTIVE, SOLUTION_CONSULTANT, PARTNER_MANAGER
-            role = getattr(user, 'role', '')
-            if role in [UserRole.MARKETING, UserRole.PLD_EXECUTIVE, UserRole.SOLUTION_CONSULTANT, UserRole.PARTNER_MANAGER]:
-                return qs
-            # Any other individual staff role is scoped to their assigned leads
-            return qs.filter(owner=user)
-        else:
-            role_header = self.request.headers.get('X-User-Role') or self.request.headers.get('x-user-role')
-            user_id_header = self.request.headers.get('X-User-Id') or self.request.headers.get('x-user-id')
-            user_email_header = self.request.headers.get('X-User-Email') or self.request.headers.get('x-user-email')
-            if role_header in ['SALES_BDM', 'SALES_REP', 'ACCOUNT_EXECUTIVE', 'SALES_EXECUTIVE']:
-                if user_id_header:
-                    return qs.filter(owner_id=user_id_header)
-                if user_email_header:
-                    return qs.filter(owner__email__iexact=user_email_header)
+            qs = apply_data_scoping(qs, user, domain='LEADS')
 
         status_param = self.request.query_params.get('status')
         if status_param:
             qs = qs.filter(status=status_param)
 
         return qs
+
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -244,13 +219,15 @@ class LeadViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         user = get_request_user(self.request)
         manager_or_admin = is_management_or_admin(user)
+        user_role = str(getattr(user, 'role', '') or '').upper()
+        is_pld = user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST']
         old_instance = self.get_object()
 
-        if 'owner' in serializer.validated_data and not manager_or_admin:
+        if 'owner' in serializer.validated_data and not (manager_or_admin or is_pld):
             new_owner = serializer.validated_data.get('owner')
             if new_owner != old_instance.owner:
                 raise permissions.exceptions.PermissionDenied(
-                    "Staff members are not permitted to change lead ownership. Only Managers and Administrators can assign or reassign leads."
+                    "Staff members are not permitted to change lead ownership. Only Managers, Admins, and PLD Specialists can assign or reassign leads."
                 )
 
         updated_lead = serializer.save()
@@ -426,10 +403,153 @@ class LeadViewSet(viewsets.ModelViewSet):
             except Exception as email_err:
                 logger.warning(f"Stage email dispatch error: {str(email_err)}")
 
+        # Check if sales assignment was requested during transition
+        assigned_sales_owner_id = (
+            request.data.get('assigned_sales_owner_id') or
+            request.data.get('sales_user_id') or
+            request.data.get('owner_id')
+        )
+        if assigned_sales_owner_id:
+            try:
+                new_sales_owner = User.objects.get(id=assigned_sales_owner_id, is_active=True)
+                old_owner = lead.owner
+                lead.owner = new_sales_owner
+                task_due = timezone.now() + timezone.timedelta(hours=48)
+                lead.next_activity_due_at = task_due
+                lead.next_action_description = f"Sales Discovery Outreach by {new_sales_owner.get_full_name() or new_sales_owner.username}"
+                lead.save(update_fields=['owner', 'next_activity_due_at', 'next_action_description'])
+
+                Task.objects.create(
+                    tenant=lead.tenant,
+                    related_lead=lead,
+                    related_account=lead.account,
+                    related_contact=getattr(lead, 'contact', None),
+                    title=f"Sales Discovery Outreach - {lead.account.company_name}",
+                    description=f"Qualified through PLD Engine. Stage advanced to {target_stage.stage_name}. Assigned to {new_sales_owner.get_full_name() or new_sales_owner.username}.",
+                    due_date=task_due,
+                    priority=TaskPriority.HIGH,
+                    status=TaskStatus.OPEN,
+                    task_type="FOLLOW_UP",
+                    assigned_to=new_sales_owner,
+                    created_by=request.user if (request.user and request.user.is_authenticated) else None
+                )
+
+                Activity.objects.create(
+                    lead=lead,
+                    account=lead.account,
+                    activity_type=ActivityType.FOLLOW_UP,
+                    subject=f"Assigned to Sales Representative: {new_sales_owner.get_full_name() or new_sales_owner.username}",
+                    description_notes=f"Lead qualified through PLD Engine and advanced to {target_stage.stage_name}. Assigned to {new_sales_owner.get_full_name() or new_sales_owner.email}.",
+                    conducted_at=timezone.now(),
+                    status=ActivityStatus.COMPLETED,
+                    performed_by=request.user if request.user.is_authenticated else None,
+                    created_by=request.user if request.user.is_authenticated else None
+                )
+            except User.DoesNotExist:
+                pass
+
         return Response({
             'message': f"Lead successfully progressed to {target_stage.stage_name}",
             'lead': LeadSerializer(lead).data,
             'stage_email': stage_email_res
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='assign-sales')
+    def assign_sales(self, request, pk=None):
+        """
+        Assigns or hands off a qualified lead to a designated Sales Representative (Sales BDM/AE).
+        Dual-records in AuditLog and Activity stream, and automatically initializes an outreach
+        task in the Salesman's Work Queue.
+        """
+        lead = self.get_object()
+        user = get_request_user(request)
+        sales_user_id = (
+            request.data.get('sales_user_id') or
+            request.data.get('user_id') or
+            request.data.get('owner_id')
+        )
+        handoff_notes = (request.data.get('notes') or request.data.get('handoff_notes') or '').strip()
+        schedule_task = request.data.get('schedule_task', True)
+
+        if not sales_user_id:
+            return Response({'error': 'sales_user_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            sales_user = User.objects.get(id=sales_user_id, is_active=True)
+        except User.DoesNotExist:
+            return Response({'error': 'Target sales representative not found or inactive'}, status=status.HTTP_404_NOT_FOUND)
+
+        old_owner = lead.owner
+        lead.owner = sales_user
+
+        sales_name = sales_user.get_full_name() or sales_user.username
+        due_date = timezone.now() + timezone.timedelta(hours=48)
+        lead.next_activity_due_at = due_date
+        lead.next_action_description = f"Sales Discovery Outreach by {sales_name}"
+        lead.save(update_fields=['owner', 'next_activity_due_at', 'next_action_description'])
+
+        # Audit log entry
+        AuditLog.objects.create(
+            actor=user,
+            actor_email=user.email if user else 'system@texol.com',
+            actor_role=getattr(user, 'role', 'SYSTEM') if user else 'SYSTEM',
+            entity_type='Lead',
+            entity_id=lead.id,
+            action=AuditAction.UPDATE,
+            changes_json={
+                'owner': {
+                    'old': old_owner.get_full_name() or old_owner.email if old_owner else 'Unassigned',
+                    'new': sales_name
+                },
+                'assignment_type': {'new': 'POST_PLD_QUALIFICATION_SALES_HANDOFF'},
+                'handoff_notes': {'new': handoff_notes}
+            }
+        )
+
+        # Work Queue Task creation for the assigned salesman
+        if schedule_task:
+            task_desc = f"PLD Qualified Lead Assigned: Follow up with {lead.account.company_name} for {lead.primary_product.name}."
+            if handoff_notes:
+                task_desc += f"\nHandoff Notes: {handoff_notes}"
+
+            Task.objects.create(
+                tenant=lead.tenant,
+                related_lead=lead,
+                related_account=lead.account,
+                related_contact=getattr(lead, 'contact', None),
+                title=f"Sales Outreach - {lead.account.company_name}",
+                description=task_desc,
+                due_date=due_date,
+                priority=TaskPriority.HIGH,
+                status=TaskStatus.OPEN,
+                task_type="FOLLOW_UP",
+                assigned_to=sales_user,
+                created_by=user if (user and user.is_authenticated) else None
+            )
+
+        # Record activity in timeline
+        Activity.objects.create(
+            lead=lead,
+            account=lead.account,
+            activity_type=ActivityType.FOLLOW_UP,
+            subject=f"Assigned to Sales Representative: {sales_name}",
+            description_notes=f"Qualified through PLD Engine. Assigned to sales representative {sales_name} ({sales_user.email}).{(' Notes: ' + handoff_notes) if handoff_notes else ''}",
+            conducted_at=timezone.now(),
+            status=ActivityStatus.COMPLETED,
+            performed_by=user,
+            created_by=user
+        )
+
+        return Response({
+            'message': f"Lead successfully assigned to {sales_name}",
+            'lead': LeadSerializer(lead).data,
+            'assigned_user': {
+                'id': str(sales_user.id),
+                'name': sales_name,
+                'email': sales_user.email,
+                'role': sales_user.role,
+                'role_display': sales_user.get_role_display()
+            }
         }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='stage-email-preview')
@@ -1126,18 +1246,23 @@ class LeadViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_201_CREATED)
 
 
-class LeadSourceViewSet(viewsets.ModelViewSet):
+class LeadSourceViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'LEADS'
     queryset = LeadSource.objects.all()
     serializer_class = LeadSourceSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
-class CampaignViewSet(viewsets.ModelViewSet):
+class CampaignViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'LEADS'
     serializer_class = CampaignSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         qs = Campaign.objects.all().select_related('source', 'product', 'owner')
+        user = self.request.user if (self.request and self.request.user and self.request.user.is_authenticated) else get_request_user(self.request)
+        if user:
+            qs = apply_data_scoping(qs, user, domain='LEADS')
         status_val = self.request.query_params.get('status')
         product_id = self.request.query_params.get('product')
         source_id = self.request.query_params.get('source')
@@ -1150,31 +1275,17 @@ class CampaignViewSet(viewsets.ModelViewSet):
         return qs.order_by('-created_at')
 
 
-class LeadTouchViewSet(viewsets.ModelViewSet):
+class LeadTouchViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'LEADS'
     serializer_class = LeadTouchSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        user = get_request_user(self.request)
-        partner = None
-        if user and (getattr(user, 'is_partner_user', False) or getattr(user, 'role', None) == 'PARTNER_USER'):
-            partner_prof = getattr(user, 'partner_profile', None)
-            partner = partner_prof.partner if partner_prof else None
-
+        user = self.request.user if (self.request and self.request.user and self.request.user.is_authenticated) else get_request_user(self.request)
         qs = LeadTouch.objects.all().select_related('lead', 'campaign', 'partner__account', 'source', 'recorded_by')
-        if partner:
-            qs = qs.filter(partner=partner)
+        if user:
+            qs = apply_data_scoping(qs, user, domain='LEADS')
 
-        is_manager_or_admin = (
-            user and (
-                user.is_superuser or
-                user.is_staff or
-                getattr(user, 'role', None) in [UserRole.ADMIN, UserRole.SALES_MANAGER, UserRole.MANAGEMENT] or
-                'MANAGER' in getattr(user, 'role', '')
-            )
-        )
-        if user and not is_manager_or_admin and getattr(user, 'role', None) in [UserRole.SALES_BDM, 'SALES_BDM', 'SALES_REP', 'ACCOUNT_EXECUTIVE', 'SALES_EXECUTIVE']:
-            qs = qs.filter(lead__owner=user)
 
         lead_id = self.request.query_params.get('lead')
         campaign_id = self.request.query_params.get('campaign')

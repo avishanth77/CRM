@@ -55,7 +55,7 @@ class PartnerTypeMasterViewSet(viewsets.ModelViewSet):
     """
     queryset = PartnerTypeMaster.objects.all()
     serializer_class = PartnerTypeMasterSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class PartnerViewSet(viewsets.ModelViewSet):

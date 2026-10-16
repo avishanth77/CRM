@@ -7,12 +7,15 @@ from apps.accounts.serializers import (
     AccountAttributeSerializer, AccountProductSerializer
 )
 from apps.products.models import Product
+from apps.authentication.permissions import ScopedQuerySetMixin, DomainOperationPermission
 
 
-class AccountViewSet(viewsets.ModelViewSet):
+class AccountViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'ACCOUNTS'
     queryset = Account.objects.all().prefetch_related('contacts', 'custom_attributes', 'product_relationships')
     serializer_class = AccountSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
+
 
     @action(detail=True, methods=['post'], url_path='upsert-attributes')
     def upsert_attributes(self, request, pk=None):
@@ -136,19 +139,23 @@ class AccountViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_201_CREATED)
 
 
-class ContactViewSet(viewsets.ModelViewSet):
+class ContactViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'ACCOUNTS'
     queryset = Contact.objects.all()
     serializer_class = ContactSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
 
 
-class AccountAttributeViewSet(viewsets.ModelViewSet):
+class AccountAttributeViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'ACCOUNTS'
     queryset = AccountAttribute.objects.all()
     serializer_class = AccountAttributeSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
 
 
-class AccountProductViewSet(viewsets.ModelViewSet):
+class AccountProductViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
+    domain_name = 'ACCOUNTS'
     queryset = AccountProduct.objects.all()
     serializer_class = AccountProductSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
+

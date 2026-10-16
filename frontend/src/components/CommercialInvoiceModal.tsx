@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Printer, Download, X, Edit3, CheckCircle2, ShieldCheck, Building, Calendar, DollarSign } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Printer, X, Edit3 } from 'lucide-react';
 import type { Opportunity, Proposal, ProposalVersion } from '../services/api';
 
 interface CommercialInvoiceModalProps {
@@ -26,8 +26,8 @@ export const CommercialInvoiceModal: React.FC<CommercialInvoiceModalProps> = ({
 
   const defaultCurrency = targetVersion?.currency || targetOpp?.currency || 'USD';
   const defaultSeats = Number(
-    targetVersion?.items?.[0]?.quantity ||
     targetOpp?.seat_units_count ||
+    targetVersion?.items?.[0]?.quantity ||
     1
   );
 
@@ -85,23 +85,39 @@ export const CommercialInvoiceModal: React.FC<CommercialInvoiceModalProps> = ({
     window.print();
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const accountName = targetOpp?.account_name || targetProp?.account_name || 'Client Corporation';
   const contactName = targetOpp?.primary_contact_name || targetProp?.primary_contact_name || 'Authorized Buyer';
   const productName = targetOpp?.product_name || targetProp?.product_name || 'VanForces Suite';
 
   return (
     <div
+      className="print-invoice-modal-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9999,
-        background: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(6px)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: '24px',
-        overflowY: 'auto'
+        zIndex: 99999,
+        background: 'rgba(0, 0, 0, 0.78)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        padding: '24px 16px',
+        boxSizing: 'border-box'
       }}
     >
       {/* Print Specific CSS */}
@@ -133,7 +149,18 @@ export const CommercialInvoiceModal: React.FC<CommercialInvoiceModalProps> = ({
         }
       `}</style>
 
-      {/* Top Modal Controls Header (Not Printed) */}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '850px',
+          margin: '0 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          paddingBottom: '32px'
+        }}
+      >
+        {/* Top Modal Controls Header (Not Printed) */}
       <div
         className="no-print-area glass-panel"
         style={{
@@ -149,16 +176,38 @@ export const CommercialInvoiceModal: React.FC<CommercialInvoiceModalProps> = ({
           border: '1px solid var(--border-subtle)'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)' }}>
-            <Printer size={18} />
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>
-              Final Commercial Tax Invoice
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            onClick={onClose}
+            className="btn btn-outline"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.82rem',
+              padding: '6px 14px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+            title="Back to previous screen"
+          >
+            <ArrowLeft size={16} />
+            <span>Back</span>
+          </button>
+
+          <div style={{ width: '1px', height: '24px', background: 'var(--border-subtle)' }} />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)' }}>
+              <Printer size={18} />
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Official Tax Invoice for {accountName} • Negotiated Commercial Terms
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-primary)' }}>
+                Final Commercial Tax Invoice
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Official Tax Invoice for {accountName} • Negotiated Commercial Terms
+              </div>
             </div>
           </div>
         </div>
@@ -325,6 +374,33 @@ export const CommercialInvoiceModal: React.FC<CommercialInvoiceModalProps> = ({
               style={{ width: '100%', padding: '6px 10px' }}
             />
           </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+              Contract Term (Months)
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={contractTerm}
+              onChange={(e) => setContractTerm(Math.max(1, Number(e.target.value)))}
+              className="form-input"
+              style={{ width: '100%', padding: '6px 10px' }}
+            />
+          </div>
+
+          <div style={{ gridColumn: 'span 2' }}>
+            <label style={{ display: 'block', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+              Item / Scope Description
+            </label>
+            <input
+              type="text"
+              value={itemDescription}
+              onChange={(e) => setItemDescription(e.target.value)}
+              className="form-input"
+              style={{ width: '100%', padding: '6px 10px' }}
+            />
+          </div>
         </div>
       )}
 
@@ -393,7 +469,7 @@ export const CommercialInvoiceModal: React.FC<CommercialInvoiceModalProps> = ({
             </div>
             <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px', lineHeight: 1.5 }}>
               <div>Attention: <strong>{contactName}</strong></div>
-              <div>Primary Contact Email: {targetOpp?.primary_contact_email || `${accountName.toLowerCase().replace(/\s+/g, '')}@client.com`}</div>
+              <div>Primary Contact Email: {(targetOpp as any)?.primary_contact_email || (targetOpp as any)?.primary_contact?.email || `${accountName.toLowerCase().replace(/\s+/g, '')}@client.com`}</div>
               <div>Contract Term: <strong>{contractTerm} Months</strong></div>
             </div>
           </div>
@@ -548,6 +624,72 @@ export const CommercialInvoiceModal: React.FC<CommercialInvoiceModalProps> = ({
             <div style={{ fontSize: '11px', color: '#64748B' }}>Authorized Buyer Signature &amp; Stamp</div>
           </div>
         </div>
+      </div>
+
+      {/* Bottom Actions Bar (Not Printed) */}
+      <div
+        className="no-print-area glass-panel"
+        style={{
+          width: '100%',
+          maxWidth: '850px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '12px 20px',
+          marginTop: '16px',
+          marginBottom: '24px',
+          background: 'var(--bg-surface-elevated)',
+          borderRadius: '12px',
+          border: '1px solid var(--border-subtle)'
+        }}
+      >
+        <button
+          onClick={onClose}
+          className="btn btn-outline"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.85rem',
+            padding: '8px 18px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+          title="Back to previous screen"
+        >
+          <ArrowLeft size={16} />
+          <span>Back</span>
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className="btn btn-outline"
+            style={{ fontSize: '0.82rem', padding: '8px 14px' }}
+          >
+            <Edit3 size={15} />
+            {isEditing ? 'Preview Layout' : 'Quick Adjust'}
+          </button>
+
+          <button
+            onClick={handlePrint}
+            className="btn btn-primary"
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              borderColor: '#059669',
+              fontSize: '0.85rem',
+              padding: '8px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
+            }}
+          >
+            <Printer size={16} />
+            Print Invoice
+          </button>
+        </div>
+      </div>
       </div>
     </div>
   );

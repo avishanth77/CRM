@@ -81,7 +81,11 @@ export const NurtureWorkspace: React.FC<NurtureWorkspaceProps> = ({
         api.getProducts()
       ]);
 
-      setLostOpportunities(oppRes.results || []);
+      // Strictly ensure only CLOSED-LOST deals enter the lostOpportunities state.
+      // WON and ACTIVE deals must NEVER appear in the nurture / closed-lost pool!
+      const rawOpps: Opportunity[] = oppRes.results || [];
+      const lostDeals = rawOpps.filter(o => o.status === 'LOST');
+      setLostOpportunities(lostDeals);
       // Filter leads that are in NURTURE or DISQUALIFIED status
       // Leads restored to ACTIVE status belong in the active PLD queue!
       const allLeads = leadRes.results || [];
@@ -156,6 +160,8 @@ export const NurtureWorkspace: React.FC<NurtureWorkspaceProps> = ({
   // Filtered Opportunities
   const filteredLostOpportunities = useMemo(() => {
     return lostOpportunities.filter(o => {
+      // Safety guard: Only deals with status === 'LOST' can appear in the closed-lost pool
+      if (o.status !== 'LOST') return false;
       const acc = (o.account_name || '').toLowerCase();
       const comp = (o.competitor || '').toLowerCase();
       const reason = (o.loss_reason_notes || o.loss_reason_category || '').toLowerCase();
@@ -219,12 +225,14 @@ export const NurtureWorkspace: React.FC<NurtureWorkspaceProps> = ({
 
   // KPI Calculations
   const totalLostValue = useMemo(() => {
-    return lostOpportunities.reduce((acc, curr) => acc + Number(curr.total_contract_value || curr.arr || 0), 0);
+    return lostOpportunities
+      .filter(o => o.status === 'LOST')
+      .reduce((acc, curr) => acc + Number(curr.total_contract_value || curr.arr || 0), 0);
   }, [lostOpportunities]);
 
   const topCompetitor = useMemo(() => {
     const counts: Record<string, number> = {};
-    lostOpportunities.forEach(o => {
+    lostOpportunities.filter(o => o.status === 'LOST').forEach(o => {
       const c = (o.competitor || '').trim();
       if (c) counts[c] = (counts[c] || 0) + 1;
     });
@@ -234,7 +242,7 @@ export const NurtureWorkspace: React.FC<NurtureWorkspaceProps> = ({
 
   const topLossCategory = useMemo(() => {
     const counts: Record<string, number> = {};
-    lostOpportunities.forEach(o => {
+    lostOpportunities.filter(o => o.status === 'LOST').forEach(o => {
       const cat = o.loss_reason_category || 'UNSPECIFIED';
       counts[cat] = (counts[cat] || 0) + 1;
     });
@@ -469,10 +477,10 @@ export const NurtureWorkspace: React.FC<NurtureWorkspaceProps> = ({
             <Target size={18} style={{ color: 'var(--primary)' }} />
           </div>
           <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: 'var(--text-primary)' }}>
-            {lostOpportunities.length + nurtureLeads.length}
+            {filteredLostOpportunities.length + nurtureLeads.length}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            {filteredIcpFailedLeads.length} ICP Failed • {filteredNurtureLeads.length} Disqualified • {lostOpportunities.length} Lost Deals
+            {filteredIcpFailedLeads.length} ICP Failed • {filteredNurtureLeads.length} Disqualified • {filteredLostOpportunities.length} Lost Deals
           </div>
         </div>
 

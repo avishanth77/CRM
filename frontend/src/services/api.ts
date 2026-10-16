@@ -1610,24 +1610,31 @@ export interface ERPSyncRecord {
   created_at: string;
 }
 
+let isRefreshingToken = false;
+let refreshSubscribers: Array<(token: string) => void> = [];
+
+function onTokenRefreshed(newToken: string) {
+  refreshSubscribers.forEach((cb) => cb(newToken));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const authUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('texol_auth_user') : null;
+  const token = typeof localStorage !== 'undefined' ? (localStorage.getItem('texol_access_token') || localStorage.getItem('access_token')) : null;
+  const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('texol_refresh_token') : null;
+
   const authHeaders: Record<string, string> = {};
-  if (authUserStr) {
-    try {
-      const authUser = JSON.parse(authUserStr);
-      if (authUser?.id) authHeaders['X-User-Id'] = String(authUser.id);
-      if (authUser?.email) authHeaders['X-User-Email'] = String(authUser.email);
-      if (authUser?.role) authHeaders['X-User-Role'] = String(authUser.role);
-    } catch {
-      // ignore
-    }
+  if (token) {
+    authHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  const headers = {
+  let headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...authHeaders,
-    ...(options.headers || {})
+    ...(options.headers as Record<string, string> || {})
   };
 
   const basesToTry = [activeApiBase, ...CANDIDATE_BASE_URLS.filter((b) => b !== activeApiBase)];
@@ -1636,11 +1643,71 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   for (const base of basesToTry) {
     try {
       const url = `${base}${endpoint}`;
-      const response = await fetch(url, {
+      let response = await fetch(url, {
         credentials: 'include',
         ...options,
         headers
       });
+
+      // Handle 401 Unauthorized: Attempt automatic token refresh
+      if (response.status === 401 && refreshToken && !endpoint.includes('/auth/token') && !endpoint.includes('/auth/login')) {
+        if (!isRefreshingToken) {
+          isRefreshingToken = true;
+          try {
+            const refreshRes = await fetch(`${base}/auth/token/refresh/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refresh: refreshToken })
+            });
+
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              const newToken = refreshData.access;
+              if (newToken) {
+                localStorage.setItem('texol_access_token', newToken);
+                onTokenRefreshed(newToken);
+                headers['Authorization'] = `Bearer ${newToken}`;
+                response = await fetch(url, {
+                  credentials: 'include',
+                  ...options,
+                  headers
+                });
+              }
+            } else {
+              // Refresh failed / expired: clean session
+              localStorage.removeItem('texol_access_token');
+              localStorage.removeItem('texol_refresh_token');
+              localStorage.removeItem('texol_auth_user');
+              window.dispatchEvent(new CustomEvent('texol-auth-expired'));
+            }
+          } catch {
+            // Network failure during refresh
+          } finally {
+            isRefreshingToken = false;
+          }
+        } else {
+          // Wait for token refresh in-flight
+          const retryPromise = new Promise<T>((resolve, reject) => {
+            addRefreshSubscriber(async (newToken: string) => {
+              try {
+                headers['Authorization'] = `Bearer ${newToken}`;
+                const retryRes = await fetch(url, {
+                  credentials: 'include',
+                  ...options,
+                  headers
+                });
+                if (!retryRes.ok) throw new Error(`Retry failed with status ${retryRes.status}`);
+                const data = await retryRes.json();
+                resolve(data);
+              } catch (retryErr) {
+                reject(retryErr);
+              }
+            });
+          });
+          return retryPromise;
+        }
+      }
+
       if (!response.ok) {
         let errorMsg = null;
         try {
@@ -1648,6 +1715,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
           errorMsg = errorBody.error || errorBody.message || errorBody.detail || (typeof errorBody === 'string' ? errorBody : null);
         } catch {
           // ignore parsing error on error response
+        }
+        if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/token')) {
+          localStorage.removeItem('texol_access_token');
+          localStorage.removeItem('texol_refresh_token');
+          localStorage.removeItem('texol_auth_user');
+          window.dispatchEvent(new CustomEvent('texol-auth-expired'));
         }
         throw new Error(errorMsg || `API request failed with status ${response.status}`);
       }
@@ -1669,7 +1742,6 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       if (err.message && err.message.startsWith('API request failed')) {
         throw err;
       }
-      // If it's a specific backend error (not a network failure), throw it immediately
       if (err.message && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
         throw err;
       }
@@ -1677,7 +1749,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     }
   }
 
-  throw lastError || new Error('Failed to connect to backend API server. Ensure Django is running on port 8000 or 8001.');
+  throw lastError || new Error(`Network request to ${endpoint} failed across all candidate endpoints`);
 }
 
 export const api = {
@@ -2023,6 +2095,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ version_number: versionNumber })
     }),
+  syncProposalSeats: (proposalId: string, data?: { version_number?: number; quantity?: number; unit_price?: number }) =>
+    request<{ message: string; proposal: Proposal }>(`/proposals/${proposalId}/sync-seats/`, {
+      method: 'POST',
+      body: JSON.stringify(data || {})
+    }),
+  updateProposalItem: (itemId: string, data: Partial<ProposalItem>) =>
+    request<ProposalItem>(`/proposal-items/${itemId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    }),
   getProposalHistory: (proposalId: string) =>
     request<any[]>(`/proposals/${proposalId}/history/`),
   getApprovalRules: () =>
@@ -2050,7 +2132,8 @@ export const api = {
       custom_email_subject?: string;
       custom_email_body?: string;
       custom_recipient_email?: string;
-    }
+    },
+    assignedSalesOwnerId?: string
   ) =>
     request<{ message: string; lead: Lead; stage_email?: any }>(`/leads/${leadId}/transition-stage/`, {
       method: 'POST',
@@ -2058,8 +2141,22 @@ export const api = {
         target_stage_id: targetStageId,
         transition_reason: reason,
         is_override: isOverride,
+        assigned_sales_owner_id: assignedSalesOwnerId,
         ...(emailOptions || {})
       })
+    }),
+
+  assignLeadSalesOwner: (
+    leadId: string,
+    data: {
+      sales_user_id: string;
+      notes?: string;
+      schedule_task?: boolean;
+    }
+  ) =>
+    request<{ message: string; lead: Lead; assigned_user: any }>(`/leads/${leadId}/assign-sales/`, {
+      method: 'POST',
+      body: JSON.stringify(data)
     }),
 
   // Phase 4: ICP Engine
@@ -2545,11 +2642,19 @@ export const api = {
 
   // Authentication & Role-Based Authorization
   login: (data: { username: string; password: string }) =>
-    request<{ message: string; user: AuthUser }>('/auth/login/', { method: 'POST', body: JSON.stringify(data) }),
+    request<{ message: string; user: AuthUser; access?: string; refresh?: string; tokens?: { access: string; refresh: string } }>('/auth/login/', { method: 'POST', body: JSON.stringify(data) }),
+  obtainToken: (data: { username?: string; email?: string; password: string }) =>
+    request<{ access: string; refresh: string; user?: AuthUser }>('/auth/token/', { method: 'POST', body: JSON.stringify(data) }),
+  refreshToken: (refresh: string) =>
+    request<{ access: string }>('/auth/token/refresh/', { method: 'POST', body: JSON.stringify({ refresh }) }),
+  verifyToken: (token: string) =>
+    request<Record<string, any>>('/auth/token/verify/', { method: 'POST', body: JSON.stringify({ token }) }),
   logout: () =>
     request<{ message: string }>('/auth/logout/', { method: 'POST' }),
   getCurrentUser: () =>
     request<AuthUser>('/auth/me/'),
+  changePassword: (data: { current_password: string; new_password: string; confirm_password?: string }) =>
+    request<{ message: string }>('/auth/password-change/', { method: 'POST', body: JSON.stringify(data) }),
   getUsers: () =>
     request<{ results: AuthUser[] }>('/users/'),
 

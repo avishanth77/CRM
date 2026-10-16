@@ -23,6 +23,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     try {
       const res = await api.login({ username: targetEmail, password: targetPass });
       if (res && res.user) {
+        if (res.access) {
+          localStorage.setItem('texol_access_token', res.access);
+        }
+        if (res.refresh) {
+          localStorage.setItem('texol_refresh_token', res.refresh);
+        }
         localStorage.setItem('texol_auth_user', JSON.stringify(res.user));
         onLoginSuccess(res.user);
       } else {
@@ -330,19 +336,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                   {[
-                    { role: 'Admin', email: 'admin@texol.com', pass: 'Admin@Texol2026!', badge: 'badge-primary' },
-                    { role: 'Management', email: 'management@texol.com', pass: 'TexolDemo2026!', badge: 'badge-warning' },
+                    { role: 'Platform Admin', email: 'admin@texol.com', pass: 'Admin@Texol2026!', badge: 'badge-primary' },
+                    { role: 'TEXOL Management', email: 'management@texol.com', pass: 'TexolDemo2026!', badge: 'badge-warning' },
                     { role: 'Sales Manager', email: 'sales.manager@texol.com', pass: 'TexolDemo2026!', badge: 'badge-warning' },
-                    { role: 'Sales AE', email: 'sales.ae@texol.com', pass: 'TexolDemo2026!', badge: 'badge-success' },
+                    { role: 'Sales / BDM (AE)', email: 'sales.ae@texol.com', pass: 'TexolDemo2026!', badge: 'badge-success' },
                     { role: 'PLD Executive', email: 'pld.exec@texol.com', pass: 'TexolDemo2026!', badge: 'badge-info' },
                     { role: 'Solution Consultant', email: 'solution.consultant@texol.com', pass: 'TexolDemo2026!', badge: 'badge-neutral' },
+                    { role: 'Marketing & Growth', email: 'marketing@texol.com', pass: 'TexolDemo2026!', badge: 'badge-info' },
                     { role: 'Product Manager', email: 'product.manager@texol.com', pass: 'TexolDemo2026!', badge: 'badge-primary' },
+                    { role: 'Customer Success', email: 'customer.success@texol.com', pass: 'TexolDemo2026!', badge: 'badge-success' },
                     { role: 'Partner Manager', email: 'partner.manager@texol.com', pass: 'TexolDemo2026!', badge: 'badge-warning' },
+                    { role: 'Partner User', email: 'partner.user@texol.com', pass: 'TexolDemo2026!', badge: 'badge-primary' },
+                    { role: 'Finance / Ops', email: 'finance@texol.com', pass: 'TexolDemo2026!', badge: 'badge-neutral' },
                   ].map(r => (
                     <button
                       key={r.email}
                       type="button"
                       disabled={loading}
+                      title={`Login as ${r.role} (${r.email})`}
                       onClick={() => {
                         setUsername(r.email);
                         setPassword(r.pass);
@@ -359,11 +370,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         cursor: 'pointer',
-                        textAlign: 'left'
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease'
                       }}
                     >
-                      <span style={{ fontWeight: 600 }}>{r.role}</span>
-                      <span className={`badge ${r.badge}`} style={{ fontSize: '0.6rem', padding: '1px 5px' }}>Test</span>
+                      <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.role}</span>
+                      <span className={`badge ${r.badge}`} style={{ fontSize: '0.6rem', padding: '1px 5px', flexShrink: 0, marginLeft: '4px' }}>Demo</span>
                     </button>
                   ))}
                 </div>

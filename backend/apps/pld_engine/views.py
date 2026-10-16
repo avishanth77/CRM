@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 
 from apps.pld_engine.models import (
     ProductConfigurationVersion, ICPProfile, ICPRule, ScoreModel,
@@ -18,6 +19,8 @@ from apps.pld_assessments.models import AccountProductAssessment, ScoreClassific
 from apps.pld_assessments.serializers import AccountProductAssessmentSerializer
 from apps.pld_engine.services import ICPEvaluator, PLDScoreCalculator, GateValidator
 from apps.pld_engine.permissions import IsAdminOrProductManager, CanOverridePLDScore
+from apps.authentication.permissions import can_adjust_pld_score, can_publish_product_config
+from apps.audit_logging.models import AuditLog, AuditAction
 from django.db.models import Q
 from apps.authentication.backends import get_request_user, is_sales_staff, is_management_or_admin
 from apps.accounts.models import Account
@@ -30,7 +33,44 @@ class ProductConfigurationVersionViewSet(viewsets.ModelViewSet):
         'stages__gates', 'icp_rules', 'score_models', 'questionnaires__questions__options'
     )
     serializer_class = ProductConfigurationVersionSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=['post'], url_path='publish')
+    def publish(self, request, pk=None):
+        """
+        Section 9.5 F: Publishes a product configuration version.
+        Restricted to Product Managers and Platform Administrators.
+        """
+        user = getattr(request, 'user', None) or get_request_user(request)
+        if not can_publish_product_config(user):
+            return Response(
+                {'error': 'Permission denied: Only Product Managers and Platform Administrators can publish configurations.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        config = self.get_object()
+        if config.product:
+            ProductConfigurationVersion.objects.filter(product=config.product, status='PUBLISHED').exclude(id=config.id).update(status='ARCHIVED')
+        config.status = 'PUBLISHED'
+        config.save(update_fields=['status'])
+
+        AuditLog.objects.create(
+            actor=user,
+            actor_email=getattr(user, 'email', ''),
+            actor_role=getattr(user, 'canonical_role', ''),
+            action=AuditAction.CONFIG_PUBLISH,
+            entity_type='ProductConfigurationVersion',
+            entity_id=config.id,
+            changes_json={
+                'version_number': config.version_number,
+                'product_id': str(config.product_id) if config.product_id else None,
+                'status': 'PUBLISHED'
+            }
+        )
+        return Response({
+            'message': f"Product configuration version {config.version_number} published successfully.",
+            'id': str(config.id),
+            'status': 'PUBLISHED'
+        }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='evaluate-icp')
     def evaluate_icp(self, request):
@@ -192,7 +232,7 @@ class QuestionnaireTemplateViewSet(viewsets.ModelViewSet):
 class QuestionnaireQuestionViewSet(viewsets.ModelViewSet):
     queryset = QuestionnaireQuestion.objects.all().select_related('template').prefetch_related('options')
     serializer_class = QuestionnaireQuestionSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -221,7 +261,7 @@ class QuestionnaireQuestionViewSet(viewsets.ModelViewSet):
 class QuestionAnswerOptionViewSet(viewsets.ModelViewSet):
     queryset = QuestionAnswerOption.objects.all().select_related('question')
     serializer_class = QuestionAnswerOptionSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
@@ -242,13 +282,13 @@ class QuestionAnswerOptionViewSet(viewsets.ModelViewSet):
 class PipelineStageViewSet(viewsets.ModelViewSet):
     queryset = PipelineStage.objects.all().prefetch_related('gates')
     serializer_class = PipelineStageSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
 class StageGateViewSet(viewsets.ModelViewSet):
     queryset = StageGate.objects.all()
     serializer_class = StageGateSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
 
 # Dedicated REST endpoints (Requirement 21)
@@ -261,7 +301,7 @@ class ICPEndpointViewSet(viewsets.ViewSet):
     - GET  /api/v1/icp/profiles/
     - GET  /api/v1/icp/assessments/
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def list(self, request):
         return Response({
@@ -348,7 +388,7 @@ class PLDEndpointViewSet(viewsets.ViewSet):
     - GET  /api/v1/pld/assessments/
     - GET  /api/v1/pld/models/
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def list(self, request):
         return Response({
@@ -364,7 +404,7 @@ class PLDEndpointViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['post'], url_path='score')
     def score(self, request):
-        user = get_request_user(request)
+        user = getattr(request, 'user', None) or get_request_user(request)
         assessment_id = request.data.get('assessment_id')
         dimension_inputs = request.data.get('answers', {})
 
@@ -385,7 +425,7 @@ class PLDEndpointViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['post'], url_path='assess')
     def assess(self, request):
-        user = get_request_user(request)
+        user = getattr(request, 'user', None) or get_request_user(request)
         # Full one-step ICP + PLD assessment
         account_id = request.data.get('account_id')
         product_id = request.data.get('product_id')
@@ -419,11 +459,11 @@ class PLDEndpointViewSet(viewsets.ViewSet):
             "assessment": AccountProductAssessmentSerializer(assessment).data
         }, status=status.HTTP_200_OK)
 
-    @action(detail=False, methods=['post'], url_path='override', permission_classes=[CanOverridePLDScore])
+    @action(detail=False, methods=['post'], url_path='override')
     def override_score(self, request):
-        user = get_request_user(request)
-        if not is_management_or_admin(user):
-            return Response({'error': 'Staff members are not authorized to override PLD scores.'}, status=status.HTTP_403_FORBIDDEN)
+        user = getattr(request, 'user', None) or get_request_user(request)
+        if not can_adjust_pld_score(user):
+            return Response({'error': 'Permission denied: User does not possess PLD score override authority. Management or Sales Manager authority required.'}, status=status.HTTP_403_FORBIDDEN)
 
         assessment_id = request.data.get('assessment_id')
         new_score = request.data.get('pld_score')
@@ -449,6 +489,22 @@ class PLDEndpointViewSet(viewsets.ViewSet):
                 reason=reason,
                 user=user
             )
+
+            AuditLog.objects.create(
+                actor=user,
+                actor_email=getattr(user, 'email', ''),
+                actor_role=getattr(user, 'canonical_role', ''),
+                action=AuditAction.OVERRIDE,
+                entity_type='AccountProductAssessment',
+                entity_id=assessment.id,
+                changes_json={
+                    'score_override': True,
+                    'new_score': str(new_score),
+                    'new_classification': new_classification,
+                    'justification': reason
+                }
+            )
+
             return Response({
                 "message": "PLD score manually overridden with documented audit reason.",
                 "assessment": AccountProductAssessmentSerializer(updated_assessment).data

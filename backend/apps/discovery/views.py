@@ -21,6 +21,12 @@ from apps.accounts.models import Contact
 from apps.audit_logging.models import AuditLog, AuditAction
 
 
+from apps.authentication.permissions import (
+    DomainOperationPermission, ScopedQuerySetMixin,
+    apply_data_scoping
+)
+
+
 def get_request_user(request):
     if request.user and request.user.is_authenticated:
         return request.user
@@ -51,7 +57,7 @@ def get_request_user(request):
     return None
 
 
-class DiscoveryViewSet(viewsets.ModelViewSet):
+class DiscoveryViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     queryset = Discovery.objects.all().select_related(
         'lead', 'account', 'product', 'conducted_by'
     ).prefetch_related(
@@ -61,11 +67,14 @@ class DiscoveryViewSet(viewsets.ModelViewSet):
         'stakeholders__contact'
     )
     serializer_class = DiscoverySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
+    domain_name = 'DISCOVERY'
 
     def get_queryset(self):
         qs = super().get_queryset()
-        user = get_request_user(self.request)
+        user = getattr(self.request, 'user', None) or get_request_user(self.request)
+        if user and user.is_authenticated:
+            qs = apply_data_scoping(qs, user, domain='DISCOVERY')
 
         is_manager_or_admin = (
             user and (
@@ -257,7 +266,7 @@ class DiscoveryProblemViewSet(viewsets.ModelViewSet):
         'discovery', 'problem', 'lead_problem'
     ).prefetch_related('capability_mappings__capability__module')
     serializer_class = DiscoveryProblemSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
@@ -363,7 +372,7 @@ class DiscoveryProblemMappingViewSet(viewsets.ModelViewSet):
         'discovery_problem__problem', 'capability__module'
     )
     serializer_class = DiscoveryProblemMappingSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class DiscoveryStakeholderViewSet(viewsets.ModelViewSet):
@@ -371,4 +380,4 @@ class DiscoveryStakeholderViewSet(viewsets.ModelViewSet):
         'discovery', 'contact'
     )
     serializer_class = DiscoveryStakeholderSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]

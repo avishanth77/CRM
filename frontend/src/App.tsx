@@ -8,7 +8,7 @@ import {
   FlaskConical, History, Share2, Gauge, Send, Database, Monitor, FileText,
   Building2, ListTodo, LogOut, UserCheck, ShieldAlert, UserPlus, Package, User,
   Sun, Moon, Calendar, Clock, RotateCcw, FolderKanban,
-  CheckCircle2, AlertTriangle, AlertCircle, Info, ExternalLink, ArrowRight, Sliders
+  CheckCircle2, AlertTriangle, ExternalLink
 } from 'lucide-react';
 import { api } from './services/api';
 import type { 
@@ -68,25 +68,18 @@ export type TabType =
 
 export const isTabAllowedForUser = (tabId: string, user: AuthUser | null): boolean => {
   if (!user) return false;
+  // External Partner Users are strictly confined to their dedicated Partner Portal workspace
+  if (user.role === 'PARTNER_USER' || user.is_partner_user) {
+    return tabId === 'partners';
+  }
+  // Superuser and Platform Admin have global workspace access
   if (user.is_superuser || user.role === 'ADMIN') return true;
-  if (tabId === 'negotiation') {
-    const allowedRoles = ['ADMIN', 'MANAGEMENT', 'SALES_MANAGER', 'SALES_BDM', 'ACCOUNT_EXECUTIVE', 'FINANCE', 'PARTNER_MANAGER'];
-    if (allowedRoles.includes(user.role)) return true;
+
+  // Use the canonical backend allowed_workspaces from Section 9.4
+  if (user.allowed_workspaces && Array.isArray(user.allowed_workspaces)) {
+    return user.allowed_workspaces.includes(tabId);
   }
-  if (tabId === 'customer-lifecycle') {
-    const allowedRoles = ['ADMIN', 'MANAGEMENT', 'SALES_MANAGER', 'SALES_BDM', 'ACCOUNT_EXECUTIVE', 'CUSTOMER_SUCCESS', 'PARTNER_MANAGER'];
-    if (allowedRoles.includes(user.role)) return true;
-  }
-  if (tabId === 'nurture-pool') {
-    const allowedRoles = ['ADMIN', 'MANAGEMENT', 'SALES_MANAGER', 'SALES_BDM', 'ACCOUNT_EXECUTIVE', 'MARKETING'];
-    if (allowedRoles.includes(user.role)) return true;
-  }
-  if (tabId === 'admin-leads') {
-    const allowedRoles = ['ADMIN', 'MANAGEMENT', 'SALES_MANAGER'];
-    if (user.is_superuser || allowedRoles.includes(user.role)) return true;
-    return false;
-  }
-  return user.allowed_workspaces?.includes(tabId) ?? false;
+  return false;
 };
 
 export const canAcceptDealRegistration = (user: AuthUser | null): boolean => {
@@ -100,6 +93,7 @@ export const canAcceptDealRegistration = (user: AuthUser | null): boolean => {
 
 export const getAuthorizedWorkspace = (user: AuthUser | null): TabType => {
   if (!user) return 'dashboard';
+  if (user.role === 'PARTNER_USER' || user.is_partner_user) return 'partners';
   if (user.is_superuser || user.role === 'ADMIN') return 'dashboard';
   if (isTabAllowedForUser('dashboard', user)) return 'dashboard';
   if (user.allowed_workspaces && user.allowed_workspaces.length > 0) {
@@ -292,7 +286,7 @@ export default function App() {
   const [productIcpRules, setProductIcpRules] = useState<ICPRule[]>([]);
   const [loadingIcpRules, setLoadingIcpRules] = useState<boolean>(false);
   const [dynamicIcpValues, setDynamicIcpValues] = useState<Record<string, any>>({});
-  const [productIcpProfile, setProductIcpProfile] = useState<ICPProfile | null>(null);
+  const [, setProductIcpProfile] = useState<ICPProfile | null>(null);
 
   const fetchProductIcpRules = async (prodId: string) => {
     if (!prodId) {
@@ -501,11 +495,34 @@ export default function App() {
       // ignore
     }
     localStorage.removeItem('texol_auth_user');
+    localStorage.removeItem('texol_access_token');
+    localStorage.removeItem('texol_refresh_token');
     localStorage.removeItem('texol_active_tab');
     setCurrentUser(null);
     setIsLoggedIn(false);
+    // Clear all cached records to prevent unauthorized data exposure across sessions
+    setLeads([]);
+    setOpportunities([]);
+    setDiscoveries([]);
+    setDemos([]);
+    setPocs([]);
+    setSqlHandoffs([]);
+    setAuditLogs([]);
+    setAccounts([]);
+    setStaffUsers([]);
+    setPartnerList([]);
+    setPartnerDashboard(null);
     _setActiveTab('dashboard');
   };
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      inAppAlert.warning('Your session has expired. Please log in again.');
+      handleLogout();
+    };
+    window.addEventListener('texol-auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('texol-auth-expired', handleAuthExpired);
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -1338,41 +1355,34 @@ export default function App() {
         {/* Content Area */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
           {!isTabAllowed(activeTab) ? (
-            (!currentUser?.allowed_workspaces || currentUser.allowed_workspaces.length === 0) ? (
-              <div className="card text-center" style={{ padding: '64px 32px', maxWidth: '600px', margin: '40px auto' }}>
-                <div style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '50%',
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  border: '1px solid rgba(245, 158, 11, 0.4)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 20px auto'
-                }}>
-                  <ShieldAlert size={32} color="#F59E0B" />
-                </div>
-                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>
-                  No Authorized Workspaces Assigned
-                </h2>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '24px', lineHeight: 1.5 }}>
-                  Your current account does not have any assigned workspaces. Please contact your system administrator.
-                </p>
+            <div className="card text-center" style={{ padding: '64px 32px', maxWidth: '640px', margin: '40px auto' }}>
+              <div style={{
+                width: '68px',
+                height: '68px',
+                borderRadius: '50%',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px auto'
+              }}>
+                <ShieldAlert size={34} color="#EF4444" />
               </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '300px', color: 'var(--text-muted)', gap: '12px' }}>
-                <div style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '50%',
-                  border: '3px solid var(--primary)',
-                  borderTopColor: 'transparent',
-                  animation: 'spin 0.8s linear infinite'
-                }} />
-                <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>Redirecting to authorized workspace...</span>
-              </div>
-            )
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '10px' }}>
+                403 — Unauthorized Workspace Access
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px', lineHeight: 1.6 }}>
+                Your primary role (<strong>{currentUser?.role_display || currentUser?.role}</strong>) is not entitled to access the <code style={{ color: 'var(--primary)', padding: '2px 8px', background: 'var(--bg-surface-elevated)', borderRadius: '4px', fontWeight: 700 }}>{activeTab}</code> workspace under Section 9.4 of the TEXOL CRM Governance Architecture.
+              </p>
+              <button
+                className="btn btn-primary"
+                onClick={() => setActiveTab(getAuthorizedWorkspace(currentUser))}
+                style={{ margin: '0 auto', padding: '10px 24px', fontSize: '0.88rem' }}
+              >
+                Return to Authorized Workspace
+              </button>
+            </div>
           ) : (
             <ErrorBoundary key={activeTab} fallbackTitle={`Unable to load ${activeTab} workspace`}>
               {/* TAB 1: PHASE 10 ANALYTICS & DASHBOARDS HUB */}
@@ -2722,13 +2732,12 @@ export default function App() {
                 {(() => {
                   const activeIntakeProduct = products.find(p => p.id === newProductId || p.code === newProductCode) || products[0];
                   const knockoutRules = productIcpRules.filter(r => r.rule_type === 'KNOCKOUT');
-                  const fitRules = productIcpRules.filter(r => r.rule_type === 'FIT' || r.rule_type === 'FIT_CRITERIA');
+                  const fitRules = productIcpRules.filter(r => r.rule_type === 'FIT_CRITERIA' || (r.rule_type as string) === 'FIT');
 
                   const knockoutEvaluations = knockoutRules.map(r => ({ rule: r, eval: getRuleEvaluation(r) }));
                   const fitEvaluations = fitRules.map(r => ({ rule: r, eval: getRuleEvaluation(r) }));
 
                   const failedKnockouts = knockoutEvaluations.filter(k => !k.eval.satisfied);
-                  const satisfiedKnockouts = knockoutEvaluations.filter(k => k.eval.satisfied);
 
                   const totalFitPoints = fitRules.reduce((sum, r) => sum + (r.weight || 10), 0);
                   const earnedFitPoints = fitEvaluations.reduce((sum, f) => f.eval.satisfied ? sum + (f.rule.weight || 10) : sum, 0);
@@ -2917,11 +2926,11 @@ export default function App() {
                                     }}
                                   >
                                     <option value="">-- Choose {label} Option --</option>
-                                    {(rule.target_value as string[]).map((opt: string) => (
+                                    {((rule.target_value as unknown) as string[]).map((opt: string) => (
                                       <option key={opt} value={opt}>{opt}</option>
                                     ))}
                                     {/* Include currentValue if custom */}
-                                    {currentValue && !(rule.target_value as string[]).includes(String(currentValue)) && (
+                                    {currentValue && !((rule.target_value as unknown) as string[]).includes(String(currentValue)) && (
                                       <option value={String(currentValue)}>{String(currentValue)} (Custom / Non-Standard)</option>
                                     )}
                                   </select>
@@ -3068,7 +3077,7 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setShowIntakeModal(false);
-                            _setActiveTab('admin');
+                            _setActiveTab('studio');
                             setStudioView('engine');
                           }}
                           style={{

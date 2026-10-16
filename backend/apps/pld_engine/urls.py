@@ -10,6 +10,7 @@ from apps.pld_engine.views import (
 
 router = DefaultRouter()
 router.register(r'configurations', ProductConfigurationVersionViewSet, basename='configuration')
+router.register(r'product-configs', ProductConfigurationVersionViewSet, basename='product-config')
 router.register(r'stages', PipelineStageViewSet, basename='stage')
 router.register(r'gates', StageGateViewSet, basename='gate')
 router.register(r'questionnaires', QuestionnaireTemplateViewSet, basename='questionnaire')
