@@ -626,3 +626,165 @@ class AuthenticationAndRBACSecurityTests(TestCase):
             'account_id': str(self.client_acc_a.id)
         })
         self.assertEqual(res_fin.status_code, status.HTTP_200_OK)
+
+    # =========================================================================
+    # E. TERRITORY MANAGEMENT & REGIONAL LEAD SCOPING TESTS
+    # =========================================================================
+
+    def test_territory_management_and_regional_manager_assignment(self):
+        """Admin can create territories, assign regional sales managers, and list dropdowns."""
+        self.client.force_authenticate(user=self.admin_user)
+
+        # 1. Admin creates a new territory
+        res = self.client.post('/api/v1/territories/', {
+            'name': 'Southern Province KSA',
+            'country': 'Saudi Arabia',
+            'description': 'Southern territory covering Abha and Jazan',
+            'regional_manager': str(self.sales_manager.id)
+        })
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['name'], 'Southern Province KSA')
+        self.assertEqual(str(res.data['regional_manager']), str(self.sales_manager.id))
+
+        # Manager user territory is synchronized
+        self.sales_manager.refresh_from_db()
+        self.assertEqual(self.sales_manager.territory, 'Southern Province KSA')
+
+        # 2. Ordinary sales rep cannot create territory
+        self.client.force_authenticate(user=self.sales_rep_a)
+        res_fail = self.client.post('/api/v1/territories/', {
+            'name': 'Unauthorized Territory'
+        })
+        self.assertEqual(res_fail.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. Authenticated users can list territories for dropdown
+        res_list = self.client.get('/api/v1/territories/')
+        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+        terr_names = [t['name'] for t in res_list.data.get('results', res_list.data)]
+        self.assertIn('Southern Province KSA', terr_names)
+
+    def test_sales_manager_strictly_isolated_to_assigned_territory_leads(self):
+        """Sales Manager can ONLY see leads from their assigned territory."""
+        # Setup: Ensure sales_manager has territory "Riyadh / Central"
+        self.sales_manager.territory = "Riyadh / Central"
+        self.sales_manager.save(update_fields=['territory'])
+
+        # Create Lead 1 in Central territory
+        lead_central = Lead.objects.create(
+            account=self.client_acc_a,
+            primary_product=self.product,
+            owner=self.sales_rep_a,
+            territory="Riyadh / Central",
+            status=LeadStatus.ACTIVE
+        )
+
+        # Create Lead 2 in Eastern territory
+        lead_eastern = Lead.objects.create(
+            account=self.client_acc_b,
+            primary_product=self.product,
+            owner=self.sales_rep_b,
+            territory="Dammam / Eastern",
+            status=LeadStatus.ACTIVE
+        )
+
+        # Authenticate as Central Sales Manager
+        self.client.force_authenticate(user=self.sales_manager)
+        res = self.client.get('/api/v1/leads/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        returned_ids = [str(l['id']) for l in res.data.get('results', [])]
+
+        # Central lead is visible
+        self.assertIn(str(lead_central.id), returned_ids)
+        # Eastern lead is strictly excluded
+        self.assertNotIn(str(lead_eastern.id), returned_ids)
+
+        # Direct access to Eastern lead returns 404 Not Found
+        res_direct = self.client.get(f'/api/v1/leads/{lead_eastern.id}/')
+        self.assertEqual(res_direct.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_lead_filtering_by_region(self):
+        """Admin can filter leads by territory / region query parameter."""
+        lead_central = Lead.objects.create(
+            account=self.client_acc_a,
+            primary_product=self.product,
+            owner=self.sales_rep_a,
+            territory="Riyadh / Central",
+            status=LeadStatus.ACTIVE
+        )
+        lead_eastern = Lead.objects.create(
+            account=self.client_acc_b,
+            primary_product=self.product,
+            owner=self.sales_rep_b,
+            territory="Dammam / Eastern",
+            status=LeadStatus.ACTIVE
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+
+        # Filter by region=Riyadh / Central
+        res_central = self.client.get('/api/v1/leads/?region=Riyadh / Central')
+        self.assertEqual(res_central.status_code, status.HTTP_200_OK)
+        central_ids = [str(l['id']) for l in res_central.data.get('results', [])]
+        self.assertIn(str(lead_central.id), central_ids)
+        self.assertNotIn(str(lead_eastern.id), central_ids)
+
+        # Filter by territory=Dammam / Eastern
+        res_eastern = self.client.get('/api/v1/leads/?territory=Dammam / Eastern')
+        self.assertEqual(res_eastern.status_code, status.HTTP_200_OK)
+        eastern_ids = [str(l['id']) for l in res_eastern.data.get('results', [])]
+        self.assertIn(str(lead_eastern.id), eastern_ids)
+        self.assertNotIn(str(lead_central.id), eastern_ids)
+
+    def test_salesman_cannot_reassign_lead_but_manager_and_admin_can(self):
+        """
+        Enforce Section 9.3 RBAC:
+        Sales representatives (SALES_BDM / AE) cannot reassign leads.
+        Only Sales Managers and Administrators have authority to reassign leads.
+        """
+        lead = Lead.objects.create(
+            account=self.client_acc_a,
+            primary_product=self.product,
+            owner=self.sales_rep_a,
+            territory="Riyadh / Central",
+            status=LeadStatus.ACTIVE
+        )
+
+        # 1. Sales rep A attempts to reassign lead via assign-sales endpoint -> 403 Forbidden
+        self.client.force_authenticate(user=self.sales_rep_a)
+        res_rep_assign = self.client.post(f'/api/v1/leads/{lead.id}/assign-sales/', {
+            'sales_user_id': str(self.sales_rep_b.id),
+            'notes': 'Attempted reassignment by salesman'
+        })
+        self.assertEqual(res_rep_assign.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("Permission denied", res_rep_assign.data.get('error', ''))
+        lead.refresh_from_db()
+        self.assertEqual(lead.owner, self.sales_rep_a)
+
+        # 2. Sales rep A attempts to reassign lead via PATCH -> 403 Forbidden
+        res_rep_patch = self.client.patch(f'/api/v1/leads/{lead.id}/', {
+            'owner': str(self.sales_rep_b.id)
+        })
+        self.assertEqual(res_rep_patch.status_code, status.HTTP_403_FORBIDDEN)
+        lead.refresh_from_db()
+        self.assertEqual(lead.owner, self.sales_rep_a)
+
+        # 3. Sales Manager reassigns lead to sales_rep_b -> 200 OK
+        self.client.force_authenticate(user=self.sales_manager)
+        res_mgr_assign = self.client.post(f'/api/v1/leads/{lead.id}/assign-sales/', {
+            'sales_user_id': str(self.sales_rep_b.id),
+            'notes': 'Manager authorized lead reassignment'
+        })
+        self.assertEqual(res_mgr_assign.status_code, status.HTTP_200_OK)
+        lead.refresh_from_db()
+        self.assertEqual(lead.owner, self.sales_rep_b)
+
+        # 4. Administrator reassigns lead back to sales_rep_a -> 200 OK
+        self.client.force_authenticate(user=self.admin_user)
+        res_admin_assign = self.client.post(f'/api/v1/leads/{lead.id}/assign-sales/', {
+            'sales_user_id': str(self.sales_rep_a.id),
+            'notes': 'Admin override reassignment'
+        })
+        self.assertEqual(res_admin_assign.status_code, status.HTTP_200_OK)
+        lead.refresh_from_db()
+        self.assertEqual(lead.owner, self.sales_rep_a)
+

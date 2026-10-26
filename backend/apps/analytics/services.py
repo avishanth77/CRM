@@ -140,7 +140,7 @@ class AnalyticsFilterHelper:
                 return queryset.filter(originated_leads__partner=partner)
             return queryset.none()
         # Preserve specialist enterprise roles without confining to owner=user
-        if getattr(user, 'role', None) in [UserRole.MARKETING, UserRole.PLD_EXECUTIVE, UserRole.SOLUTION_CONSULTANT, UserRole.PARTNER_MANAGER]:
+        if getattr(user, 'role', None) in [UserRole.MARKETING, UserRole.PRESALES, UserRole.PARTNER_MANAGER]:
             return queryset
         # Restrict individual sales staff to their assigned records only
         if is_sales_staff(user):

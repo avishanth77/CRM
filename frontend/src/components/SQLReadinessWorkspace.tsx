@@ -12,6 +12,7 @@ import type {
 
 interface SQLReadinessWorkspaceProps {
   initialLeadId?: string;
+  onLeadChange?: (leadId: string) => void;
   onNavigateToOpportunity?: (opportunityId: string) => void;
   onNavigateToSalesAcceptance?: (handoffId: string) => void;
   onNavigateToTab?: (tab: string, leadId?: string) => void;
@@ -19,6 +20,7 @@ interface SQLReadinessWorkspaceProps {
 
 export const SQLReadinessWorkspace: React.FC<SQLReadinessWorkspaceProps> = ({
   initialLeadId,
+  onLeadChange,
   onNavigateToOpportunity,
   onNavigateToSalesAcceptance,
   onNavigateToTab
@@ -31,6 +33,13 @@ export const SQLReadinessWorkspace: React.FC<SQLReadinessWorkspaceProps> = ({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Sync with initialLeadId if provided or changed externally
+  useEffect(() => {
+    if (initialLeadId && initialLeadId !== selectedLeadId) {
+      setSelectedLeadId(initialLeadId);
+    }
+  }, [initialLeadId]);
 
   // Submission Form State
   const [estimatedValue, setEstimatedValue] = useState<number>(0);
@@ -49,7 +58,9 @@ export const SQLReadinessWorkspace: React.FC<SQLReadinessWorkspaceProps> = ({
       const list = res.results || [];
       setLeads(list);
       if (!selectedLeadId && list.length > 0) {
-        setSelectedLeadId(list[0].id);
+        const defaultId = initialLeadId || list[0].id;
+        setSelectedLeadId(defaultId);
+        onLeadChange?.(defaultId);
       }
     } catch (err: any) {
       console.error('Failed to load leads', err);
@@ -78,7 +89,10 @@ export const SQLReadinessWorkspace: React.FC<SQLReadinessWorkspaceProps> = ({
         setEstimatedValue(50000);
       }
 
-      const handoffList = handoffsRes.results || [];
+      // Filter defensively so activeHandoff STRICTLY belongs to this lead ID
+      const handoffList = (handoffsRes.results || []).filter(
+        (h) => String(h.lead) === String(leadId)
+      );
       if (handoffList.length > 0) {
         setActiveHandoff(handoffList[0]);
       } else {
@@ -269,7 +283,11 @@ export const SQLReadinessWorkspace: React.FC<SQLReadinessWorkspaceProps> = ({
             </label>
             <select
               value={selectedLeadId}
-              onChange={(e) => setSelectedLeadId(e.target.value)}
+              onChange={(e) => {
+                const newId = e.target.value;
+                setSelectedLeadId(newId);
+                onLeadChange?.(newId);
+              }}
               className="form-select"
               style={{ minWidth: '280px', fontSize: '0.82rem', padding: '8px 12px' }}
             >
@@ -646,6 +664,12 @@ export const SQLReadinessWorkspace: React.FC<SQLReadinessWorkspaceProps> = ({
 
               <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.82rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Lead / Account</span>
+                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {selectedLead?.account_name || activeHandoff.company_name || 'Associated Lead'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: '1px solid var(--border-subtle)' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Assigned Sales Owner</span>
                   <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                     {activeHandoff.sales_owner_name || 'Unassigned'}
@@ -685,14 +709,32 @@ export const SQLReadinessWorkspace: React.FC<SQLReadinessWorkspaceProps> = ({
                     <ExternalLink size={14} style={{ marginLeft: '4px' }} />
                   </button>
                 )}
-                {activeHandoff.opportunity_id && onNavigateToOpportunity && (
+                {activeHandoff.status === 'ACCEPTED' && (
                   <button
-                    onClick={() => onNavigateToOpportunity(activeHandoff.opportunity_id!)}
+                    onClick={async () => {
+                      let oppId = activeHandoff.opportunity_id;
+                      if (!oppId) {
+                        try {
+                          const oppsRes = await api.getOpportunities({ sql_handoff: activeHandoff.id });
+                          const found = (oppsRes.results || []).find(
+                            o => o.sql_handoff === activeHandoff.id || (selectedLead && o.account_name === selectedLead.account_name)
+                          );
+                          if (found) oppId = found.id;
+                        } catch (e) {
+                          console.error('Error resolving converted opportunity:', e);
+                        }
+                      }
+                      if (oppId && onNavigateToOpportunity) {
+                        onNavigateToOpportunity(oppId);
+                      } else {
+                        setFeedbackMsg({ type: 'error', text: 'Converted Opportunity record could not be found for this handoff.' });
+                      }
+                    }}
                     className="btn btn-primary"
-                    style={{ width: '100%', marginTop: '8px', fontSize: '0.8rem' }}
+                    style={{ width: '100%', marginTop: '8px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                   >
                     View Converted Opportunity
-                    <ExternalLink size={14} style={{ marginLeft: '4px' }} />
+                    <ExternalLink size={14} />
                   </button>
                 )}
               </div>

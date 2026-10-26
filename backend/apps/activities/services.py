@@ -587,7 +587,7 @@ class AutomationService:
             is_active=True
         ).first()
 
-        target_role = (rule.action_config_json.get('assignee_role', UserRole.PLD_EXECUTIVE) if rule else UserRole.PLD_EXECUTIVE)
+        target_role = (rule.action_config_json.get('assignee_role', UserRole.PRESALES) if rule else UserRole.PRESALES)
         assignee = User.objects.filter(role=target_role, is_active=True).first()
         if not assignee:
             assignee = User.objects.filter(is_active=True).first()
@@ -793,7 +793,7 @@ class AutomationService:
         lead = poc.lead
         owner = lead.owner if lead else None
         if not owner:
-            owner = User.objects.filter(role=UserRole.PLD_EXECUTIVE, is_active=True).first()
+            owner = User.objects.filter(role=UserRole.PRESALES, is_active=True).first()
 
         if owner:
             # Create SQL Review Task (without auto-converting to SQL Ready)

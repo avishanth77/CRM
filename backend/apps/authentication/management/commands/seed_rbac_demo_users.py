@@ -64,24 +64,12 @@ DEMO_USERS = [
         'is_partner_user': False,
     },
     {
-        'username': 'pld_exec',
-        'email': 'pld.exec@texol.com',
-        'first_name': 'Fatima',
-        'last_name': 'Al-Otaibi',
-        'role': UserRole.PLD_EXECUTIVE,
-        'territory': 'Kingdom-Wide Inbound',
-        'phone': '+966 50 444 5555',
-        'is_staff': False,
-        'is_superuser': False,
-        'is_partner_user': False,
-    },
-    {
-        'username': 'solution_consultant',
-        'email': 'solution.consultant@texol.com',
-        'first_name': 'Yousef',
-        'last_name': 'Al-Mutawa',
-        'role': UserRole.SOLUTION_CONSULTANT,
-        'territory': 'Presales Technical Operations',
+        'username': 'presales',
+        'email': 'presales@texol.com',
+        'first_name': 'Tariq',
+        'last_name': 'Al-Presales',
+        'role': UserRole.PRESALES,
+        'territory': 'Presales Technical & Discovery Operations',
         'phone': '+966 50 555 6666',
         'is_staff': False,
         'is_superuser': False,
@@ -269,7 +257,7 @@ class Command(BaseCommand):
         
         now = timezone.now()
         sales_ae = user_map.get(UserRole.SALES_BDM)
-        pld_exec = user_map.get(UserRole.PLD_EXECUTIVE)
+        presales_rep = user_map.get(UserRole.PRESALES)
         cs_rep = user_map.get(UserRole.CUSTOMER_SUCCESS)
         stage_opp_neg = PipelineStage.objects.filter(stage_code='OPP_NEGOTIATION').first()
         stage_discovery = PipelineStage.objects.filter(stage_code='DISCOVERY').first()
@@ -466,7 +454,7 @@ class Command(BaseCommand):
                 'phone': '+966 14 822 9988',
                 'employees_count': 350,
                 'distribution_centers_count': 3,
-                'primary_owner': pld_exec,
+                'primary_owner': presales_rep,
                 'tenant': tenant,
                 'last_activity_at': now - timedelta(hours=6),
                 'next_activity_due_at': now + timedelta(days=1),
@@ -493,7 +481,7 @@ class Command(BaseCommand):
                 primary_product=vanforces_prod,
                 defaults={
                     'contact': c_madina,
-                    'owner': pld_exec,
+                    'owner': presales_rep,
                     'current_stage': stage_discovery,
                     'status': 'Active',
                     'estimated_opportunity_value': Decimal('110000.00'),

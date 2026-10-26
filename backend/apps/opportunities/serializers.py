@@ -129,6 +129,12 @@ class OpportunitySerializer(serializers.ModelSerializer):
     stage_code = serializers.ReadOnlyField(source='stage.stage_code')
     product_name = serializers.ReadOnlyField(source='product.name')
     product_code = serializers.ReadOnlyField(source='product.code')
+    lead_id = serializers.SerializerMethodField()
+
+    def get_lead_id(self, obj):
+        if obj.sql_handoff and obj.sql_handoff.lead_id:
+            return str(obj.sql_handoff.lead_id)
+        return None
 
     product_lines = OpportunityProductSerializer(many=True, read_only=True)
     selected_modules = OpportunityModuleSerializer(many=True, read_only=True)
@@ -139,7 +145,7 @@ class OpportunitySerializer(serializers.ModelSerializer):
         model = Opportunity
         fields = [
             'id', 'account', 'account_name', 'primary_contact', 'primary_contact_name',
-            'owner', 'owner_name', 'sql_handoff', 'opportunity_type',
+            'owner', 'owner_name', 'sql_handoff', 'lead_id', 'opportunity_type',
             'stage', 'stage_name', 'stage_code', 'status',
             'product', 'product_name', 'product_code',
             'total_contract_value', 'arr', 'mrr', 'arr_mrr',

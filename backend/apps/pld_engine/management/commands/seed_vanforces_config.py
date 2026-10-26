@@ -188,6 +188,7 @@ class Command(BaseCommand):
                 "name": "VanForces Standard Distribution Profile",
                 "description": "Baseline ICP rules for FMCG, Bakery & Food distributors in GCC",
                 "is_active": True,
+                "pass_threshold": 50,
                 "tenant": tenant
             }
         )

@@ -21,6 +21,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setError(null);
     setLoading(true);
     try {
+      localStorage.removeItem('texol_access_token');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('texol_refresh_token');
       const res = await api.login({ username: targetEmail, password: targetPass });
       if (res && res.user) {
         if (res.access) {
@@ -340,8 +343,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     { role: 'TEXOL Management', email: 'management@texol.com', pass: 'TexolDemo2026!', badge: 'badge-warning' },
                     { role: 'Sales Manager', email: 'sales.manager@texol.com', pass: 'TexolDemo2026!', badge: 'badge-warning' },
                     { role: 'Sales / BDM (AE)', email: 'sales.ae@texol.com', pass: 'TexolDemo2026!', badge: 'badge-success' },
-                    { role: 'PLD Executive', email: 'pld.exec@texol.com', pass: 'TexolDemo2026!', badge: 'badge-info' },
-                    { role: 'Solution Consultant', email: 'solution.consultant@texol.com', pass: 'TexolDemo2026!', badge: 'badge-neutral' },
+                    { role: 'Presales (Discovery/POC)', email: 'presales@texol.com', pass: 'TexolDemo2026!', badge: 'badge-info' },
                     { role: 'Marketing & Growth', email: 'marketing@texol.com', pass: 'TexolDemo2026!', badge: 'badge-info' },
                     { role: 'Product Manager', email: 'product.manager@texol.com', pass: 'TexolDemo2026!', badge: 'badge-primary' },
                     { role: 'Customer Success', email: 'customer.success@texol.com', pass: 'TexolDemo2026!', badge: 'badge-success' },

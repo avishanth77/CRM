@@ -22,8 +22,29 @@ export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ products }
   const [profiles, setProfiles] = useState<ICPProfile[]>([]);
   const [rules, setRules] = useState<ICPRule[]>([]);
   const [scoreModels, setScoreModels] = useState<ScoreModel[]>([]);
-  const [questionnaires, setQuestionnaires] = useState<QuestionnaireTemplate[]>([]);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Admin Configurable ICP Pass Threshold state
+  const [editingProfileThreshold, setEditingProfileThreshold] = useState<{ [profileId: string]: number }>({});
+  const [savingProfileId, setSavingProfileId] = useState<string | null>(null);
+
+  const handleSaveThreshold = async (profileId: string) => {
+    const newThreshold = editingProfileThreshold[profileId];
+    if (newThreshold === undefined || isNaN(newThreshold) || newThreshold < 0 || newThreshold > 100) {
+      notify('error', 'Please enter a valid threshold between 0% and 100%.');
+      return;
+    }
+    setSavingProfileId(profileId);
+    try {
+      const updated = await api.saveICPProfile({ id: profileId, pass_threshold: newThreshold });
+      setProfiles(prev => prev.map(p => p.id === profileId ? { ...p, pass_threshold: updated.pass_threshold ?? newThreshold } : p));
+      notify('success', `Pass threshold updated to ${newThreshold}% successfully.`);
+    } catch (err: any) {
+      notify('error', err.message || 'Failed to update threshold.');
+    } finally {
+      setSavingProfileId(null);
+    }
+  };
 
   // Edit / Create Rule Modal
   const [showRuleModal, setShowRuleModal] = useState(false);
@@ -51,6 +72,7 @@ export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ products }
   const [targetQuestionForOption, setTargetQuestionForOption] = useState<QuestionnaireQuestion | null>(null);
   const [editingOption, setEditingOption] = useState<Partial<QuestionAnswerOption> | null>(null);
   const [productQuestionnaire, setProductQuestionnaire] = useState<QuestionnaireTemplate | null>(null);
+  const [questionnaires, setQuestionnaires] = useState<QuestionnaireTemplate[]>([]);
 
   useEffect(() => {
     if (products.length > 0 && !selectedProduct) {
@@ -80,7 +102,7 @@ export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ products }
       setProfiles(profData);
       setRules(rData);
       setScoreModels(smData);
-      setQuestionnaires(qData.results || []);
+      setQuestionnaires(Array.isArray(qData) ? qData : (qData?.results || []));
 
       if (selectedProduct) {
         try {
@@ -224,7 +246,7 @@ export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ products }
     }
   };
 
-  const activeTemplate = productQuestionnaire || questionnaires.find(q => q.product === selectedProduct) || questionnaires[0];
+  const activeTemplate = productQuestionnaire || (questionnaires || []).find(q => q.product === selectedProduct) || questionnaires?.[0];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -344,18 +366,63 @@ export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ products }
           {/* Active Profile Summary */}
           {profiles.length > 0 ? (
             profiles.map(prof => (
-              <div key={prof.id} style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={prof.id} style={{ padding: '16px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{prof.name}</span>
                     <span className="badge badge-info">Ver {prof.version_number}</span>
-                    <span className="badge badge-success">Pass Threshold: {prof.pass_threshold}%</span>
+                    <span className="badge badge-neutral">{rules.length} Rules Attached</span>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                     {prof.description}
                   </div>
                 </div>
-                <span className="badge badge-neutral">{rules.length} Rules Attached</span>
+
+                {/* Configurable Passing Fit Threshold */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--bg-primary)', padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Passing ICP Fit Threshold:
+                    </span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                      Leads with Fit Score below this percentage fail ICP (Default: 50%)
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editingProfileThreshold[prof.id] ?? (prof.pass_threshold ?? 50)}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 0;
+                        setEditingProfileThreshold(prev => ({ ...prev, [prof.id]: Math.min(Math.max(val, 0), 100) }));
+                      }}
+                      style={{
+                        width: '60px',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-subtle)',
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        textAlign: 'center'
+                      }}
+                    />
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>%</span>
+                    {(editingProfileThreshold[prof.id] !== undefined && editingProfileThreshold[prof.id] !== (prof.pass_threshold ?? 50)) && (
+                      <button
+                        className="btn btn-primary"
+                        disabled={savingProfileId === prof.id}
+                        onClick={() => handleSaveThreshold(prof.id)}
+                        style={{ padding: '4px 12px', fontSize: '0.74rem', borderRadius: '6px' }}
+                      >
+                        {savingProfileId === prof.id ? 'Saving...' : 'Save Threshold'}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             ))
           ) : (

@@ -300,7 +300,7 @@ export const SalesAcceptanceWorkspace: React.FC<SalesAcceptanceWorkspaceProps> =
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
                       Submitted on {new Date(selectedHandoff.created_at).toLocaleDateString()} by{' '}
                       <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {selectedHandoff.pld_executive_name || 'PLD Executive'}
+                        {selectedHandoff.pld_executive_name || 'Presales Specialist'}
                       </span>
                     </p>
                   </div>

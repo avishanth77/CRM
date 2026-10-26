@@ -49,7 +49,7 @@ class OpportunityViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             'required_capabilities__capability',
             'proposals',
             'partner_influences__partner'
-        ).select_related('account', 'owner', 'stage', 'product', 'primary_contact')
+        ).select_related('account', 'owner', 'stage', 'product', 'primary_contact', 'sql_handoff')
 
         if user and user.is_authenticated:
             qs = apply_data_scoping(qs, user, domain='OPPORTUNITIES')
@@ -75,6 +75,14 @@ class OpportunityViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         account_id = query_params.get('account')
         if account_id:
             qs = qs.filter(account_id=account_id)
+
+        sql_handoff_id = query_params.get('sql_handoff') or query_params.get('sql_handoff_id')
+        if sql_handoff_id:
+            qs = qs.filter(sql_handoff_id=sql_handoff_id)
+
+        lead_id = query_params.get('lead') or query_params.get('lead_id')
+        if lead_id:
+            qs = qs.filter(sql_handoff__lead_id=lead_id)
 
         return qs
 
@@ -188,7 +196,13 @@ class OpportunityViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         """
         Returns preview of the stage completion email that will be sent to the customer for this opportunity.
         """
-        opp = self.get_object()
+        try:
+            opp = self.get_object()
+        except Exception:
+            opp = Opportunity.objects.filter(id=pk).first()
+            if not opp:
+                return Response({'error': 'Opportunity not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         stage_id = request.query_params.get('stage_id')
         stage = None
         if stage_id:
@@ -209,7 +223,13 @@ class OpportunityViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         """
         Manually trigger / resend customer stage notification email for this opportunity.
         """
-        opp = self.get_object()
+        try:
+            opp = self.get_object()
+        except Exception:
+            opp = Opportunity.objects.filter(id=pk).first()
+            if not opp:
+                return Response({'error': 'Opportunity not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         stage_id = request.data.get('stage_id')
         stage = None
         if stage_id:

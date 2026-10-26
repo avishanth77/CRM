@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 from django.utils import timezone
 from apps.pld_engine.models import (
-    ICPRule, ICPRuleType, RuleOperator, ScoreModel, ScoreDimension, StageGate
+    ICPProfile, ICPRule, ICPRuleType, RuleOperator, ScoreModel, ScoreDimension, StageGate
 )
 from apps.pld_assessments.models import (
     AccountProductAssessment, ScoreAssessment, ScoreClassification, ICPResultStatus
@@ -138,6 +138,14 @@ class ICPEvaluator:
                     "max_points": rule.points
                 })
 
+        # Determine configurable pass_threshold (Admin configurable per profile, default 50)
+        pass_threshold = 50
+        active_profile = ICPProfile.objects.filter(product=product, is_active=True).first()
+        if not active_profile and config_version:
+            active_profile = config_version.icp_profiles.filter(is_active=True).first()
+        if active_profile and getattr(active_profile, 'pass_threshold', None) is not None:
+            pass_threshold = active_profile.pass_threshold
+
         fit_score = int((total_fit_points / max_fit_points * 100)) if max_fit_points > 0 else 100
 
         # Determine Final ICP Result Status
@@ -151,12 +159,20 @@ class ICPEvaluator:
             knockout_passed = False
             why_result_occurred = [f"Missing required operational information: {m['label']} is needed to verify ICP." for m in missing_knockouts]
             what_to_do_next = "Obtain missing operational data (e.g. fleet size, ERP, or sales model) from contact to complete ICP evaluation."
+        elif fit_score < pass_threshold:
+            final_result = ICPResultStatus.FAIL
+            knockout_passed = True
+            why_result_occurred = [
+                f"Passed all {len(satisfied_knockouts)} mandatory knock-out criteria.",
+                f"ICP Fit Score ({fit_score}/100) is below the minimum required qualification threshold ({pass_threshold}%)."
+            ]
+            what_to_do_next = f"Disqualify lead or route to Nurture. Account fit score ({fit_score}%) does not meet the minimum qualification threshold ({pass_threshold}%)."
         else:
             final_result = ICPResultStatus.PASS
             knockout_passed = True
             why_result_occurred = [
                 f"Passed all {len(satisfied_knockouts)} mandatory knock-out criteria.",
-                f"Fit score calculated at {fit_score}% across operational dimensions."
+                f"Fit score calculated at {fit_score}% across operational dimensions (meets minimum {pass_threshold}% threshold)."
             ]
             what_to_do_next = "Proceed to PLD Qualification questionnaire and document at least one business problem."
 
@@ -167,7 +183,8 @@ class ICPEvaluator:
             "what_to_do_next": what_to_do_next,
             "failed_knockouts": failed_knockouts,
             "satisfied_knockouts": satisfied_knockouts,
-            "fit_breakdown": fit_breakdown
+            "fit_breakdown": fit_breakdown,
+            "pass_threshold": pass_threshold
         }
 
         # Check existing assessment for audit diff
@@ -249,6 +266,7 @@ class ICPEvaluator:
             "failed_knockouts": failed_knockouts,
             "missing_knockouts": missing_knockouts,
             "fit_score": fit_score,
+            "pass_threshold": pass_threshold,
             "breakdown": breakdown,
             "assessment_id": assessment.id,
             "rule_version": assessment.icp_rule_version

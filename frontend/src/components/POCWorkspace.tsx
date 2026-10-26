@@ -559,48 +559,104 @@ export const POCWorkspace: React.FC<POCWorkspaceProps> = ({
           </div>
         </div>
 
-        {/* POC Selector Pill Carousel */}
+        {/* POC / Lead Selector Dropdown */}
         {pocs.length > 0 && (
           <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px' }}>
-              Select Active Pilot Trial ({pocs.length}):
-            </div>
-            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
-              {pocs.map(p => {
-                const isSelected = selectedPOC?.id === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => selectPOCRecord(p)}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: 1, minWidth: '280px' }}>
+                <label
+                  htmlFor="poc-selector-dropdown"
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: 'var(--text-muted)',
+                    letterSpacing: '0.04em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <Building2 size={14} color="var(--accent-cyan)" />
+                  Select Active Pilot Trial ({pocs.length}):
+                </label>
+
+                <div style={{ position: 'relative', minWidth: '280px', maxWidth: '420px', flex: 1 }}>
+                  <select
+                    id="poc-selector-dropdown"
+                    value={selectedPOC?.id || ''}
+                    onChange={(e) => {
+                      const found = pocs.find(p => p.id === e.target.value);
+                      if (found) selectPOCRecord(found);
+                    }}
+                    className="form-select"
                     style={{
-                      padding: '8px 14px',
-                      borderRadius: '8px',
-                      background: isSelected ? 'var(--accent-cyan)' : 'var(--bg-surface-elevated)',
-                      color: isSelected ? '#000000' : 'var(--text-secondary)',
-                      border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      fontSize: '0.82rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      padding: '8px 36px 8px 12px',
+                      cursor: 'pointer'
                     }}
                   >
-                    <Building2 size={14} />
-                    <span>{p.account_name}</span>
-                    <span style={{
-                      fontSize: '0.68rem',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      background: p.status === 'COMPLETED' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                      color: p.status === 'COMPLETED' ? '#10B981' : 'inherit'
-                    }}>
-                      {p.status}
+                    {pocs.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.account_name || 'Unnamed Account'} — {p.status}{p.product_name ? ` • ${p.product_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selectedPOC && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      background:
+                        selectedPOC.status === 'COMPLETED'
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : selectedPOC.status === 'NOT_REQUIRED'
+                          ? 'rgba(239, 68, 68, 0.15)'
+                          : 'rgba(6, 182, 212, 0.15)',
+                      color:
+                        selectedPOC.status === 'COMPLETED'
+                          ? '#10B981'
+                          : selectedPOC.status === 'NOT_REQUIRED'
+                          ? '#EF4444'
+                          : 'var(--accent-cyan)',
+                      border: `1px solid ${
+                        selectedPOC.status === 'COMPLETED'
+                          ? 'rgba(16, 185, 129, 0.3)'
+                          : selectedPOC.status === 'NOT_REQUIRED'
+                          ? 'rgba(239, 68, 68, 0.3)'
+                          : 'rgba(6, 182, 212, 0.3)'
+                      }`
+                    }}
+                  >
+                    {selectedPOC.status}
+                  </span>
+
+                  {selectedPOC.product_name && (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        background: 'var(--bg-surface-elevated)',
+                        color: 'var(--text-secondary)',
+                        border: '1px solid var(--border-subtle)'
+                      }}
+                    >
+                      {selectedPOC.product_name}
                     </span>
-                  </button>
-                );
-              })}
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

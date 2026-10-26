@@ -8,12 +8,12 @@ import {
   FlaskConical, History, Share2, Gauge, Send, Database, Monitor, FileText,
   Building2, ListTodo, LogOut, UserCheck, ShieldAlert, UserPlus, Package, User,
   Sun, Moon, Calendar, Clock, RotateCcw, FolderKanban,
-  CheckCircle2, AlertTriangle, ExternalLink
+  CheckCircle2, AlertTriangle, ExternalLink, Globe, MapPin
 } from 'lucide-react';
 import { api } from './services/api';
 import type { 
   Lead, Product, Discovery, SQLHandoff, Opportunity, Demo, POC, OperationalMetrics,
-  AuthUser, LeadSource, ICPRule, ICPProfile
+  AuthUser, LeadSource, ICPRule, ICPProfile, Territory
 } from './services/api';
 import { LoginPage } from './components/LoginPage';
 import { MultiTouchAttributionView } from './components/MultiTouchAttributionView';
@@ -38,6 +38,7 @@ import { Account360Workspace } from './components/Account360Workspace';
 import { AnalyticsHubView } from './components/AnalyticsHubView';
 import { AdminStaffPartnersWorkspace } from './components/AdminStaffPartnersWorkspace';
 import { AdminLeadsDirectoryWorkspace } from './components/AdminLeadsDirectoryWorkspace';
+import { WebsiteLeadsTriageWorkspace } from './components/WebsiteLeadsTriageWorkspace';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { InAppAlertContainer, inAppAlert } from './components/common/InAppAlert';
 import { GlobalSearchBar } from './components/common/GlobalSearchBar';
@@ -64,7 +65,8 @@ export type TabType =
   | 'communications' 
   | 'erp' 
   | 'staff-partners'
-  | 'admin-leads';
+  | 'admin-leads'
+  | 'website-leads';
 
 export const isTabAllowedForUser = (tabId: string, user: AuthUser | null): boolean => {
   if (!user) return false;
@@ -74,6 +76,11 @@ export const isTabAllowedForUser = (tabId: string, user: AuthUser | null): boole
   }
   // Superuser and Platform Admin have global workspace access
   if (user.is_superuser || user.role === 'ADMIN') return true;
+
+  // Website Leads Triage is accessible to Management and Sales Managers
+  if (tabId === 'website-leads') {
+    return ['ADMIN', 'MANAGEMENT', 'SALES_MANAGER'].includes(user.role);
+  }
 
   // Use the canonical backend allowed_workspaces from Section 9.4
   if (user.allowed_workspaces && Array.isArray(user.allowed_workspaces)) {
@@ -272,6 +279,9 @@ export default function App() {
   const [newTargetTier, setNewTargetTier] = useState('TIER_1');
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [territories, setTerritories] = useState<Territory[]>([]);
+  const [newLeadTerritory, setNewLeadTerritory] = useState<string>('');
+  const [queueFilterTerritory, setQueueFilterTerritory] = useState<string>('ALL');
 
   // Operational ICP Qualification State for Lead Intake
   const [icpFieldSales, setIcpFieldSales] = useState<boolean>(true);
@@ -438,23 +448,55 @@ export default function App() {
     currentUser?.role === 'SALES_REP'
   );
 
-  const visibleLeads = React.useMemo(() => {
-    // Active leads belong in the PLD Work Queue
-    const activeQueueLeads = leads.filter(l => {
-      if (l.status === 'NURTURE' || l.status === 'DISQUALIFIED') return false;
-      if (l.status === 'ACTIVE') {
-        // If explicitly knocked out without override/pass, exclude from active queue
-        if (String(l.icp_result).toUpperCase() === 'FAIL' || l.icp_knockout_passed === false) {
-          return false;
-        }
-        return true;
-      }
-      return false;
-    });
+  const [queueFilterStatus, setQueueFilterStatus] = useState<'ACTIVE' | 'CONVERTED' | 'ALL'>('ACTIVE');
+  const [queueScopeFilter, setQueueScopeFilter] = useState<'ALL' | 'MINE'>('ALL');
 
-    if (!currentUser || isManagerOrAdmin || !isSalesperson) return activeQueueLeads;
-    return activeQueueLeads.filter(l => l.owner && (String(l.owner) === String(currentUser.id) || (l as any).owner_email === currentUser.email));
-  }, [leads, currentUser, isManagerOrAdmin, isSalesperson]);
+  // Leads eligible for qualification workspace (excluding Disqualified and Nurture pool)
+  const qualificationLeads = React.useMemo(() => {
+    return leads.filter(l => {
+      if (l.status === 'NURTURE' || l.status === 'DISQUALIFIED') return false;
+      // If explicitly knocked out without override/pass, exclude from active queue
+      if (String(l.icp_result).toUpperCase() === 'FAIL' || l.icp_knockout_passed === false) {
+        return false;
+      }
+      return true;
+    });
+  }, [leads]);
+
+  const visibleLeads = React.useMemo(() => {
+    // 1. Filter by owner scope
+    let scoped = qualificationLeads;
+    if (queueScopeFilter === 'MINE' && currentUser) {
+      const myLeads = qualificationLeads.filter(l => l.owner && (String(l.owner) === String(currentUser.id) || (l as any).owner_email === currentUser.email));
+      if (myLeads.length > 0) {
+        scoped = myLeads;
+      }
+    } else if (isSalesperson && !isManagerOrAdmin && queueScopeFilter === 'MINE') {
+      const myLeads = qualificationLeads.filter(l => !l.owner || String(l.owner) === String(currentUser?.id) || (l as any).owner_email === currentUser?.email);
+      if (myLeads.length > 0) {
+        scoped = myLeads;
+      }
+    }
+
+    // 2. Filter by status with automatic fallback if active leads is empty
+    if (queueFilterStatus === 'ACTIVE') {
+      const activeOnly = scoped.filter(l => l.status === 'ACTIVE');
+      if (activeOnly.length === 0 && scoped.some(l => l.status === 'CONVERTED')) {
+        // Graceful fallback to all scoped leads when active queue is currently empty
+      } else {
+        scoped = activeOnly;
+      }
+    } else if (queueFilterStatus === 'CONVERTED') {
+      scoped = scoped.filter(l => l.status === 'CONVERTED');
+    }
+
+    // 3. Filter by Territory / Region
+    if (queueFilterTerritory !== 'ALL') {
+      scoped = scoped.filter(l => l.territory === queueFilterTerritory);
+    }
+
+    return scoped;
+  }, [qualificationLeads, currentUser, isManagerOrAdmin, isSalesperson, queueFilterStatus, queueScopeFilter, queueFilterTerritory]);
 
   useEffect(() => {
     if (visibleLeads.length > 0) {
@@ -488,46 +530,60 @@ export default function App() {
     loadData();
   };
 
-  const handleLogout = async () => {
+  const isLoggingOutRef = React.useRef(false);
+
+  const handleLogout = async (skipServerCall: boolean = false) => {
+    if (isLoggingOutRef.current) return;
+    isLoggingOutRef.current = true;
     try {
-      await api.logout();
+      if (!skipServerCall) {
+        await api.logout();
+      }
     } catch {
       // ignore
+    } finally {
+      localStorage.removeItem('texol_auth_user');
+      localStorage.removeItem('texol_access_token');
+      localStorage.removeItem('texol_refresh_token');
+      localStorage.removeItem('texol_active_tab');
+      setCurrentUser(null);
+      setIsLoggedIn(false);
+      // Clear all cached records to prevent unauthorized data exposure across sessions
+      setLeads([]);
+      setOpportunities([]);
+      setDiscoveries([]);
+      setDemos([]);
+      setPocs([]);
+      setSqlHandoffs([]);
+      setAuditLogs([]);
+      setAccounts([]);
+      setStaffUsers([]);
+      setPartnerList([]);
+      setPartnerDashboard(null);
+      _setActiveTab('dashboard');
+      isLoggingOutRef.current = false;
     }
-    localStorage.removeItem('texol_auth_user');
-    localStorage.removeItem('texol_access_token');
-    localStorage.removeItem('texol_refresh_token');
-    localStorage.removeItem('texol_active_tab');
-    setCurrentUser(null);
-    setIsLoggedIn(false);
-    // Clear all cached records to prevent unauthorized data exposure across sessions
-    setLeads([]);
-    setOpportunities([]);
-    setDiscoveries([]);
-    setDemos([]);
-    setPocs([]);
-    setSqlHandoffs([]);
-    setAuditLogs([]);
-    setAccounts([]);
-    setStaffUsers([]);
-    setPartnerList([]);
-    setPartnerDashboard(null);
-    _setActiveTab('dashboard');
   };
 
   useEffect(() => {
+    let lastAlertTime = 0;
     const handleAuthExpired = () => {
-      inAppAlert.warning('Your session has expired. Please log in again.');
-      handleLogout();
+      const now = Date.now();
+      const hasSession = !!localStorage.getItem('texol_auth_user') || isLoggedIn;
+      if (hasSession && now - lastAlertTime > 4000) {
+        lastAlertTime = now;
+        inAppAlert.warning('Your session has expired. Please log in again.');
+      }
+      handleLogout(true);
     };
     window.addEventListener('texol-auth-expired', handleAuthExpired);
     return () => window.removeEventListener('texol-auth-expired', handleAuthExpired);
-  }, []);
+  }, [isLoggedIn]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [fData, lData, pData, dData, demoData, sData, oData, pocData, aData, accData, opMetrics, uData, pListData, srcData] = await Promise.all([
+      const [fData, lData, pData, dData, demoData, sData, oData, pocData, aData, accData, opMetrics, uData, pListData, srcData, terrData] = await Promise.all([
         api.getFunnelAnalytics().catch(() => null),
         api.getLeads().catch(() => ({ results: [] })),
         api.getProducts().catch(() => ({ results: [] })),
@@ -541,12 +597,15 @@ export default function App() {
         api.getOperationalMetrics().catch(() => null),
         api.getUsers().catch(() => ({ results: [] })),
         api.getPartners().catch(() => ({ results: [] })),
-        api.getLeadSources().catch(() => ({ results: [] }))
+        api.getLeadSources().catch(() => ({ results: [] })),
+        api.getTerritories().catch(() => ({ results: [] }))
       ]);
       setFunnelData(fData);
       setLeads(lData.results);
       const fetchedSources = Array.isArray(srcData) ? srcData : (srcData?.results || []);
       setLeadSources(fetchedSources);
+      const fetchedTerritories = Array.isArray(terrData) ? terrData : (terrData?.results || []);
+      setTerritories(fetchedTerritories);
       setProducts(pData.results);
       if (pData.results && pData.results.length > 0 && !newProductId) {
         setNewProductId(pData.results[0].id);
@@ -667,6 +726,7 @@ export default function App() {
           distribution_centers_count: Number(icpDistributionCenters || 1),
           city: newCity.trim() || undefined,
           country: newCountry.trim() || undefined,
+          territory: newLeadTerritory || undefined,
           is_target_account: newIsTarget,
           target_tier: newIsTarget ? newTargetTier : undefined
         });
@@ -760,6 +820,7 @@ export default function App() {
         primary_product: selectedProduct.id,
         owner: assignedOwner,
         source: newLeadSourceId || undefined,
+        territory: newLeadTerritory || undefined,
         next_activity_due_at: new Date().toISOString(),
         next_action_description: newNextAction,
         icp_attributes: icpAttributesPayload
@@ -767,6 +828,7 @@ export default function App() {
 
       setShowIntakeModal(false);
       setNewLeadSourceId('');
+      setNewLeadTerritory('');
       setNewCompanyName('');
       setNewDomain('');
       setNewCity('');
@@ -957,7 +1019,7 @@ export default function App() {
               style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
             >
               <Layers size={16} />
-              PLD Lead Queue
+              PLD Work Queue
               <span className="badge badge-info" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{visibleLeads.length}</span>
             </button>
           )}
@@ -1179,6 +1241,23 @@ export default function App() {
             </button>
           )}
 
+          {isTabAllowed('website-leads') && (
+            <button 
+              className={`btn ${activeTab === 'website-leads' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setActiveTab('website-leads')}
+              style={{ 
+                justifyContent: 'flex-start', 
+                padding: '8px 12px', 
+                fontSize: '0.82rem', 
+                borderColor: activeTab === 'website-leads' ? undefined : 'rgba(59, 130, 246, 0.4)' 
+              }}
+            >
+              <Globe size={16} color="#3B82F6" />
+              Website Leads Triage
+              <span className="badge badge-primary" style={{ marginLeft: 'auto', fontSize: '0.65rem' }}>Admin</span>
+            </button>
+          )}
+
           {isTabAllowed('admin-leads') && (
             <button 
               className={`btn ${activeTab === 'admin-leads' ? 'btn-primary' : 'btn-outline'}`}
@@ -1344,7 +1423,13 @@ export default function App() {
               }
             }} />
             {!currentUser?.is_partner_user && (
-              <button className="btn btn-primary" onClick={() => setShowIntakeModal(true)}>
+              <button 
+                className="btn btn-primary" 
+                onClick={() => {
+                  setNewLeadTerritory(currentUser?.territory || '');
+                  setShowIntakeModal(true);
+                }}
+              >
                 <PlusCircle size={16} />
                 Intake New Lead
               </button>
@@ -1412,112 +1497,275 @@ export default function App() {
 
           {/* TAB 2: PLD WORK QUEUE & QUALIFICATION WORKSPACE */}
           {activeTab === 'queue' && (
-            <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '24px', alignItems: 'start' }}>
-              <div className="glass-panel" style={{ padding: '22px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+            <div className="space-y-6 animate-fade-in">
+              {/* Header Card with Dropdown Lead Selector */}
+              <div className="card" style={{ padding: '20px 24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                   <div>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>PLD Work Queue</h2>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Prioritized leads requiring qualification or next actions</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: 'rgba(59, 130, 246, 0.15)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Layers size={20} color="#3B82F6" />
+                      </div>
+                      <h1 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+                        PLD Work Queue
+                      </h1>
+                      <span className="badge badge-neutral" style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                        {visibleLeads.length} {visibleLeads.length === 1 ? 'Record' : 'Records'}
+                      </span>
+                    </div>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '4px 0 0' }}>
+                      Prioritized leads requiring product-led qualification, dynamic ICP verification, and stage progression.
+                    </p>
                   </div>
-                  <span className="badge badge-neutral">{visibleLeads.length} Records</span>
-                </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {visibleLeads.map(lead => {
-                    const isSelected = selectedLead?.id === lead.id;
-                    return (
-                      <div 
-                        key={lead.id} 
-                        onClick={() => handleInspectLead(lead)}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    {/* Status Filter Pills */}
+                    <div style={{ display: 'flex', background: 'var(--bg-surface)', padding: '2px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${queueFilterStatus === 'ACTIVE' ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ padding: '5px 11px', fontSize: '0.75rem', borderRadius: '6px' }}
+                        onClick={() => setQueueFilterStatus('ACTIVE')}
+                        title="Show leads currently in active qualification"
+                      >
+                        Active ({qualificationLeads.filter(l => l.status === 'ACTIVE').length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${queueFilterStatus === 'CONVERTED' ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ padding: '5px 11px', fontSize: '0.75rem', borderRadius: '6px' }}
+                        onClick={() => setQueueFilterStatus('CONVERTED')}
+                        title="Show leads successfully converted to SQL"
+                      >
+                        Converted ({qualificationLeads.filter(l => l.status === 'CONVERTED').length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${queueFilterStatus === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ padding: '5px 11px', fontSize: '0.75rem', borderRadius: '6px' }}
+                        onClick={() => setQueueFilterStatus('ALL')}
+                        title="Show all leads"
+                      >
+                        All ({qualificationLeads.length})
+                      </button>
+                    </div>
+
+                    {/* Salesperson Scope Toggle */}
+                    {isSalesperson && !isManagerOrAdmin && (
+                      <div style={{ display: 'flex', background: 'var(--bg-surface)', padding: '2px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${queueScopeFilter === 'ALL' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px' }}
+                          onClick={() => setQueueScopeFilter('ALL')}
+                        >
+                          All Team Leads
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${queueScopeFilter === 'MINE' ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px' }}
+                          onClick={() => setQueueScopeFilter('MINE')}
+                        >
+                          My Leads
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Region / Territory Filter Dropdown */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <MapPin size={13} color="var(--text-muted)" />
+                      <select
+                        value={queueFilterTerritory}
+                        onChange={(e) => setQueueFilterTerritory(e.target.value)}
                         style={{
-                          padding: '16px',
-                          borderRadius: '10px',
-                          background: isSelected ? 'var(--bg-surface-elevated)' : 'var(--bg-surface)',
-                          border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
+                          padding: '6px 10px',
+                          fontSize: '0.75rem',
+                          borderRadius: '6px',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                          color: 'var(--text-primary)',
+                          outline: 'none',
+                          cursor: 'pointer'
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{lead.account_name}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              Product: <strong style={{ color: 'var(--primary)' }}>{lead.primary_product_name}</strong>
-                            </div>
-                          </div>
-                          <span className="badge badge-info" style={{ fontSize: '0.68rem' }}>
-                            {lead.current_stage_name || lead.status}
-                          </span>
-                        </div>
+                        <option value="ALL">All Regions</option>
+                        {territories.map(t => (
+                          <option key={t.id} value={t.name}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                          {lead.is_target_account && (
-                            <span className="badge badge-warning" style={{ fontSize: '0.68rem' }}>
-                              {lead.target_tier || 'Target'}
-                            </span>
-                          )}
-                          {lead.recorded_problems && lead.recorded_problems.length > 0 && (
-                            <span className="badge badge-danger" style={{ fontSize: '0.68rem' }}>
-                              {lead.recorded_problems.length} Problem(s)
-                            </span>
-                          )}
-                          {lead.owner_name && (
-                            <span className="badge badge-neutral" style={{ fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <UserCheck size={10} color="var(--primary)" /> {lead.owner_name}
-                            </span>
-                          )}
-                        </div>
-
-                        {lead.contact_name && (
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <User size={11} color="#10B981" />
-                            <span><strong>Contact:</strong> {lead.contact_name}{lead.contact_designation ? ` (${lead.contact_designation})` : ''}</span>
-                          </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Select Lead:
+                      </label>
+                      <select
+                        value={selectedLead?.id || ''}
+                        onChange={(e) => {
+                          const found = visibleLeads.find(l => l.id === e.target.value);
+                          if (found) setSelectedLead(found);
+                        }}
+                        className="form-select"
+                        style={{
+                          minWidth: '320px',
+                          maxWidth: '480px',
+                          padding: '9px 14px',
+                          fontSize: '0.85rem',
+                          fontWeight: 600,
+                          background: 'var(--bg-surface-elevated)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '8px',
+                          color: 'var(--text-primary)',
+                          cursor: 'pointer',
+                          outline: 'none'
+                        }}
+                      >
+                        {visibleLeads.length === 0 ? (
+                          <option value="">No matching leads in queue</option>
+                        ) : (
+                          visibleLeads.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.account_name} — {l.primary_product_name} ({l.status === 'CONVERTED' ? 'Converted to SQL' : (l.current_stage_name || l.status)})
+                            </option>
+                          ))
                         )}
+                      </select>
 
+                      <button
+                        type="button"
+                        onClick={() => loadData()}
+                        className="btn btn-secondary"
+                        style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem' }}
+                        title="Refresh Queue Leads"
+                      >
+                        <RotateCcw size={14} />
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Selected Lead Context Summary Bar */}
+                {selectedLead && (
+                  <div style={{
+                    marginTop: '16px',
+                    paddingTop: '14px',
+                    borderTop: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                    fontSize: '0.82rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span className="badge badge-primary" style={{ fontWeight: 800 }}>
+                        {selectedLead.primary_product_name || 'Product'}
+                      </span>
+                      <span className="badge badge-info" style={{ fontWeight: 700 }}>
+                        {selectedLead.current_stage_name || selectedLead.status}
+                      </span>
+                      {selectedLead.territory && (
+                        <span className="badge badge-secondary" style={{ background: 'rgba(79, 70, 229, 0.1)', color: '#4F46E5', border: '1px solid rgba(79, 70, 229, 0.25)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <MapPin size={11} />
+                          <span>{selectedLead.territory}</span>
+                        </span>
+                      )}
+                      {selectedLead.status === 'CONVERTED' && (
+                        <span className="badge badge-success" style={{ fontWeight: 800 }}>
+                          Converted to SQL
+                        </span>
+                      )}
+                      {selectedLead.is_target_account && (
+                        <span className="badge badge-warning">
+                          {selectedLead.target_tier || 'Target Tier'}
+                        </span>
+                      )}
+                      {selectedLead.recorded_problems && selectedLead.recorded_problems.length > 0 && (
+                        <span className="badge badge-danger">
+                          {selectedLead.recorded_problems.length} Problem(s)
+                        </span>
+                      )}
+                      {selectedLead.owner_name && (
+                        <span className="badge badge-neutral" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <UserCheck size={12} color="var(--primary)" />
+                          <span>Assignee: <strong>{selectedLead.owner_name}</strong></span>
+                        </span>
+                      )}
+                      {selectedLead.contact_name && (
+                        <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <User size={13} color="#10B981" />
+                          <span>Contact: <strong>{selectedLead.contact_name}</strong>{selectedLead.contact_designation ? ` (${selectedLead.contact_designation})` : ''}</span>
+                        </span>
+                      )}
+
+                      {/* Reopen Action for Converted Lead */}
+                      {selectedLead.status === 'CONVERTED' && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '2px 8px', fontSize: '0.74rem', color: '#10B981', borderColor: 'rgba(16, 185, 129, 0.3)' }}
+                          onClick={async () => {
+                            try {
+                              await api.updateLead(selectedLead.id, { status: 'ACTIVE' });
+                              inAppAlert.success(`Lead ${selectedLead.account_name} restored to ACTIVE qualification!`);
+                              await loadData();
+                            } catch (e: any) {
+                              inAppAlert.error(e.message || 'Failed to update lead status');
+                            }
+                          }}
+                          title="Return lead to active qualification status"
+                        >
+                          Reopen to Active
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                      {selectedLead.next_action_description && (
                         <div style={{
-                          marginTop: '10px',
-                          padding: '8px 10px',
+                          padding: '4px 10px',
                           background: 'rgba(59, 130, 246, 0.08)',
                           borderRadius: '6px',
                           borderLeft: '3px solid var(--primary)',
-                          fontSize: '0.74rem'
+                          color: 'var(--text-primary)',
+                          fontSize: '0.78rem'
                         }}>
-                          <strong>Next:</strong> {lead.next_action_description || 'No action defined'}
+                          <strong>Next:</strong> {selectedLead.next_action_description}
                         </div>
-
-                        {/* Date and Time Logs for Lead Card */}
-                        <div style={{
-                          marginTop: '8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          borderTop: '1px solid var(--border-subtle)',
-                          paddingTop: '6px',
-                          fontSize: '0.68rem',
-                          color: 'var(--text-muted)'
-                        }}>
-                          <span title="Created timestamp" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <Calendar size={11} /> {new Date(lead.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          {lead.last_activity_at ? (
-                            <span title="Last action date & time" style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-secondary)' }}>
-                              <Clock size={11} color="var(--primary)" /> {new Date(lead.last_activity_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          ) : (
-                            <span style={{ fontStyle: 'italic', opacity: 0.7 }}>No activity yet</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      )}
+                      {selectedLead.last_activity_at && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }} title="Last activity">
+                          <Clock size={12} color="var(--primary)" />
+                          {new Date(selectedLead.last_activity_at).toLocaleDateString()}
+                        </span>
+                      )}
+                      {selectedLead.created_at && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }} title="Created date">
+                          <Calendar size={12} />
+                          {new Date(selectedLead.created_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Right Column: Dynamic Phase 4 PLD Qualification Workspace */}
+              {/* Main Full-Width Qualification Workspace */}
               {selectedLead ? (
                 <PLDQualificationWorkspace
                   lead={selectedLead}
+                  currentUser={currentUser}
                   onTransitionSuccess={() => {
                     loadData();
                     notifySuccess(`Lead ${selectedLead.account_name} successfully qualified and advanced to Discovery.`);
@@ -1531,8 +1779,32 @@ export default function App() {
                   }}
                 />
               ) : (
-                <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Select a lead from the work queue to begin ICP evaluation and qualification.
+                <div className="card text-center" style={{ padding: '60px 20px', color: 'var(--text-muted)' }}>
+                  <Layers size={40} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>No Lead Selected</h3>
+                  <p style={{ fontSize: '0.85rem', maxWidth: '420px', margin: '4px auto 16px' }}>
+                    {visibleLeads.length === 0
+                      ? `No leads found matching current filter (${queueFilterStatus}). Try switching filter or creating a new lead.`
+                      : 'Select a lead from the dropdown above to begin ICP evaluation, problem discovery, and qualification.'}
+                  </p>
+                  {visibleLeads.length === 0 && (
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setQueueFilterStatus('ALL')}
+                      >
+                        Show All Leads ({qualificationLeads.length})
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => setShowIntakeModal(true)}
+                      >
+                        + Intake New Lead
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1663,6 +1935,10 @@ export default function App() {
               {sqlSubView === 'readiness' ? (
                 <SQLReadinessWorkspace
                   initialLeadId={selectedLead?.id}
+                  onLeadChange={(leadId) => {
+                    const found = leads.find(l => l.id === leadId);
+                    if (found) setSelectedLead(found);
+                  }}
                   onNavigateToOpportunity={(oppId) => {
                     setSelectedOpportunityId(oppId);
                     setActiveTab('opportunities');
@@ -2130,6 +2406,26 @@ export default function App() {
               />
             </div>
           )}
+
+          {/* TAB 16: PRODUCT WEBSITE INBOUND LEADS TRIAGE & ASSIGNMENT */}
+          {activeTab === 'website-leads' && (
+            <div className="animate-fade-in">
+              <WebsiteLeadsTriageWorkspace
+                leads={leads}
+                products={products}
+                staffUsers={staffUsers}
+                currentUser={currentUser}
+                onRefresh={loadData}
+                onNavigateToTab={(tab, leadId) => {
+                  if (leadId) {
+                    const found = leads.find(l => l.id === leadId);
+                    if (found) setSelectedLead(found);
+                  }
+                  setActiveTab(tab as any);
+                }}
+              />
+            </div>
+          )}
             </ErrorBoundary>
           )}
         </div>
@@ -2469,6 +2765,30 @@ export default function App() {
                           }}
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Region / Territory</label>
+                      <select
+                        value={newLeadTerritory}
+                        onChange={(e) => setNewLeadTerritory(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                          color: 'var(--text-primary)',
+                          marginTop: '4px',
+                          outline: 'none',
+                          fontSize: '0.82rem'
+                        }}
+                      >
+                        <option value="">-- Select Region / Territory (Admin Defined) --</option>
+                        {territories.map(t => (
+                          <option key={t.id} value={t.name}>{t.name} ({t.country})</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 )}
@@ -3099,6 +3419,48 @@ export default function App() {
                     </div>
                   );
                 })()}
+              </div>
+
+              {/* Territory / Regional Scoping */}
+              <div style={{
+                padding: '14px',
+                background: 'rgba(79, 70, 229, 0.05)',
+                border: '1px solid rgba(79, 70, 229, 0.25)',
+                borderRadius: '10px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MapPin size={14} color="#4F46E5" />
+                    <span>Territory / Region Assignment</span>
+                  </label>
+                  <span className="badge badge-primary" style={{ fontSize: '0.65rem' }}>
+                    Regional Scoping
+                  </span>
+                </div>
+                <select
+                  value={newLeadTerritory}
+                  onChange={(e) => setNewLeadTerritory(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.84rem',
+                    outline: 'none'
+                  }}
+                >
+                  <option value="">-- Choose Territory / Region (Default: Global / Auto) --</option>
+                  {territories.map(t => (
+                    <option key={t.id} value={t.name}>
+                      {t.name} ({t.country}) {t.regional_manager_name ? `• Regional Mgr: ${t.regional_manager_name}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Sales Managers assigned to this territory will be granted visibility to this lead and its commercial pipeline.
+                </div>
               </div>
 
               {/* Lead Ownership & RBAC Assignment Rules */}

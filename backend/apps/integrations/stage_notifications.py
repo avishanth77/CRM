@@ -338,13 +338,18 @@ class CustomerStageEmailService:
         Maps a PipelineStage, stage code, or status string to a CUSTOMER_STAGE_TEMPLATES key.
         """
         if status_override:
-            upper_status = status_override.upper()
+            upper_status = status_override.upper().replace('STAGE_', '')
+            if upper_status in CUSTOMER_STAGE_TEMPLATES:
+                return upper_status
             if upper_status in ('NURTURE', 'DISQUALIFIED'):
                 return upper_status
             if upper_status == 'WON':
                 return 'OPP_CLOSED_WON'
             if upper_status == 'LOST':
                 return 'OPP_CLOSED_LOST'
+            for k in CUSTOMER_STAGE_TEMPLATES.keys():
+                if k in upper_status or upper_status in k:
+                    return k
 
         raw_code = ''
         if isinstance(stage, PipelineStage):

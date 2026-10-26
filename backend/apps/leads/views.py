@@ -2,14 +2,17 @@ import logging
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 from apps.leads.models import Lead, LeadProductInterest, LeadTouch, LeadProblem, LeadSource, Campaign
 from apps.leads.serializers import (
     LeadSerializer, LeadProductInterestSerializer,
     LeadTouchSerializer, LeadProblemSerializer,
-    LeadSourceSerializer, CampaignSerializer
+    LeadSourceSerializer, CampaignSerializer,
+    WebsiteLeadIngestSerializer
 )
+from apps.leads.services import ingest_website_lead
 from apps.pld_engine.models import PipelineStage
 from apps.pld_engine.services import GateValidator, ICPEvaluator
 from apps.workflows.models import StageHistory
@@ -79,6 +82,10 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         if status_param:
             qs = qs.filter(status=status_param)
 
+        region_param = self.request.query_params.get('region') or self.request.query_params.get('territory')
+        if region_param and region_param.upper() != 'ALL':
+            qs = qs.filter(territory=region_param)
+
         return qs
 
 
@@ -106,6 +113,15 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
                 raise permissions.exceptions.PermissionDenied(
                     "Staff members can only assign leads to themselves. Only Managers and Administrators can assign leads to other staff members."
                 )
+
+        # Territory assignment fallback
+        if not serializer.validated_data.get('territory'):
+            if requested_owner and getattr(requested_owner, 'territory', None):
+                serializer.validated_data['territory'] = requested_owner.territory
+            elif user and getattr(user, 'territory', None):
+                serializer.validated_data['territory'] = user.territory
+            elif serializer.validated_data.get('account') and getattr(serializer.validated_data['account'], 'territory', None):
+                serializer.validated_data['territory'] = serializer.validated_data['account'].territory
 
         if partner:
             lead = serializer.save(partner=partner)
@@ -220,15 +236,22 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         user = get_request_user(self.request)
         manager_or_admin = is_management_or_admin(user)
         user_role = str(getattr(user, 'role', '') or '').upper()
-        is_pld = user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST']
+        is_pld = user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST', 'PRESALES']
         old_instance = self.get_object()
 
-        if 'owner' in serializer.validated_data and not (manager_or_admin or is_pld):
+        if 'owner' in serializer.validated_data:
             new_owner = serializer.validated_data.get('owner')
             if new_owner != old_instance.owner:
-                raise permissions.exceptions.PermissionDenied(
-                    "Staff members are not permitted to change lead ownership. Only Managers, Admins, and PLD Specialists can assign or reassign leads."
-                )
+                # Reassignment of an already assigned lead is strictly restricted to Managers and Admins
+                if old_instance.owner is not None and not manager_or_admin:
+                    raise permissions.exceptions.PermissionDenied(
+                        "Permission denied. Sales representatives are not permitted to reassign leads. Only Sales Managers and Administrators can reassign lead ownership."
+                    )
+                elif not (manager_or_admin or is_pld):
+                    if not (old_instance.owner is None and user and getattr(new_owner, 'id', None) == getattr(user, 'id', None)):
+                        raise permissions.exceptions.PermissionDenied(
+                            "Staff members are not permitted to change lead ownership. Only Managers, Admins, and PLD Specialists can assign leads."
+                        )
 
         updated_lead = serializer.save()
 
@@ -410,43 +433,53 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             request.data.get('owner_id')
         )
         if assigned_sales_owner_id:
-            try:
-                new_sales_owner = User.objects.get(id=assigned_sales_owner_id, is_active=True)
-                old_owner = lead.owner
-                lead.owner = new_sales_owner
-                task_due = timezone.now() + timezone.timedelta(hours=48)
-                lead.next_activity_due_at = task_due
-                lead.next_action_description = f"Sales Discovery Outreach by {new_sales_owner.get_full_name() or new_sales_owner.username}"
-                lead.save(update_fields=['owner', 'next_activity_due_at', 'next_action_description'])
+            manager_or_admin = is_management_or_admin(user)
+            user_role = str(getattr(user, 'role', '') or '').upper()
+            is_pld = user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST', 'PRESALES']
 
-                Task.objects.create(
-                    tenant=lead.tenant,
-                    related_lead=lead,
-                    related_account=lead.account,
-                    related_contact=getattr(lead, 'contact', None),
-                    title=f"Sales Discovery Outreach - {lead.account.company_name}",
-                    description=f"Qualified through PLD Engine. Stage advanced to {target_stage.stage_name}. Assigned to {new_sales_owner.get_full_name() or new_sales_owner.username}.",
-                    due_date=task_due,
-                    priority=TaskPriority.HIGH,
-                    status=TaskStatus.OPEN,
-                    task_type="FOLLOW_UP",
-                    assigned_to=new_sales_owner,
-                    created_by=request.user if (request.user and request.user.is_authenticated) else None
-                )
+            # If already assigned, only Managers and Admins can reassign
+            if lead.owner is not None and not manager_or_admin:
+                logger.warning(f"Unauthorized lead reassignment attempt in transition_stage by non-manager user {user}")
+            elif lead.owner is None and not (manager_or_admin or is_pld):
+                logger.warning(f"Unauthorized lead assignment attempt in transition_stage by non-presales user {user}")
+            else:
+                try:
+                    new_sales_owner = User.objects.get(id=assigned_sales_owner_id, is_active=True)
+                    old_owner = lead.owner
+                    lead.owner = new_sales_owner
+                    task_due = timezone.now() + timezone.timedelta(hours=48)
+                    lead.next_activity_due_at = task_due
+                    lead.next_action_description = f"Sales Discovery Outreach by {new_sales_owner.get_full_name() or new_sales_owner.username}"
+                    lead.save(update_fields=['owner', 'next_activity_due_at', 'next_action_description'])
 
-                Activity.objects.create(
-                    lead=lead,
-                    account=lead.account,
-                    activity_type=ActivityType.FOLLOW_UP,
-                    subject=f"Assigned to Sales Representative: {new_sales_owner.get_full_name() or new_sales_owner.username}",
-                    description_notes=f"Lead qualified through PLD Engine and advanced to {target_stage.stage_name}. Assigned to {new_sales_owner.get_full_name() or new_sales_owner.email}.",
-                    conducted_at=timezone.now(),
-                    status=ActivityStatus.COMPLETED,
-                    performed_by=request.user if request.user.is_authenticated else None,
-                    created_by=request.user if request.user.is_authenticated else None
-                )
-            except User.DoesNotExist:
-                pass
+                    Task.objects.create(
+                        tenant=lead.tenant,
+                        related_lead=lead,
+                        related_account=lead.account,
+                        related_contact=getattr(lead, 'contact', None),
+                        title=f"Sales Discovery Outreach - {lead.account.company_name}",
+                        description=f"Qualified through PLD Engine. Stage advanced to {target_stage.stage_name}. Assigned to {new_sales_owner.get_full_name() or new_sales_owner.username}.",
+                        due_date=task_due,
+                        priority=TaskPriority.HIGH,
+                        status=TaskStatus.OPEN,
+                        task_type="FOLLOW_UP",
+                        assigned_to=new_sales_owner,
+                        created_by=request.user if (request.user and request.user.is_authenticated) else None
+                    )
+
+                    Activity.objects.create(
+                        lead=lead,
+                        account=lead.account,
+                        activity_type=ActivityType.FOLLOW_UP,
+                        subject=f"Assigned to Sales Representative: {new_sales_owner.get_full_name() or new_sales_owner.username}",
+                        description_notes=f"Lead qualified through PLD Engine and advanced to {target_stage.stage_name}. Assigned to {new_sales_owner.get_full_name() or new_sales_owner.email}.",
+                        conducted_at=timezone.now(),
+                        status=ActivityStatus.COMPLETED,
+                        performed_by=request.user if request.user.is_authenticated else None,
+                        created_by=request.user if request.user.is_authenticated else None
+                    )
+                except User.DoesNotExist:
+                    pass
 
         return Response({
             'message': f"Lead successfully progressed to {target_stage.stage_name}",
@@ -463,6 +496,22 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         """
         lead = self.get_object()
         user = get_request_user(request)
+        manager_or_admin = is_management_or_admin(user)
+        user_role = str(getattr(user, 'role', '') or '').upper()
+        is_pld = user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST', 'PRESALES']
+
+        # Enforce Section 9.3 RBAC: Reassigning an already-assigned lead is strictly restricted to Managers and Admins
+        if lead.owner is not None and not manager_or_admin:
+            return Response({
+                'error': 'Permission denied. Sales representatives are not permitted to reassign leads. Only Sales Managers and Administrators can reassign lead ownership.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Initial assignment of an unassigned lead can only be performed by Managers, Admins, or Presales Specialists
+        if lead.owner is None and not (manager_or_admin or is_pld):
+            return Response({
+                'error': 'Permission denied. Only Sales Managers, Administrators, and Presales Specialists can assign leads to sales representatives.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
         sales_user_id = (
             request.data.get('sales_user_id') or
             request.data.get('user_id') or
@@ -557,7 +606,13 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         """
         Returns preview of the stage completion email that will be sent to the customer.
         """
-        lead = self.get_object()
+        try:
+            lead = self.get_object()
+        except Exception:
+            lead = Lead.objects.filter(id=pk).first()
+            if not lead:
+                return Response({'error': 'Lead not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         stage_id = request.query_params.get('stage_id')
         stage = None
         if stage_id:
@@ -578,7 +633,13 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         """
         Manually trigger / resend customer stage notification email.
         """
-        lead = self.get_object()
+        try:
+            lead = self.get_object()
+        except Exception:
+            lead = Lead.objects.filter(id=pk).first()
+            if not lead:
+                return Response({'error': 'Lead not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         stage_id = request.data.get('stage_id')
         stage = None
         if stage_id:
@@ -1245,6 +1306,20 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             'lead': LeadSerializer(lead).data
         }, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny], authentication_classes=[], url_path='website')
+    def website(self, request):
+        """
+        Public endpoint: POST /api/v1/leads/website/
+        Ingest prospect leads directly from product website forms without authentication.
+        """
+        serializer = WebsiteLeadIngestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lead, result_payload = ingest_website_lead(
+            data=serializer.validated_data,
+            request_meta=request.META
+        )
+        return Response(result_payload, status=status.HTTP_201_CREATED)
+
 
 class LeadSourceViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     domain_name = 'LEADS'
@@ -1302,3 +1377,23 @@ class LeadTouchViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             qs = qs.filter(source_id=source_id)
 
         return qs.order_by('-touch_date')
+
+
+class WebsiteLeadIngestView(APIView):
+    """
+    Public Intake Webhook for product landing pages and marketing websites.
+    Allows unauthenticated POST requests from website forms to ingest leads directly into the CRM.
+    Compatible with VanForces, Al Mawasil, SpeakOrder, TaskForces, EntAura, and other product sites.
+    """
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = WebsiteLeadIngestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lead, result_payload = ingest_website_lead(
+            data=serializer.validated_data,
+            request_meta=request.META
+        )
+        return Response(result_payload, status=status.HTTP_201_CREATED)
+

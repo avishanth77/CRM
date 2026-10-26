@@ -28,8 +28,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view', 'create', 'update', 'export'},
         UserRole.SALES_MANAGER: {'view', 'create', 'update', 'reassign'},
         UserRole.SALES_BDM: {'view', 'create', 'update'},
-        UserRole.PLD_EXECUTIVE: {'view', 'create', 'update'},
-        UserRole.SOLUTION_CONSULTANT: {'view'},
+        UserRole.PRESALES: {'view', 'create', 'update'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view', 'create', 'update'},
@@ -41,9 +40,8 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.ADMIN: {'view', 'create', 'update', 'delete', 'reassign', 'override', 'export'},
         UserRole.MANAGEMENT: {'view', 'export'},
         UserRole.SALES_MANAGER: {'view', 'create', 'update', 'reassign'},
-        UserRole.SALES_BDM: {'view'},
-        UserRole.PLD_EXECUTIVE: {'view', 'create', 'update', 'submit'},
-        UserRole.SOLUTION_CONSULTANT: {'view'},
+        UserRole.SALES_BDM: {'view', 'create', 'update', 'submit'},
+        UserRole.PRESALES: {'view', 'create', 'update', 'submit'},
         UserRole.MARKETING: {'view', 'create'},  # Campaign intake
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view'},
@@ -56,8 +54,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view', 'run'},
         UserRole.SALES_MANAGER: {'view', 'run'},
         UserRole.SALES_BDM: {'view', 'run'},
-        UserRole.PLD_EXECUTIVE: {'view', 'run', 'submit'},
-        UserRole.SOLUTION_CONSULTANT: {'view', 'run'},
+        UserRole.PRESALES: {'view', 'run', 'submit'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view', 'run', 'author'},
         UserRole.CUSTOMER_SUCCESS: {'view'},
@@ -69,9 +66,8 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.ADMIN: {'view', 'score', 'override'},
         UserRole.MANAGEMENT: {'view', 'score', 'override'},
         UserRole.SALES_MANAGER: {'view', 'score', 'override'},
-        UserRole.SALES_BDM: {'view'},
-        UserRole.PLD_EXECUTIVE: {'view', 'submit'},
-        UserRole.SOLUTION_CONSULTANT: {'view', 'input'},
+        UserRole.SALES_BDM: {'view', 'input', 'score', 'submit'},
+        UserRole.PRESALES: {'view', 'input', 'score', 'submit'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view', 'author'},  # Author model only, not live scores
         UserRole.CUSTOMER_SUCCESS: {'view'},
@@ -84,8 +80,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view', 'create', 'update'},
         UserRole.SALES_BDM: {'view', 'create', 'update'},
-        UserRole.PLD_EXECUTIVE: {'view', 'create', 'update', 'map'},
-        UserRole.SOLUTION_CONSULTANT: {'view', 'update', 'map'},
+        UserRole.PRESALES: {'view', 'create', 'update', 'map'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view', 'author'},
         UserRole.CUSTOMER_SUCCESS: {'view'},
@@ -98,8 +93,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view', 'create', 'update'},
         UserRole.SALES_BDM: {'view', 'create', 'update', 'attend'},
-        UserRole.PLD_EXECUTIVE: {'view', 'create', 'update'},
-        UserRole.SOLUTION_CONSULTANT: {'view', 'create', 'update', 'conduct'},
+        UserRole.PRESALES: {'view', 'create', 'update', 'conduct'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view', 'attend'},
@@ -112,8 +106,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view', 'create', 'update'},
         UserRole.SALES_BDM: {'view', 'create', 'update'},
-        UserRole.PLD_EXECUTIVE: {'view'},
-        UserRole.SOLUTION_CONSULTANT: {'view', 'create', 'update', 'lead_poc'},
+        UserRole.PRESALES: {'view', 'create', 'update', 'lead_poc'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view'},
@@ -125,9 +118,8 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.ADMIN: {'view', 'validate', 'override'},
         UserRole.MANAGEMENT: {'view', 'override'},
         UserRole.SALES_MANAGER: {'view', 'override'},
-        UserRole.SALES_BDM: {'view'},
-        UserRole.PLD_EXECUTIVE: {'view', 'submit'},
-        UserRole.SOLUTION_CONSULTANT: {'view', 'sign_off'},
+        UserRole.SALES_BDM: {'view', 'submit'},
+        UserRole.PRESALES: {'view', 'submit', 'sign_off'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view', 'author'},
         UserRole.CUSTOMER_SUCCESS: {'view'},
@@ -140,8 +132,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view', 'accept', 'reject', 'override'},
         UserRole.SALES_MANAGER: {'view', 'accept', 'reject', 'reassign'},
         UserRole.SALES_BDM: {'view', 'accept', 'reject'},
-        UserRole.PLD_EXECUTIVE: {'view', 'submit'},
-        UserRole.SOLUTION_CONSULTANT: set(),
+        UserRole.PRESALES: {'view', 'submit'},
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: set(),
         UserRole.CUSTOMER_SUCCESS: set(),
@@ -149,13 +140,25 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.PARTNER_USER: set(),
         UserRole.FINANCE: set(),
     },
+    'SQL_HANDOFF': {
+        UserRole.ADMIN: {'view', 'create', 'update', 'delete', 'submit', 'accept', 'reject', 'override', 'reassign'},
+        UserRole.MANAGEMENT: {'view', 'create', 'update', 'submit', 'accept', 'reject', 'override'},
+        UserRole.SALES_MANAGER: {'view', 'create', 'update', 'submit', 'accept', 'reject', 'override', 'reassign'},
+        UserRole.SALES_BDM: {'view', 'create', 'update', 'submit', 'accept', 'reject'},
+        UserRole.PRESALES: {'view', 'create', 'update', 'submit'},
+        UserRole.MARKETING: {'view'},
+        UserRole.PRODUCT_MANAGER: {'view'},
+        UserRole.CUSTOMER_SUCCESS: {'view'},
+        UserRole.PARTNER_MANAGER: {'view'},
+        UserRole.PARTNER_USER: set(),
+        UserRole.FINANCE: {'view'},
+    },
     'OPPORTUNITIES': {
         UserRole.ADMIN: {'view', 'create', 'update', 'delete', 'export'},
         UserRole.MANAGEMENT: {'view', 'export'},
         UserRole.SALES_MANAGER: {'view', 'create', 'update', 'reassign'},
         UserRole.SALES_BDM: {'view', 'create', 'update'},
-        UserRole.PLD_EXECUTIVE: {'view'},
-        UserRole.SOLUTION_CONSULTANT: {'view'},
+        UserRole.PRESALES: {'view', 'create', 'update', 'support'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view', 'create', 'update'},
@@ -168,8 +171,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view', 'approve', 'sign'},
         UserRole.SALES_MANAGER: {'view', 'create', 'update', 'approve'},
         UserRole.SALES_BDM: {'view', 'create', 'update', 'submit', 'approve'},
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: {'view'},
+        UserRole.PRESALES: {'view'},
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: set(),
@@ -182,8 +184,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'approve_unlimited'},
         UserRole.SALES_MANAGER: {'approve_25'},
         UserRole.SALES_BDM: {'self_approve_15'},
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: set(),
+        UserRole.PRESALES: set(),
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: set(),
         UserRole.CUSTOMER_SUCCESS: set(),
@@ -196,8 +197,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'global_override'},
         UserRole.SALES_MANAGER: {'team_override'},
         UserRole.SALES_BDM: set(),
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: set(),
+        UserRole.PRESALES: set(),
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: set(),
         UserRole.CUSTOMER_SUCCESS: set(),
@@ -210,8 +210,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view'},
         UserRole.SALES_BDM: {'view', 'handoff'},
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: {'view', 'support'},
+        UserRole.PRESALES: {'view', 'support'},
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view', 'create', 'update'},
@@ -224,8 +223,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view'},
         UserRole.SALES_BDM: {'view'},
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: {'view'},
+        UserRole.PRESALES: {'view'},
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view', 'update'},
@@ -238,8 +236,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view', 'reengage'},
         UserRole.SALES_BDM: {'view', 'reengage'},
-        UserRole.PLD_EXECUTIVE: {'view', 'reengage'},
-        UserRole.SOLUTION_CONSULTANT: set(),
+        UserRole.PRESALES: {'view', 'reengage'},
         UserRole.MARKETING: {'view', 'create', 'update', 'campaign'},
         UserRole.PRODUCT_MANAGER: {'view'},
         UserRole.CUSTOMER_SUCCESS: {'view', 'flag_churn'},
@@ -252,8 +249,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view', 'arbitrate'},
         UserRole.SALES_MANAGER: {'view', 'conflict_review'},
         UserRole.SALES_BDM: {'view'},
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: set(),
+        UserRole.PRESALES: set(),
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: set(),
         UserRole.CUSTOMER_SUCCESS: set(),
@@ -266,8 +262,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view'},
         UserRole.SALES_BDM: {'view'},
-        UserRole.PLD_EXECUTIVE: {'view'},
-        UserRole.SOLUTION_CONSULTANT: {'view'},
+        UserRole.PRESALES: {'view'},
         UserRole.MARKETING: {'view'},
         UserRole.PRODUCT_MANAGER: {'view', 'create', 'update', 'publish', 'archive'},
         UserRole.CUSTOMER_SUCCESS: {'view'},
@@ -280,8 +275,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view'},  # Team scoped
         UserRole.SALES_BDM: set(),
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: set(),
+        UserRole.PRESALES: set(),
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: {'view'},  # Config audit
         UserRole.CUSTOMER_SUCCESS: set(),
@@ -294,8 +288,7 @@ DOMAIN_OPERATIONS_MATRIX = {
         UserRole.MANAGEMENT: {'view'},
         UserRole.SALES_MANAGER: {'view'},
         UserRole.SALES_BDM: {'view'},
-        UserRole.PLD_EXECUTIVE: set(),
-        UserRole.SOLUTION_CONSULTANT: set(),
+        UserRole.PRESALES: set(),
         UserRole.MARKETING: set(),
         UserRole.PRODUCT_MANAGER: set(),
         UserRole.CUSTOMER_SUCCESS: set(),
@@ -394,6 +387,24 @@ def apply_data_scoping(queryset: QuerySet, user: User, domain: Optional[str] = N
                 return queryset.filter(partner__isnull=False)
 
         # Sales Manager: Territory & Managed Team Scope
+        if model_name == 'Lead' and user.territory:
+            # Section 9.2 & User Rule: The sales manager can only see leads from their assigned territory.
+            # If lead.territory is set, it MUST strictly match user.territory.
+            # If lead.territory is unassigned (None or empty), team/managed leads are visible for triage.
+            return queryset.filter(
+                Q(territory=user.territory) |
+                (
+                    (Q(territory__isnull=True) | Q(territory='')) &
+                    (
+                        Q(owner=user) |
+                        Q(owner__manager=user) |
+                        Q(owner__territory=user.territory) |
+                        Q(account__territory=user.territory) |
+                        Q(owner__role__in=[UserRole.SALES_BDM, UserRole.PRESALES])
+                    )
+                )
+            ).distinct()
+
         q_filter = Q()
         has_filter = False
 
@@ -461,6 +472,9 @@ def apply_data_scoping(queryset: QuerySet, user: User, domain: Optional[str] = N
         has_owner_field = True
     if hasattr(model, 'created_by'):
         q_owner |= Q(created_by=user)
+        has_owner_field = True
+    if model_name == 'SQLHandoff' and hasattr(model, 'lead'):
+        q_owner |= Q(lead__owner=user)
         has_owner_field = True
 
     if has_owner_field:
@@ -559,7 +573,19 @@ class DomainOperationPermission(permissions.BasePermission):
             return True
 
         custom_action = getattr(view, 'action', None)
-        if custom_action and custom_action in [
+        action_normalization = {
+            'submit_sql': 'submit',
+            'override_sql': 'override',
+            'check_readiness': 'view',
+            'pending_handoffs': 'view',
+            'sla_status': 'view',
+            'handoff_history': 'view',
+            'stage_email_preview': 'view',
+            'send_stage_email': 'view',
+        }
+        if custom_action in action_normalization:
+            action = action_normalization[custom_action]
+        elif custom_action and custom_action in [
             'approve', 'reject', 'override', 'publish', 'submit',
             'reassign', 'accept', 'export', 'audit', 'sign'
         ]:

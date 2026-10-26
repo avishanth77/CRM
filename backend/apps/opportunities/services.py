@@ -128,11 +128,13 @@ class OpportunityService:
         )
 
         # Auto-create OpportunityProduct line item
+        seats = int(opp.seat_units_count or 1)
+        unit_price = (val / Decimal(str(seats))).quantize(Decimal('0.01')) if seats > 0 and val > 0 else val
         OpportunityProduct.objects.create(
             opportunity=opp,
             product=product,
-            quantity=1,
-            unit_price=val,
+            quantity=seats,
+            unit_price=unit_price,
             total_amount=val,
             term_months=contract_term,
             tenant=lead.tenant
@@ -358,6 +360,8 @@ class OpportunityService:
 
             if 'seat_units_count' in changes:
                 cls.sync_opportunity_proposals_to_seats(opportunity)
+            else:
+                cls.sync_opportunity_products(opportunity)
 
         return opportunity
 
@@ -374,11 +378,77 @@ class OpportunityService:
                 if len(items) == 1:
                     it = items[0]
                     it.quantity = new_seats
-                    if v.gross_amount > 0:
+                    if (not it.unit_price or it.unit_price <= 0) and v.gross_amount > 0:
                         it.unit_price = (v.gross_amount / Decimal(str(new_seats))).quantize(Decimal('0.01'))
                     it.calculate_line_total()
                     it.save()
                     ProposalService.recalculate_version_totals(v)
+        cls.sync_opportunity_products(opportunity)
+
+    @classmethod
+    def sync_opportunity_products(cls, opportunity):
+        """
+        Synchronizes OpportunityProduct line items with opportunity seat units,
+        product pricing, and latest proposal line items.
+        """
+        if not opportunity:
+            return
+
+        latest_proposal = opportunity.proposals.order_by('-created_at').first()
+        if latest_proposal:
+            latest_version = latest_proposal.versions.order_by('-version_number').first()
+            if latest_version and latest_version.items.exists():
+                total_qty = sum(p_item.quantity for p_item in latest_version.items.all())
+                fields_to_update = []
+                if total_qty > 0 and opportunity.seat_units_count != total_qty:
+                    opportunity.seat_units_count = total_qty
+                    fields_to_update.append('seat_units_count')
+                if latest_version.net_amount and latest_version.net_amount > 0 and opportunity.total_contract_value != latest_version.net_amount:
+                    opportunity.total_contract_value = latest_version.net_amount
+                    opportunity.arr = latest_version.net_amount
+                    opportunity.arr_mrr = latest_version.net_amount
+                    fields_to_update.extend(['total_contract_value', 'arr', 'arr_mrr'])
+                if fields_to_update:
+                    opportunity.save(update_fields=fields_to_update)
+
+                for p_item in latest_version.items.all():
+                    if p_item.product:
+                        OpportunityProduct.objects.update_or_create(
+                            opportunity=opportunity,
+                            product=p_item.product,
+                            defaults={
+                                'quantity': p_item.quantity,
+                                'unit_price': p_item.unit_price,
+                                'total_amount': p_item.line_total,
+                                'term_months': latest_version.contract_term_months or opportunity.contract_term_months or 12,
+                                'tenant': opportunity.tenant
+                            }
+                        )
+                return
+
+        # If no proposal items exist yet, update or create based on opportunity fields
+        if opportunity.product:
+            seats = int(opportunity.seat_units_count or 1)
+            line = OpportunityProduct.objects.filter(opportunity=opportunity, product=opportunity.product).first()
+            if line:
+                line.quantity = seats
+                if line.unit_price and line.unit_price > 0:
+                    line.total_amount = (Decimal(str(seats)) * line.unit_price).quantize(Decimal('0.01'))
+                elif opportunity.total_contract_value and opportunity.total_contract_value > 0:
+                    line.unit_price = (opportunity.total_contract_value / Decimal(str(seats))).quantize(Decimal('0.01'))
+                    line.total_amount = opportunity.total_contract_value
+                line.save()
+            else:
+                unit_pr = (opportunity.total_contract_value / Decimal(str(seats))).quantize(Decimal('0.01')) if opportunity.total_contract_value and seats > 0 else Decimal('0.00')
+                OpportunityProduct.objects.create(
+                    opportunity=opportunity,
+                    product=opportunity.product,
+                    quantity=seats,
+                    unit_price=unit_pr,
+                    total_amount=opportunity.total_contract_value or (unit_pr * Decimal(str(seats))),
+                    term_months=opportunity.contract_term_months or 12,
+                    tenant=opportunity.tenant
+                )
 
 
 class ProposalService:
@@ -457,6 +527,8 @@ class ProposalService:
             proposal.tax_amount = version.tax_amount
             proposal.net_amount = version.net_amount
             proposal.save(update_fields=['gross_amount', 'discount_pct', 'discount_amount', 'tax_pct', 'tax_amount', 'net_amount'])
+        if proposal.opportunity:
+            OpportunityService.sync_opportunity_products(proposal.opportunity)
         return version
 
     @classmethod
@@ -645,6 +717,7 @@ class ProposalService:
             }
         )
 
+        OpportunityService.sync_opportunity_products(opportunity)
         return proposal
 
     @classmethod
@@ -794,6 +867,8 @@ class ProposalService:
             }
         )
 
+        if proposal.opportunity:
+            OpportunityService.sync_opportunity_products(proposal.opportunity)
         return new_version
 
     @classmethod

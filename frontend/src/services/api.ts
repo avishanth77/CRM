@@ -86,6 +86,21 @@ export interface Product {
   }>;
 }
 
+export interface Territory {
+  id: string;
+  name: string;
+  code: string;
+  country: string;
+  regional_manager?: string | null;
+  regional_manager_name?: string | null;
+  regional_manager_email?: string | null;
+  description?: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface LeadSource {
   id: string;
   code: string;
@@ -99,6 +114,7 @@ export interface Lead {
   account_name: string;
   account_city?: string;
   account_country?: string;
+  territory?: string;
   contact?: string;
   contact_name?: string;
   contact_email?: string;
@@ -144,6 +160,7 @@ export interface Lead {
   disqualification_reason?: string;
   source?: string;
   source_name?: string;
+  touches?: any[];
   estimated_opportunity_value?: number;
   timeline_expectation?: string;
   created_at: string;
@@ -1612,6 +1629,17 @@ export interface ERPSyncRecord {
 
 let isRefreshingToken = false;
 let refreshSubscribers: Array<(token: string) => void> = [];
+let lastAuthExpiredDispatch = 0;
+
+function notifyAuthExpired() {
+  const now = Date.now();
+  if (now - lastAuthExpiredDispatch > 3000) {
+    lastAuthExpiredDispatch = now;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('texol-auth-expired'));
+    }
+  }
+}
 
 function onTokenRefreshed(newToken: string) {
   refreshSubscribers.forEach((cb) => cb(newToken));
@@ -1627,7 +1655,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const refreshToken = typeof localStorage !== 'undefined' ? localStorage.getItem('texol_refresh_token') : null;
 
   const authHeaders: Record<string, string> = {};
-  if (token) {
+  const isAuthEndpoint = endpoint.includes('/auth/login') || endpoint.includes('/auth/token');
+  const isAuthBypassEndpoint = isAuthEndpoint || endpoint.includes('/auth/logout');
+  if (token && !isAuthEndpoint) {
     authHeaders['Authorization'] = `Bearer ${token}`;
   }
 
@@ -1650,7 +1680,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       });
 
       // Handle 401 Unauthorized: Attempt automatic token refresh
-      if (response.status === 401 && refreshToken && !endpoint.includes('/auth/token') && !endpoint.includes('/auth/login')) {
+      if (response.status === 401 && refreshToken && !isAuthBypassEndpoint) {
         if (!isRefreshingToken) {
           isRefreshingToken = true;
           try {
@@ -1678,7 +1708,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
               localStorage.removeItem('texol_access_token');
               localStorage.removeItem('texol_refresh_token');
               localStorage.removeItem('texol_auth_user');
-              window.dispatchEvent(new CustomEvent('texol-auth-expired'));
+              notifyAuthExpired();
             }
           } catch {
             // Network failure during refresh
@@ -1716,11 +1746,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
         } catch {
           // ignore parsing error on error response
         }
-        if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/token')) {
+        if (response.status === 401 && !isAuthBypassEndpoint) {
           localStorage.removeItem('texol_access_token');
           localStorage.removeItem('texol_refresh_token');
           localStorage.removeItem('texol_auth_user');
-          window.dispatchEvent(new CustomEvent('texol-auth-expired'));
+          notifyAuthExpired();
         }
         throw new Error(errorMsg || `API request failed with status ${response.status}`);
       }
@@ -2268,10 +2298,13 @@ export const api = {
 
   // Accounts, Contacts & Opportunities
   getAccounts: () => request<{ results: any[] }>('/accounts/'),
+  getAccount: (id: string) => request<any>(`/accounts/${id}/`),
   createAccount: (data: any) => request<any>('/accounts/', { method: 'POST', body: JSON.stringify(data) }),
   updateAccount: (id: string, data: any) => request<any>(`/accounts/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
   getContacts: (accountId?: string) => request<{ results: any[] }>(`/contacts/${accountId ? `?account=${accountId}` : ''}`),
+  getContact: (id: string) => request<any>(`/contacts/${id}/`),
   createContact: (data: any) => request<any>('/contacts/', { method: 'POST', body: JSON.stringify(data) }),
+  updateContact: (id: string, data: any) => request<any>(`/contacts/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
   upsertAccountAttributes: (accountId: string, productId: string, attributes: Record<string, any>) =>
     request<any>(`/accounts/${accountId}/upsert-attributes/`, {
       method: 'POST',
@@ -2537,7 +2570,7 @@ export const api = {
   // Phase 3: Omni-Channel Communications Hub (Email & WhatsApp)
   getCommunications: () =>
     request<{ results: CommunicationMessage[] }>('/communications/'),
-  sendTestCommunication: (data: { channel: 'EMAIL' | 'WHATSAPP'; recipient: string; template: string; lead_id?: string }) =>
+  sendTestCommunication: (data: { channel: 'EMAIL' | 'WHATSAPP'; recipient: string; template: string; lead_id?: string; subject?: string; body?: string }) =>
     request<any>('/communications/send-test/', { method: 'POST', body: JSON.stringify(data) }),
   getStageTemplates: () =>
     request<Array<{ key: string; stage_name: string; subject: string; body_preview: string }>>('/communications/stage-templates/'),
@@ -2649,8 +2682,13 @@ export const api = {
     request<{ access: string }>('/auth/token/refresh/', { method: 'POST', body: JSON.stringify({ refresh }) }),
   verifyToken: (token: string) =>
     request<Record<string, any>>('/auth/token/verify/', { method: 'POST', body: JSON.stringify({ token }) }),
-  logout: () =>
-    request<{ message: string }>('/auth/logout/', { method: 'POST' }),
+  logout: () => {
+    const refresh = typeof localStorage !== 'undefined' ? localStorage.getItem('texol_refresh_token') : null;
+    return request<{ message: string }>('/auth/logout/', {
+      method: 'POST',
+      body: JSON.stringify({ refresh })
+    }).catch(() => ({ message: 'Logged out' }));
+  },
   getCurrentUser: () =>
     request<AuthUser>('/auth/me/'),
   changePassword: (data: { current_password: string; new_password: string; confirm_password?: string }) =>
@@ -2676,6 +2714,31 @@ export const api = {
     }),
   deleteStaffUser: (userId: string) =>
     request<{ message: string }>(`/admin/staff/${userId}/`, {
+      method: 'DELETE',
+    }),
+  updateStaffUser: (userId: string, data: Partial<AuthUser> & { password?: string; manager_id?: string }) =>
+    request<{ message: string; user: AuthUser }>(`/admin/staff/${userId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // Territories & Geographic Regions (Admin & Regional Scoping)
+  getTerritories: (activeOnly = false) =>
+    request<{ count: number; results: Territory[] } | Territory[]>(
+      `/territories/${activeOnly ? '?active_only=true' : ''}`
+    ),
+  createTerritory: (data: Partial<Territory>) =>
+    request<Territory>('/territories/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateTerritory: (id: string, data: Partial<Territory>) =>
+    request<Territory>(`/territories/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteTerritory: (id: string) =>
+    request<{ message: string }>(`/territories/${id}/`, {
       method: 'DELETE',
     }),
   createPartnerAdmin: (data: {

@@ -17,7 +17,7 @@ class ApprovalViewSet(viewsets.ModelViewSet):
     def decide(self, request, pk=None):
         user = request.user
         role = getattr(user, 'canonical_role', '')
-        if role in [UserRole.SALES_BDM, UserRole.PLD_EXECUTIVE, UserRole.SOLUTION_CONSULTANT, UserRole.PARTNER_USER]:
+        if role in [UserRole.SALES_BDM, UserRole.PRESALES, UserRole.PARTNER_USER]:
             return Response(
                 {'error': 'Permission denied: Frontline and partner users cannot decide workflow approvals.'},
                 status=status.HTTP_403_FORBIDDEN

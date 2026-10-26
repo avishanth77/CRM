@@ -88,7 +88,16 @@ export const OpportunityWorkspace: React.FC<OpportunityWorkspaceProps> = ({
 
   useEffect(() => {
     fetchOpportunities();
-  }, []);
+  }, [initialOpportunityId]);
+
+  useEffect(() => {
+    if (initialOpportunityId && opportunities.length > 0) {
+      const found = opportunities.find((o) => o.id === initialOpportunityId);
+      if (found) {
+        setSelectedOpportunity(found);
+      }
+    }
+  }, [initialOpportunityId, opportunities]);
 
   const fetchOpportunityDetails = async (oppId: string) => {
     try {

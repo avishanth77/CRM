@@ -27,6 +27,13 @@ export const OmniChannelCommsView: React.FC<Props> = ({ leads, onNotify }) => {
     loadMessages();
   }, []);
 
+  // Synchronize selectedLeadId when leads prop arrives or updates
+  useEffect(() => {
+    if ((!selectedLeadId || !leads.some(l => l.id === selectedLeadId)) && leads.length > 0) {
+      setSelectedLeadId(leads[0].id);
+    }
+  }, [leads, selectedLeadId]);
+
   // Update lead context & recipient when lead changes
   useEffect(() => {
     if (selectedLeadId) {
@@ -89,6 +96,10 @@ export const OmniChannelCommsView: React.FC<Props> = ({ leads, onNotify }) => {
 
   const handleSendNotification = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!recipient || !recipient.trim()) {
+      inAppAlert.error('Please enter a recipient destination (email or phone).');
+      return;
+    }
     setSending(true);
     try {
       const isStageTemplate = template.startsWith('STAGE_');
@@ -96,23 +107,48 @@ export const OmniChannelCommsView: React.FC<Props> = ({ leads, onNotify }) => {
 
       if (isStageTemplate && channel === 'EMAIL' && selectedLeadId) {
         const stageCode = template.replace('STAGE_', '');
-        res = await api.sendLeadStageEmail(selectedLeadId, {
-          status: stageCode,
-          recipient_email: recipient,
-          subject: previewMsg?.subject,
-          body: previewMsg?.body
-        });
-        onNotify(`Stage Email (${res.stage_name}) dispatched to ${res.recipient_email || recipient}! Status: ${res.status}`);
-        inAppAlert.success(`Customer Stage Email Sent: ${res.stage_name}`);
+        try {
+          res = await api.sendLeadStageEmail(selectedLeadId, {
+            status: stageCode,
+            recipient_email: recipient,
+            subject: previewMsg?.subject,
+            body: previewMsg?.body
+          });
+        } catch (apiErr: any) {
+          // If lead-scoped endpoint fails, fallback to unified communications endpoint
+          res = await api.sendTestCommunication({
+            channel,
+            recipient,
+            template,
+            lead_id: selectedLeadId || undefined,
+            subject: previewMsg?.subject,
+            body: previewMsg?.body
+          });
+        }
+
+        if (res.status === 'FAILED') {
+          inAppAlert.error(res.error_message || 'Stage Email delivery failed');
+          onNotify(`Stage Email failed: ${res.error_message || 'Delivery error'}`);
+        } else {
+          onNotify(`Stage Email (${res.stage_name || stageCode}) dispatched to ${res.recipient_email || recipient}! Status: ${res.status}`);
+          inAppAlert.success(`Customer Stage Email Dispatched: ${res.stage_name || stageCode}`);
+        }
       } else {
         res = await api.sendTestCommunication({
           channel,
           recipient,
           template,
-          lead_id: selectedLeadId || undefined
+          lead_id: selectedLeadId || undefined,
+          subject: previewMsg?.subject,
+          body: previewMsg?.body
         });
-        onNotify(`Notification dispatched via ${res.channel}! Status: ${res.status}`);
-        inAppAlert.success(`Dispatched via ${res.channel}`);
+        if (res.status === 'FAILED') {
+          inAppAlert.error(res.error_message || 'Notification dispatch failed');
+          onNotify(`Notification failed via ${res.channel}: ${res.error_message || 'Delivery error'}`);
+        } else {
+          onNotify(`Notification dispatched via ${res.channel}! Status: ${res.status}`);
+          inAppAlert.success(`Dispatched via ${res.channel}`);
+        }
       }
 
       await loadMessages();

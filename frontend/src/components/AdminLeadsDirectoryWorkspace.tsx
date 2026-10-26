@@ -6,7 +6,7 @@ import {
   Clock, DollarSign, MapPin, X, ExternalLink, Share2
 } from 'lucide-react';
 import { api } from '../services/api';
-import type { Lead, AuthUser, Product, LeadSource } from '../services/api';
+import type { Lead, AuthUser, Product, LeadSource, Territory } from '../services/api';
 import { inAppAlert } from './common/InAppAlert';
 
 interface AdminLeadsDirectoryWorkspaceProps {
@@ -26,6 +26,14 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
   onRefresh,
   onNavigateToTab
 }) => {
+  const isManagerOrAdmin = Boolean(
+    currentUser?.is_superuser ||
+    currentUser?.role === 'ADMIN' ||
+    currentUser?.role === 'MANAGEMENT' ||
+    currentUser?.role === 'SALES_MANAGER' ||
+    currentUser?.role?.includes('MANAGER')
+  );
+
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOwner, setFilterOwner] = useState('ALL');
@@ -37,9 +45,11 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
   const [filterCountry, setFilterCountry] = useState('ALL');
   const [filterTargetAccount, setFilterTargetAccount] = useState('ALL');
   const [filterSource, setFilterSource] = useState('ALL');
+  const [filterRegion, setFilterRegion] = useState('ALL');
 
-  // Lead Sources State
+  // Lead Sources & Territories State
   const [leadSources, setLeadSources] = useState<LeadSource[]>([]);
+  const [territories, setTerritories] = useState<Territory[]>([]);
   const [showEditSourceModal, setShowEditSourceModal] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState('');
   const [newSourceName, setNewSourceName] = useState('');
@@ -50,6 +60,11 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
       const list = Array.isArray(res) ? res : (res?.results || []);
       setLeadSources(list);
     }).catch(e => console.warn('Failed to load lead sources:', e));
+
+    api.getTerritories().then(res => {
+      const list = Array.isArray(res) ? res : (res?.results || []);
+      setTerritories(list);
+    }).catch(e => console.warn('Failed to load territories:', e));
   }, []);
 
   // Lead Detail Inspection Drawer / Modal State
@@ -194,9 +209,14 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
         if (lead.source !== filterSource && lead.source_name !== filterSource) return false;
       }
 
+      // 11. Region / Territory Filter
+      if (filterRegion !== 'ALL') {
+        if (lead.territory !== filterRegion) return false;
+      }
+
       return true;
     });
-  }, [leads, searchQuery, filterOwner, filterProduct, filterStage, filterStatus, filterIcp, filterScoreBand, filterCountry, filterTargetAccount, filterSource]);
+  }, [leads, searchQuery, filterOwner, filterProduct, filterStage, filterStatus, filterIcp, filterScoreBand, filterCountry, filterTargetAccount, filterSource, filterRegion]);
 
   // Executive KPI summary calculations
   const totalPipelineVal = useMemo(() => {
@@ -228,6 +248,10 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
 
   // Execute Reassignment (Single or Bulk)
   const handleExecuteReassignment = async (leadIds: string[], newOwnerId: string) => {
+    if (!isManagerOrAdmin) {
+      inAppAlert.error('Permission Denied: Sales representatives are not permitted to reassign leads. Only Managers and Administrators can reassign leads.');
+      return;
+    }
     if (!newOwnerId) {
       inAppAlert.warning('Please select a staff member to assign.');
       return;
@@ -274,7 +298,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
     }
 
     const headers = [
-      'Lead ID', 'Company Name', 'Domain', 'City', 'Country', 'Target Account',
+      'Lead ID', 'Company Name', 'Domain', 'City', 'Country', 'Territory / Region', 'Target Account',
       'Contact Name', 'Contact Title', 'Contact Email', 'Contact Phone',
       'Primary Product', 'Product Code', 'Assigned Owner', 'Owner Email',
       'Current Stage', 'Status', 'PLD Score', 'Score Classification', 'ICP Passed',
@@ -287,6 +311,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
       `"${l.domain || ''}"`,
       `"${l.account_city || ''}"`,
       `"${l.account_country || ''}"`,
+      `"${(l.territory || '').replace(/"/g, '""')}"`,
       l.is_target_account ? 'Yes' : 'No',
       `"${(l.contact_name || '').replace(/"/g, '""')}"`,
       `"${(l.contact_designation || '').replace(/"/g, '""')}"`,
@@ -329,6 +354,8 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
     setFilterScoreBand('ALL');
     setFilterCountry('ALL');
     setFilterTargetAccount('ALL');
+    setFilterSource('ALL');
+    setFilterRegion('ALL');
   };
 
   return (
@@ -370,7 +397,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {selectedLeadIds.length > 0 && (
+            {selectedLeadIds.length > 0 && isManagerOrAdmin && (
               <button
                 className="btn btn-primary"
                 onClick={() => setShowBulkReassignModal(true)}
@@ -524,7 +551,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
               )}
             </div>
 
-            {(searchQuery || filterOwner !== 'ALL' || filterProduct !== 'ALL' || filterStage !== 'ALL' || filterStatus !== 'ALL' || filterIcp !== 'ALL' || filterScoreBand !== 'ALL' || filterCountry !== 'ALL' || filterTargetAccount !== 'ALL' || filterSource !== 'ALL') && (
+            {(searchQuery || filterOwner !== 'ALL' || filterProduct !== 'ALL' || filterStage !== 'ALL' || filterStatus !== 'ALL' || filterIcp !== 'ALL' || filterScoreBand !== 'ALL' || filterCountry !== 'ALL' || filterTargetAccount !== 'ALL' || filterSource !== 'ALL' || filterRegion !== 'ALL') && (
               <button
                 className="btn btn-outline"
                 onClick={() => {
@@ -538,6 +565,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                   setFilterCountry('ALL');
                   setFilterTargetAccount('ALL');
                   setFilterSource('ALL');
+                  setFilterRegion('ALL');
                 }}
                 style={{ padding: '8px 12px', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
               >
@@ -784,6 +812,33 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                 <option value="STANDARD">Standard Prospect Accounts</option>
               </select>
             </div>
+
+            {/* Filter: Region / Territory */}
+            <div>
+              <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Region / Territory</label>
+              <select
+                value={filterRegion}
+                onChange={e => setFilterRegion(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  marginTop: '4px',
+                  outline: 'none'
+                }}
+              >
+                <option value="ALL">All Territories &amp; Regions</option>
+                {territories.map(t => (
+                  <option key={t.id} value={t.name}>
+                    {t.name} ({t.country})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -903,13 +958,30 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                         </div>
                       </td>
 
-                      {/* Location */}
+                      {/* Location & Territory */}
                       <td style={{ padding: '14px', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
-                          <MapPin size={13} color="var(--text-muted)" />
-                          <span>
-                            {lead.account_city ? `${lead.account_city}, ` : ''}{lead.account_country || 'Saudi Arabia'}
-                          </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
+                            <MapPin size={13} color="var(--text-muted)" />
+                            <span>
+                              {lead.account_city ? `${lead.account_city}, ` : ''}{lead.account_country || 'Saudi Arabia'}
+                            </span>
+                          </div>
+                          {lead.territory && (
+                            <span 
+                              className="badge badge-secondary" 
+                              style={{ 
+                                fontSize: '0.68rem', 
+                                alignSelf: 'flex-start', 
+                                background: 'rgba(79, 70, 229, 0.1)', 
+                                color: '#4F46E5', 
+                                border: '1px solid rgba(79, 70, 229, 0.25)',
+                                padding: '1px 6px'
+                              }}
+                            >
+                              📍 {lead.territory}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -958,30 +1030,32 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                             </span>
                           )}
 
-                          <button
-                            onClick={() => {
-                              setReassignModalLead(lead);
-                              setTargetOwnerId(lead.owner ? String(lead.owner) : '');
-                            }}
-                            data-testid="admin-reassign-btn"
-                            title="Reassign lead owner"
-                            style={{
-                              background: 'rgba(79, 70, 229, 0.1)',
-                              border: '1px solid rgba(79, 70, 229, 0.25)',
-                              color: '#6366F1',
-                              borderRadius: '4px',
-                              padding: '3px 6px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '3px',
-                              fontSize: '0.68rem',
-                              fontWeight: 600
-                            }}
-                          >
-                            <UserCheck size={12} />
-                            Reassign
-                          </button>
+                          {isManagerOrAdmin && (
+                            <button
+                              onClick={() => {
+                                setReassignModalLead(lead);
+                                setTargetOwnerId(lead.owner ? String(lead.owner) : '');
+                              }}
+                              data-testid="admin-reassign-btn"
+                              title="Reassign lead owner"
+                              style={{
+                                background: 'rgba(79, 70, 229, 0.1)',
+                                border: '1px solid rgba(79, 70, 229, 0.25)',
+                                color: '#6366F1',
+                                borderRadius: '4px',
+                                padding: '3px 6px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                fontSize: '0.68rem',
+                                fontWeight: 600
+                              }}
+                            >
+                              <UserCheck size={12} />
+                              Reassign
+                            </button>
+                          )}
                         </div>
                       </td>
 
@@ -1394,6 +1468,14 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                         </span>
                       </>
                     )}
+                    {inspectingLead.territory && (
+                      <>
+                        <span>•</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#4F46E5', fontWeight: 600 }}>
+                          <MapPin size={11} /> Region: {inspectingLead.territory}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1511,6 +1593,13 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                         <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '3px' }}>Location / Place</span>
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                           {inspectingLead.account_city ? `${inspectingLead.account_city}, ` : ''}{inspectingLead.account_country || 'Saudi Arabia'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '3px' }}>Assigned Territory / Region</span>
+                        <span style={{ fontWeight: 700, color: inspectingLead.territory ? '#4F46E5' : 'var(--text-muted)' }}>
+                          {inspectingLead.territory ? `📍 ${inspectingLead.territory}` : 'Unassigned Territory'}
                         </span>
                       </div>
 

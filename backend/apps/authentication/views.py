@@ -1,6 +1,6 @@
 import uuid
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
 from django.contrib.auth import authenticate, login, logout
 from django.db.models import Q
@@ -66,6 +66,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
     """
@@ -144,10 +145,11 @@ def login_view(request):
 
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([permissions.AllowAny])
 def logout_view(request):
     """
-    Logs out the authenticated user and blacklists the refresh token if provided.
+    Logs out the user and blacklists the refresh token if provided.
+    Idempotent and safe to invoke even if session credentials have already expired.
     """
     refresh_token = request.data.get('refresh') or request.data.get('refresh_token')
     if refresh_token:
@@ -157,16 +159,20 @@ def logout_view(request):
         except Exception:
             pass
 
-    log_audit_event(
-        actor=request.user,
-        action=AuditAction.DELETE,
-        entity_type='Session',
-        entity_id=request.user.id,
-        changes_json={'action': 'logout'},
-        request=request
-    )
+    if request.user and request.user.is_authenticated:
+        try:
+            log_audit_event(
+                actor=request.user,
+                action=AuditAction.DELETE,
+                entity_type='Session',
+                entity_id=request.user.id,
+                changes_json={'action': 'logout'},
+                request=request
+            )
+        except Exception:
+            pass
+        logout(request)
 
-    logout(request)
     return Response({'message': 'Successfully logged out and session revoked.'}, status=status.HTTP_200_OK)
 
 
@@ -253,7 +259,8 @@ def staff_list_create_view(request):
         email = request.data.get('email', '').strip().lower()
         first_name = request.data.get('first_name', '').strip()
         last_name = request.data.get('last_name', '').strip()
-        assigned_role = request.data.get('role', UserRole.PLD_EXECUTIVE).strip()
+        assigned_role = request.data.get('role', UserRole.PRESALES).strip()
+        assigned_role = User.ROLE_ALIASES.get(assigned_role, assigned_role)
         password = request.data.get('password', '').strip()
         territory = request.data.get('territory', '').strip()
         team = request.data.get('team', '').strip()
@@ -300,6 +307,13 @@ def staff_list_create_view(request):
             is_superuser=is_admin_flag,
             is_partner_user=False
         )
+
+        if created_user.canonical_role == UserRole.SALES_MANAGER and created_user.territory:
+            from apps.core.models import Territory
+            terr = Territory.objects.filter(name__iexact=created_user.territory).first()
+            if terr and not terr.regional_manager:
+                terr.regional_manager = created_user
+                terr.save(update_fields=['regional_manager'])
 
         log_audit_event(
             actor=user,
@@ -395,6 +409,7 @@ def staff_detail_view(request, user_id):
 
         if 'role' in request.data and is_admin and not is_self:
             new_role = request.data['role']
+            new_role = User.ROLE_ALIASES.get(new_role, new_role)
             valid_roles = [c[0] for c in UserRole.choices]
             if new_role not in valid_roles:
                 return Response({'error': f"Invalid role '{new_role}'"}, status=status.HTTP_400_BAD_REQUEST)
@@ -404,8 +419,15 @@ def staff_detail_view(request, user_id):
             target_user.is_superuser = (new_role == UserRole.ADMIN)
 
         if 'territory' in request.data and is_admin:
-            changes['territory'] = {'old': target_user.territory, 'new': request.data['territory']}
-            target_user.territory = request.data['territory']
+            new_terr_name = request.data['territory']
+            changes['territory'] = {'old': target_user.territory, 'new': new_terr_name}
+            target_user.territory = new_terr_name
+            if target_user.canonical_role == UserRole.SALES_MANAGER and new_terr_name:
+                from apps.core.models import Territory
+                terr = Territory.objects.filter(name__iexact=new_terr_name).first()
+                if terr:
+                    terr.regional_manager = target_user
+                    terr.save(update_fields=['regional_manager'])
 
         if 'team' in request.data and is_admin:
             changes['team'] = {'old': target_user.team, 'new': request.data['team']}

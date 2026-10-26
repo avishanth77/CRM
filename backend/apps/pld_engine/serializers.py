@@ -69,7 +69,7 @@ class ICPProfileSerializer(serializers.ModelSerializer):
         model = ICPProfile
         fields = [
             'id', 'product', 'product_name', 'product_code', 'config_version',
-            'name', 'version_number', 'is_active', 'description', 'rules'
+            'name', 'version_number', 'is_active', 'pass_threshold', 'description', 'rules'
         ]
 
 

@@ -121,6 +121,13 @@ class Lead(BaseModel):
         help_text="Estimated deal value required for SQL readiness gate"
     )
     timeline_expectation = models.CharField(max_length=128, blank=True, null=True)
+    territory = models.CharField(
+        max_length=128,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Assigned business territory or geographic region"
+    )
 
     class Meta:
         ordering = ['-created_at']

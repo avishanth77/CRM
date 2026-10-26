@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, UserPlus, Handshake, Building2, Shield, PlusCircle, 
-  Trash2, Search, AlertCircle, X, Globe, RefreshCw, Edit2, Power, PowerOff
+  Trash2, Search, AlertCircle, X, Globe, RefreshCw, Edit2, Power, PowerOff,
+  CheckCircle2, ShieldCheck
 } from 'lucide-react';
 import { api } from '../services/api';
-import type { AuthUser } from '../services/api';
+import type { AuthUser, Territory } from '../services/api';
 import { inAppAlert } from './common/InAppAlert';
 import { Modal } from './common/Modal';
 
@@ -17,14 +18,20 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
   currentUser, 
   onNotify 
 }) => {
-  const [activeTab, setActiveTab] = useState<'staff' | 'partners'>('staff');
+  const [activeTab, setActiveTab] = useState<'staff' | 'territories' | 'partners'>('staff');
   const [staffList, setStaffList] = useState<AuthUser[]>([]);
   const [partnersList, setPartnersList] = useState<any[]>([]);
+  const [territoriesList, setTerritoriesList] = useState<Territory[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Modals state
   const [showAddStaffModal, setShowAddStaffModal] = useState<boolean>(false);
+  const [showEditStaffModal, setShowEditStaffModal] = useState<boolean>(false);
+  const [selectedStaffToEdit, setSelectedStaffToEdit] = useState<AuthUser | null>(null);
+  const [showAddTerritoryModal, setShowAddTerritoryModal] = useState<boolean>(false);
+  const [showEditTerritoryModal, setShowEditTerritoryModal] = useState<boolean>(false);
+  const [selectedTerritoryToEdit, setSelectedTerritoryToEdit] = useState<Territory | null>(null);
   const [showAddPartnerModal, setShowAddPartnerModal] = useState<boolean>(false);
   const [showAddPartnerUserModal, setShowAddPartnerUserModal] = useState<boolean>(false);
   const [selectedPartnerForUser, setSelectedPartnerForUser] = useState<any | null>(null);
@@ -33,12 +40,34 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
   const [staffFirstName, setStaffFirstName] = useState('');
   const [staffLastName, setStaffLastName] = useState('');
   const [staffEmail, setStaffEmail] = useState('');
-  const [staffRole, setStaffRole] = useState('PLD_EXECUTIVE');
+  const [staffRole, setStaffRole] = useState('PRESALES');
   const [staffPassword, setStaffPassword] = useState('');
-  const [staffTerritory, setStaffTerritory] = useState('Saudi Arabia / GCC');
+  const [staffTerritory, setStaffTerritory] = useState('Riyadh & Central Province');
   const [staffPhone, setStaffPhone] = useState('');
   const [submittingStaff, setSubmittingStaff] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
+
+  // Edit Staff Form State
+  const [editStaffFirstName, setEditStaffFirstName] = useState('');
+  const [editStaffLastName, setEditStaffLastName] = useState('');
+  const [editStaffRole, setEditStaffRole] = useState('PRESALES');
+  const [editStaffTerritory, setEditStaffTerritory] = useState('');
+  const [editStaffPhone, setEditStaffPhone] = useState('');
+  const [editStaffPassword, setEditStaffPassword] = useState('');
+  const [editStaffManagerId, setEditStaffManagerId] = useState('');
+  const [submittingEditStaff, setSubmittingEditStaff] = useState(false);
+  const [editStaffError, setEditStaffError] = useState<string | null>(null);
+
+  // Territory Form State
+  const [terrName, setTerrName] = useState('');
+  const [terrCode, setTerrCode] = useState('');
+  const [terrCountry, setTerrCountry] = useState('Saudi Arabia');
+  const [terrManagerId, setTerrManagerId] = useState('');
+  const [terrDesc, setTerrDesc] = useState('');
+  const [terrIsActive, setTerrIsActive] = useState(true);
+  const [terrSortOrder, setTerrSortOrder] = useState(0);
+  const [submittingTerritory, setSubmittingTerritory] = useState(false);
+  const [terrError, setTerrError] = useState<string | null>(null);
 
   // New Partner Form State
   const [partnerCompanyName, setPartnerCompanyName] = useState('');
@@ -93,14 +122,20 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
   const loadData = async () => {
     setLoading(true);
     try {
-      const [staffRes, partnersRes] = await Promise.all([
+      const [staffRes, partnersRes, terrRes] = await Promise.all([
         api.getStaffUsers().catch(() => ({ results: [] })),
-        api.getPartners().catch(() => ({ results: [] }))
+        api.getPartners().catch(() => ({ results: [] })),
+        api.getTerritories().catch(() => ({ results: [] }))
       ]);
       setStaffList(staffRes.results || []);
       setPartnersList(partnersRes.results || []);
+      const tList = Array.isArray(terrRes) ? terrRes : (terrRes?.results || []);
+      setTerritoriesList(tList);
+      if (tList.length > 0 && !staffTerritory) {
+        setStaffTerritory(tList[0].name);
+      }
     } catch (e) {
-      console.error('Failed to load staff & partners data', e);
+      console.error('Failed to load staff, territories & partners data', e);
     } finally {
       setLoading(false);
     }
@@ -146,6 +181,132 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
       loadData();
     } catch (err: any) {
       inAppAlert.error(err.message || 'Failed to remove staff member.');
+    }
+  };
+
+  const handleOpenEditStaff = (staff: AuthUser) => {
+    setSelectedStaffToEdit(staff);
+    setEditStaffFirstName(staff.first_name || '');
+    setEditStaffLastName(staff.last_name || '');
+    setEditStaffRole(staff.role || 'PRESALES');
+    setEditStaffTerritory(staff.territory || '');
+    setEditStaffPhone(staff.phone || '');
+    setEditStaffPassword('');
+    setEditStaffManagerId((staff as any).manager || '');
+    setEditStaffError(null);
+    setShowEditStaffModal(true);
+  };
+
+  const handleUpdateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStaffToEdit) return;
+    setSubmittingEditStaff(true);
+    setEditStaffError(null);
+    try {
+      const payload: any = {
+        first_name: editStaffFirstName.trim(),
+        last_name: editStaffLastName.trim(),
+        role: editStaffRole,
+        territory: editStaffTerritory.trim() || undefined,
+        phone: editStaffPhone.trim() || undefined,
+      };
+      if (editStaffPassword.trim()) {
+        payload.password = editStaffPassword.trim();
+      }
+      if (editStaffManagerId) {
+        payload.manager_id = editStaffManagerId;
+      }
+      const res = await api.updateStaffUser(selectedStaffToEdit.id, payload);
+      onNotify(res.message || 'Staff user updated successfully!');
+      inAppAlert.success(res.message || 'Staff user updated successfully!');
+      setShowEditStaffModal(false);
+      loadData();
+    } catch (err: any) {
+      setEditStaffError(err.message || 'Failed to update staff user.');
+    } finally {
+      setSubmittingEditStaff(false);
+    }
+  };
+
+  const handleCreateTerritory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTerrError(null);
+    setSubmittingTerritory(true);
+    try {
+      await api.createTerritory({
+        name: terrName.trim(),
+        code: terrCode.trim() || undefined,
+        country: terrCountry.trim(),
+        regional_manager: terrManagerId || null,
+        description: terrDesc.trim() || undefined,
+        is_active: terrIsActive,
+        sort_order: Number(terrSortOrder) || 0,
+      });
+      onNotify(`Territory "${terrName}" created successfully!`);
+      inAppAlert.success(`Territory "${terrName}" created successfully!`);
+      setShowAddTerritoryModal(false);
+      setTerrName('');
+      setTerrCode('');
+      setTerrDesc('');
+      setTerrManagerId('');
+      loadData();
+    } catch (err: any) {
+      setTerrError(err.message || 'Failed to create territory.');
+    } finally {
+      setSubmittingTerritory(false);
+    }
+  };
+
+  const handleOpenEditTerritory = (t: Territory) => {
+    setSelectedTerritoryToEdit(t);
+    setTerrName(t.name);
+    setTerrCode(t.code);
+    setTerrCountry(t.country || 'Saudi Arabia');
+    setTerrManagerId(t.regional_manager || '');
+    setTerrDesc(t.description || '');
+    setTerrIsActive(t.is_active);
+    setTerrSortOrder(t.sort_order || 0);
+    setTerrError(null);
+    setShowEditTerritoryModal(true);
+  };
+
+  const handleUpdateTerritory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTerritoryToEdit) return;
+    setSubmittingTerritory(true);
+    setTerrError(null);
+    try {
+      await api.updateTerritory(selectedTerritoryToEdit.id, {
+        name: terrName.trim(),
+        code: terrCode.trim() || undefined,
+        country: terrCountry.trim(),
+        regional_manager: terrManagerId || null,
+        description: terrDesc.trim() || undefined,
+        is_active: terrIsActive,
+        sort_order: Number(terrSortOrder) || 0,
+      });
+      onNotify(`Territory "${terrName}" updated successfully!`);
+      inAppAlert.success(`Territory "${terrName}" updated successfully!`);
+      setShowEditTerritoryModal(false);
+      loadData();
+    } catch (err: any) {
+      setTerrError(err.message || 'Failed to update territory.');
+    } finally {
+      setSubmittingTerritory(false);
+    }
+  };
+
+  const handleDeleteTerritory = async (terrId: string, terrName: string) => {
+    if (!window.confirm(`Are you sure you want to delete territory '${terrName}'?`)) {
+      return;
+    }
+    try {
+      await api.deleteTerritory(terrId);
+      onNotify(`Territory '${terrName}' removed.`);
+      inAppAlert.success(`Territory '${terrName}' removed.`);
+      loadData();
+    } catch (err: any) {
+      inAppAlert.error(err.message || 'Failed to delete territory.');
     }
   };
 
@@ -304,17 +465,17 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
     switch (role) {
       case 'ADMIN':
         return 'badge-primary';
+      case 'PRESALES':
       case 'PLD_EXECUTIVE':
       case 'SDR':
+      case 'SOLUTION_CONSULTANT':
+      case 'SOLUTIONS_CONSULTANT':
         return 'badge-info';
       case 'SALES_BDM':
       case 'ACCOUNT_EXECUTIVE':
         return 'badge-success';
       case 'SALES_MANAGER':
         return 'badge-warning';
-      case 'SOLUTION_CONSULTANT':
-      case 'SOLUTIONS_CONSULTANT':
-        return 'badge-neutral';
       case 'MANAGEMENT':
         return 'badge-warning';
       case 'PRODUCT_MANAGER':
@@ -350,6 +511,16 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
            (p.partner_type && p.partner_type.toLowerCase().includes(q));
   });
 
+  const filteredTerritories = territoriesList.filter(t => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return t.name.toLowerCase().includes(q) ||
+           t.code.toLowerCase().includes(q) ||
+           t.country.toLowerCase().includes(q) ||
+           (t.regional_manager_name && t.regional_manager_name.toLowerCase().includes(q)) ||
+           (t.description && t.description.toLowerCase().includes(q));
+  });
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Workspace Header */}
@@ -373,7 +544,7 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
                 Staff &amp; Partner Management
               </h1>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Platform Admin directory: provision internal commercial staff, assign RBAC roles, and manage external reseller partners.
+                Platform Admin directory: provision internal commercial staff, assign RBAC roles, configure sales territories, and manage external reseller partners.
               </p>
             </div>
           </div>
@@ -391,7 +562,7 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
             <RefreshCw size={16} />
             Refresh
           </button>
-          {activeTab === 'staff' ? (
+          {activeTab === 'staff' && (
             <button 
               className="btn btn-primary"
               onClick={() => setShowAddStaffModal(true)}
@@ -400,7 +571,28 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
               <UserPlus size={16} />
               Add Staff Member
             </button>
-          ) : (
+          )}
+          {activeTab === 'territories' && (
+            <button 
+              className="btn btn-primary"
+              onClick={() => {
+                setTerrName('');
+                setTerrCode('');
+                setTerrCountry('Saudi Arabia');
+                setTerrManagerId('');
+                setTerrDesc('');
+                setTerrIsActive(true);
+                setTerrSortOrder(territoriesList.length + 1);
+                setTerrError(null);
+                setShowAddTerritoryModal(true);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <PlusCircle size={16} />
+              Add Territory / Region
+            </button>
+          )}
+          {activeTab === 'partners' && (
             <button 
               className="btn btn-primary"
               onClick={() => setShowAddPartnerModal(true)}
@@ -422,6 +614,14 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
         >
           <Users size={16} />
           Internal Staff Directory ({staffList.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('territories')}
+          className={`btn ${activeTab === 'territories' ? 'btn-primary' : 'btn-outline'}`}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
+        >
+          <Globe size={16} />
+          Territories &amp; Regions ({territoriesList.length})
         </button>
         <button
           onClick={() => setActiveTab('partners')}
@@ -447,7 +647,13 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
         <Search size={16} color="var(--text-muted)" />
         <input
           type="text"
-          placeholder={activeTab === 'staff' ? "Search staff by name, email, or role..." : "Search partners by name, code, or territory..."}
+          placeholder={
+            activeTab === 'staff' 
+              ? "Search staff by name, email, role, or territory..." 
+              : activeTab === 'territories'
+              ? "Search regions by name, code, country, or manager..."
+              : "Search partners by name, code, or territory..."
+          }
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -478,11 +684,11 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
             </div>
 
             <div className="card" style={{ padding: '16px' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>PLD Specialists</div>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Presales Specialists</div>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#06B6D4', marginTop: '4px' }}>
-                {staffList.filter(s => s.role === 'PLD_EXECUTIVE' || s.role === 'SDR').length}
+                {staffList.filter(s => ['PRESALES', 'PLD_EXECUTIVE', 'SOLUTION_CONSULTANT', 'SDR'].includes(s.role)).length}
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>Discovery &amp; Qualification</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>Discovery, Demos, POCs &amp; Opportunities</div>
             </div>
 
             <div className="card" style={{ padding: '16px' }}>
@@ -570,20 +776,203 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
                           </span>
                         </td>
                         <td style={{ padding: '14px 20px', textAlign: 'right' }}>
-                          {!isSelf && (
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
                             <button
-                              onClick={() => handleDeleteStaff(staff.id, staff.name)}
+                              onClick={() => handleOpenEditStaff(staff)}
                               className="btn btn-outline"
-                              style={{ padding: '4px 8px', fontSize: '0.72rem', color: '#F43F5E', borderColor: 'rgba(244, 63, 94, 0.3)' }}
-                              title="Delete staff account"
+                              style={{ padding: '4px 8px', fontSize: '0.72rem', color: '#3B82F6', borderColor: 'rgba(59, 130, 246, 0.3)' }}
+                              title="Edit staff details & assigned territory"
                             >
-                              <Trash2 size={13} />
+                              <Edit2 size={13} />
                             </button>
-                          )}
+                            {!isSelf && (
+                              <button
+                                onClick={() => handleDeleteStaff(staff.id, staff.name)}
+                                className="btn btn-outline"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem', color: '#F43F5E', borderColor: 'rgba(244, 63, 94, 0.3)' }}
+                                title="Delete staff account"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
                   })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: TERRITORIES & REGIONS */}
+      {activeTab === 'territories' && (
+        <div className="space-y-6">
+          {/* Territory Metric Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div className="card" style={{ padding: '16px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Commercial Territories</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '4px' }}>{territoriesList.length}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>Configured by Platform Admin</div>
+            </div>
+
+            <div className="card" style={{ padding: '16px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Active Regions</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10B981', marginTop: '4px' }}>
+                {territoriesList.filter(t => t.is_active).length}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#10B981', marginTop: '4px' }}>Available for Lead &amp; Staff Routing</div>
+            </div>
+
+            <div className="card" style={{ padding: '16px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Assigned Sales Managers</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#3B82F6', marginTop: '4px' }}>
+                {territoriesList.filter(t => Boolean(t.regional_manager)).length}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>Regional Scoping Enforced</div>
+            </div>
+
+            <div className="card" style={{ padding: '16px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Commercial Staff Deployed</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#F59E0B', marginTop: '4px' }}>
+                {staffList.filter(s => Boolean(s.territory && s.territory !== 'Global HQ')).length}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>Territory-scoped Reps &amp; Managers</div>
+            </div>
+          </div>
+
+          {/* Territories Table */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  <th style={{ padding: '14px 20px' }}>Region / Territory Name</th>
+                  <th style={{ padding: '14px 20px' }}>Region Code</th>
+                  <th style={{ padding: '14px 20px' }}>Country</th>
+                  <th style={{ padding: '14px 20px' }}>Assigned Sales Manager</th>
+                  <th style={{ padding: '14px 20px' }}>Status</th>
+                  <th style={{ padding: '14px 20px', textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTerritories.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      No territories found matching query. Click "Add Territory / Region" to define a new commercial zone.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTerritories.map((t) => (
+                    <tr key={t.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '14px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            border: '1px solid rgba(59, 130, 246, 0.25)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#3B82F6'
+                          }}>
+                            <Globe size={16} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {t.name}
+                            </div>
+                            {t.description && (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {t.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 20px' }}>
+                        <code style={{ fontSize: '0.78rem', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                          {t.code}
+                        </code>
+                      </td>
+                      <td style={{ padding: '14px 20px', color: 'var(--text-secondary)' }}>
+                        {t.country || 'Saudi Arabia'}
+                      </td>
+                      <td style={{ padding: '14px 20px' }}>
+                        {t.regional_manager ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '50%',
+                              background: '#F59E0B',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 700,
+                              fontSize: '0.75rem',
+                              color: '#FFFFFF'
+                            }}>
+                              {(t.regional_manager_name?.[0] || 'M').toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.82rem' }}>
+                                {t.regional_manager_name}
+                              </div>
+                              {t.regional_manager_email && (
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                  {t.regional_manager_email}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleOpenEditTerritory(t)}
+                            style={{
+                              border: '1px dashed rgba(245, 158, 11, 0.5)',
+                              background: 'rgba(245, 158, 11, 0.08)',
+                              color: '#F59E0B',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              fontSize: '0.72rem',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            + Assign Sales Manager
+                          </button>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 20px' }}>
+                        <span className={`badge ${t.is_active ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.72rem' }}>
+                          {t.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 20px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button
+                            onClick={() => handleOpenEditTerritory(t)}
+                            className="btn btn-outline"
+                            style={{ padding: '4px 8px', fontSize: '0.72rem', color: '#3B82F6', borderColor: 'rgba(59, 130, 246, 0.3)' }}
+                            title="Edit territory & assign regional manager"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTerritory(t.id, t.name)}
+                            className="btn btn-outline"
+                            style={{ padding: '4px 8px', fontSize: '0.72rem', color: '#F43F5E', borderColor: 'rgba(244, 63, 94, 0.3)' }}
+                            title="Delete territory"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
@@ -831,10 +1220,9 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
                   onChange={(e) => setStaffRole(e.target.value)}
                   style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
                 >
-                  <option value="PLD_EXECUTIVE">PLD Executive / SDR</option>
+                  <option value="PRESALES">Presales (Discovery, Demos, POCs &amp; Opportunities)</option>
                   <option value="SALES_BDM">Account Executive (Sales AE)</option>
                   <option value="SALES_MANAGER">Sales Manager</option>
-                  <option value="SOLUTION_CONSULTANT">Solution Consultant</option>
                   <option value="PRODUCT_MANAGER">Product Manager</option>
                   <option value="PARTNER_MANAGER">Partner Manager</option>
                   <option value="CUSTOMER_SUCCESS">Customer Success</option>
@@ -859,14 +1247,18 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
-                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Territory / Region</label>
-                <input
-                  type="text"
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Assigned Territory / Region *</label>
+                <select
                   value={staffTerritory}
                   onChange={(e) => setStaffTerritory(e.target.value)}
-                  placeholder="e.g. Riyadh &amp; Central"
                   style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
-                />
+                >
+                  <option value="">-- Select Territory / Region --</option>
+                  {territoriesList.map((t) => (
+                    <option key={t.id} value={t.name}>{t.name} ({t.country})</option>
+                  ))}
+                  <option value="Global HQ">Global HQ</option>
+                </select>
               </div>
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Phone Number</label>
@@ -1334,6 +1726,350 @@ export const AdminStaffPartnersWorkspace: React.FC<AdminStaffPartnersWorkspacePr
           <div style={{ padding: '10px 12px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '8px', fontSize: '0.8rem', color: '#F43F5E' }}>
             Warning: This action will remove the partner from the reseller registry and deactivate all associated partner portal accounts.
           </div>
+        </div>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: EDIT STAFF MEMBER & ASSIGN TERRITORY */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={showEditStaffModal && Boolean(selectedStaffToEdit)}
+        onClose={() => setShowEditStaffModal(false)}
+        title="Edit Staff Member & Territory"
+        icon={<Edit2 size={20} color="#3B82F6" />}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', gap: '10px', width: '100%', justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setShowEditStaffModal(false)} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" form="edit-staff-form" disabled={submittingEditStaff} className="btn btn-primary">
+              {submittingEditStaff ? 'Saving Changes...' : 'Save Staff Member'}
+            </button>
+          </div>
+        }
+      >
+        <div>
+          {editStaffError && (
+            <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '8px', color: '#F43F5E', fontSize: '0.8rem', display: 'flex', gap: '8px' }}>
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{editStaffError}</span>
+            </div>
+          )}
+
+          <form id="edit-staff-form" onSubmit={handleUpdateStaff} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>First Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editStaffFirstName}
+                  onChange={(e) => setEditStaffFirstName(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Last Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editStaffLastName}
+                  onChange={(e) => setEditStaffLastName(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Role</label>
+                <select
+                  value={editStaffRole}
+                  onChange={(e) => setEditStaffRole(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                >
+                  <option value="PRESALES">Presales</option>
+                  <option value="SALES_BDM">Account Executive (Sales AE)</option>
+                  <option value="SALES_MANAGER">Sales Manager</option>
+                  <option value="PRODUCT_MANAGER">Product Manager</option>
+                  <option value="PARTNER_MANAGER">Partner Manager</option>
+                  <option value="CUSTOMER_SUCCESS">Customer Success</option>
+                  <option value="MARKETING">Marketing &amp; Growth</option>
+                  <option value="FINANCE">Finance / Operations</option>
+                  <option value="MANAGEMENT">TEXOL Management</option>
+                  <option value="ADMIN">Platform Administrator</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Phone Number</label>
+                <input
+                  type="text"
+                  value={editStaffPhone}
+                  onChange={(e) => setEditStaffPhone(e.target.value)}
+                  placeholder="+966 50 123 4567"
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Assigned Territory / Region
+              </label>
+              <select
+                value={editStaffTerritory}
+                onChange={(e) => setEditStaffTerritory(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+              >
+                <option value="">-- No Assigned Territory --</option>
+                {territoriesList.map((t) => (
+                  <option key={t.id} value={t.name}>{t.name} ({t.country})</option>
+                ))}
+                <option value="Global HQ">Global HQ</option>
+              </select>
+              {editStaffRole === 'SALES_MANAGER' && (
+                <div style={{ marginTop: '6px', fontSize: '0.73rem', color: '#3B82F6', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <ShieldCheck size={14} />
+                  <span>Important: Sales Managers are strictly scoped to only see leads from this assigned territory.</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Reset Password (optional)</label>
+              <input
+                type="password"
+                value={editStaffPassword}
+                onChange={(e) => setEditStaffPassword(e.target.value)}
+                placeholder="Leave blank to keep existing password"
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+              />
+            </div>
+          </form>
+        </div>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 8: ADD TERRITORY / REGION */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={showAddTerritoryModal}
+        onClose={() => setShowAddTerritoryModal(false)}
+        title="Add Territory / Geographic Region"
+        icon={<Globe size={20} color="#3B82F6" />}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', gap: '10px', width: '100%', justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setShowAddTerritoryModal(false)} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" form="add-territory-form" disabled={submittingTerritory} className="btn btn-primary">
+              {submittingTerritory ? 'Creating Territory...' : 'Create Territory'}
+            </button>
+          </div>
+        }
+      >
+        <div>
+          {terrError && (
+            <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '8px', color: '#F43F5E', fontSize: '0.8rem', display: 'flex', gap: '8px' }}>
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{terrError}</span>
+            </div>
+          )}
+
+          <form id="add-territory-form" onSubmit={handleCreateTerritory} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Region / Territory Name *</label>
+              <input
+                type="text"
+                required
+                value={terrName}
+                onChange={(e) => setTerrName(e.target.value)}
+                placeholder="e.g. Riyadh &amp; Central Province"
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Region Code (optional)</label>
+                <input
+                  type="text"
+                  value={terrCode}
+                  onChange={(e) => setTerrCode(e.target.value)}
+                  placeholder="e.g. RIYADH_CENTRAL"
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none', textTransform: 'uppercase' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Country *</label>
+                <input
+                  type="text"
+                  required
+                  value={terrCountry}
+                  onChange={(e) => setTerrCountry(e.target.value)}
+                  placeholder="Saudi Arabia"
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Assigned Regional Sales Manager
+              </label>
+              <select
+                value={terrManagerId}
+                onChange={(e) => setTerrManagerId(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+              >
+                <option value="">-- No Assigned Regional Manager --</option>
+                {staffList.filter(s => s.role === 'SALES_MANAGER' || s.role === 'ADMIN' || s.role === 'MANAGEMENT').map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.role_display}) - {s.email}
+                  </option>
+                ))}
+              </select>
+              <div style={{ marginTop: '4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Selecting a manager assigns this region to them, locking their lead pipeline view to this territory.
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Description / Geographic Scope</label>
+              <textarea
+                value={terrDesc}
+                onChange={(e) => setTerrDesc(e.target.value)}
+                rows={3}
+                placeholder="Key cities, industrial hubs, or boundary details..."
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }}
+              />
+            </div>
+          </form>
+        </div>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL 9: EDIT TERRITORY & ASSIGN REGIONAL MANAGER */}
+      {/* ========================================================================= */}
+      <Modal
+        isOpen={showEditTerritoryModal && Boolean(selectedTerritoryToEdit)}
+        onClose={() => setShowEditTerritoryModal(false)}
+        title="Edit Territory & Assign Manager"
+        subtitle={selectedTerritoryToEdit?.name}
+        icon={<Globe size={20} color="#3B82F6" />}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', gap: '10px', width: '100%', justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setShowEditTerritoryModal(false)} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" form="edit-territory-form" disabled={submittingTerritory} className="btn btn-primary">
+              {submittingTerritory ? 'Saving Changes...' : 'Save Territory'}
+            </button>
+          </div>
+        }
+      >
+        <div>
+          {terrError && (
+            <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '8px', color: '#F43F5E', fontSize: '0.8rem', display: 'flex', gap: '8px' }}>
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{terrError}</span>
+            </div>
+          )}
+
+          <form id="edit-territory-form" onSubmit={handleUpdateTerritory} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Region / Territory Name *</label>
+              <input
+                type="text"
+                required
+                value={terrName}
+                onChange={(e) => setTerrName(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Region Code *</label>
+                <input
+                  type="text"
+                  required
+                  value={terrCode}
+                  onChange={(e) => setTerrCode(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none', textTransform: 'uppercase' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Country *</label>
+                <input
+                  type="text"
+                  required
+                  value={terrCountry}
+                  onChange={(e) => setTerrCountry(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Assigned Regional Sales Manager
+              </label>
+              <select
+                value={terrManagerId}
+                onChange={(e) => setTerrManagerId(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+              >
+                <option value="">-- No Assigned Regional Manager --</option>
+                {staffList.filter(s => s.role === 'SALES_MANAGER' || s.role === 'ADMIN' || s.role === 'MANAGEMENT').map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.role_display}) - {s.email}
+                  </option>
+                ))}
+              </select>
+              <div style={{ marginTop: '6px', fontSize: '0.73rem', color: '#10B981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CheckCircle2 size={14} />
+                <span>Assigning a manager synchronizes their user account territory and enforces regional lead scoping.</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Status</label>
+                <select
+                  value={terrIsActive ? 'ACTIVE' : 'INACTIVE'}
+                  onChange={(e) => setTerrIsActive(e.target.value === 'ACTIVE')}
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                >
+                  <option value="ACTIVE">Active (Available)</option>
+                  <option value="INACTIVE">Inactive (Archived)</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Sort Order</label>
+                <input
+                  type="number"
+                  value={terrSortOrder}
+                  onChange={(e) => setTerrSortOrder(Number(e.target.value))}
+                  style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Description / Geographic Scope</label>
+              <textarea
+                value={terrDesc}
+                onChange={(e) => setTerrDesc(e.target.value)}
+                rows={3}
+                placeholder="Key cities, industrial hubs, or boundary details..."
+                style={{ width: '100%', padding: '8px 12px', marginTop: '4px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)', outline: 'none', resize: 'vertical' }}
+              />
+            </div>
+          </form>
         </div>
       </Modal>
     </div>

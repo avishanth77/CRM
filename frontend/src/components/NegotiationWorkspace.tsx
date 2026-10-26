@@ -4,7 +4,7 @@ import {
   Handshake, DollarSign, TrendingUp, XCircle,
   FileText, Clock, ShieldCheck,
   Building, Edit3, Plus, RefreshCw, ArrowRight,
-  Award, X, MessageSquare, History, Tag, Printer
+  Award, X, MessageSquare, Tag, Printer
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Opportunity, Proposal } from '../services/api';
@@ -77,6 +77,13 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
         if (found) {
           setSelectedOpportunity(found);
           loadOpportunityContext(found.id);
+          if (found.status === 'WON') {
+            setStatusFilter('WON');
+          } else if (found.status === 'LOST') {
+            setStatusFilter('LOST');
+          } else if (found.stage_code !== 'OPP_NEGOTIATION' && !found.stage_name?.includes('Negotiation')) {
+            setStatusFilter('ALL_ACTIVE');
+          }
           return;
         }
       }
@@ -268,10 +275,32 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
     };
   }, [opportunities]);
 
+  const tabCounts = useMemo(() => {
+    return {
+      inNego: opportunities.filter(o => o.stage_code === 'OPP_NEGOTIATION' || o.stage_name?.includes('Negotiation')).length,
+      allOpen: opportunities.filter(o => o.status === 'OPEN').length,
+      won: opportunities.filter(o => o.status === 'WON').length,
+      all: opportunities.length
+    };
+  }, [opportunities]);
+
   const isCurrentInNegotiation = selectedOpportunity && (
     selectedOpportunity.stage_code === 'OPP_NEGOTIATION' ||
     selectedOpportunity.stage_name?.includes('Negotiation')
   );
+
+  // Active proposal context for the currently selected opportunity
+  const activeProposal = proposals.length > 0 ? proposals[0] : null;
+  const activeProposalVersion = activeProposal?.versions?.[0] || (activeProposal as any)?.current_version;
+  const proposalLineItems = activeProposalVersion?.items;
+  const proposalSeats = proposalLineItems && proposalLineItems.length > 0
+    ? proposalLineItems.reduce((acc: number, it: any) => acc + (Number(it.quantity) || 0), 0)
+    : null;
+  const displaySeats = proposalSeats || selectedOpportunity?.seat_units_count || 1;
+  const displayTcv = activeProposalVersion?.net_amount != null
+    ? Number(activeProposalVersion.net_amount)
+    : Number(selectedOpportunity?.total_contract_value || 0);
+  const displayArr = Number(selectedOpportunity?.arr || selectedOpportunity?.arr_mrr || displayTcv);
 
   return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '100%' }}>
@@ -387,7 +416,7 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                   cursor: 'pointer'
                 }}
               >
-                In Negotiation
+                In Negotiation ({tabCounts.inNego})
               </button>
               <button
                 onClick={() => setStatusFilter('ALL_ACTIVE')}
@@ -403,7 +432,7 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                   cursor: 'pointer'
                 }}
               >
-                All Open
+                All Open ({tabCounts.allOpen})
               </button>
               <button
                 onClick={() => setStatusFilter('WON')}
@@ -419,7 +448,7 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                   cursor: 'pointer'
                 }}
               >
-                Won
+                Won ({tabCounts.won})
               </button>
               <button
                 onClick={() => setStatusFilter('ALL')}
@@ -435,7 +464,7 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                   cursor: 'pointer'
                 }}
               >
-                All
+                All ({tabCounts.all})
               </button>
             </div>
 
@@ -498,8 +527,11 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                      {opp.product_name || 'Multi-Product'} • {opp.primary_contact_name || 'No Primary Contact'}
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
+                      <div>{opp.product_name || 'Multi-Product'} • {opp.primary_contact_name || 'No Primary Contact'}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                        {opp.owner_name ? `Owner: ${opp.owner_name}` : ''} {opp.seat_units_count ? `• ${opp.seat_units_count} seats` : ''}
+                      </div>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px' }}>
@@ -643,21 +675,21 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                 <div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>TOTAL CONTRACT VALUE</div>
                   <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--success)', marginTop: '2px' }}>
-                    {selectedOpportunity.currency} {Number(selectedOpportunity.total_contract_value).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {selectedOpportunity.currency} {Number(displayTcv).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>ARR / MRR</div>
                   <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
-                    {selectedOpportunity.currency} {Number(selectedOpportunity.arr || selectedOpportunity.arr_mrr || 0).toLocaleString()} / yr
+                    {selectedOpportunity.currency} {Number(displayArr).toLocaleString()} / yr
                   </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>SEATS / LICENSES</div>
                   <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
-                    {selectedOpportunity.seat_units_count || 1} units ({selectedOpportunity.contract_term_months || 12} mo)
+                    {displaySeats} units ({selectedOpportunity.contract_term_months || 12} mo)
                   </div>
                 </div>
 
@@ -720,7 +752,7 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                 onClick={() => setActiveTab('AUDIT')}
                 style={{ fontSize: '0.8rem', padding: '6px 14px' }}
               >
-                <History size={14} />
+                <Clock size={14} />
                 Stage Audit Trail ({stageHistories.length})
               </button>
             </div>
@@ -771,7 +803,7 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                   <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
                     <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)' }}>DEPLOYMENT SEAT VOLUME</div>
                     <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
-                      {selectedOpportunity.seat_units_count || 1} Registered Devices / Users
+                      {displaySeats} Registered Devices / Users
                     </div>
                     <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                       Per seat unit metric
@@ -789,34 +821,141 @@ export const NegotiationWorkspace: React.FC<NegotiationWorkspaceProps> = ({
                   </div>
                 </div>
 
-                {/* Multi-Product Line Items if Present */}
-                {selectedOpportunity.product_lines && selectedOpportunity.product_lines.length > 0 && (
-                  <div>
-                    <h4 style={{ margin: '8px 0 6px 0', fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Product Scope Line Items
+                {/* Multi-Product Line Items */}
+                <div style={{ marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0 6px 0' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      Product Scope Line Items {activeProposalVersion ? `(Proposal ${activeProposal?.proposal_number || ''} v${activeProposalVersion.version_number})` : ''}
                     </h4>
-                    <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      Pricing breakdown &amp; license allocation
+                    </span>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                          <th style={{ padding: '6px 8px' }}>Product</th>
-                          <th style={{ padding: '6px 8px' }}>Quantity</th>
-                          <th style={{ padding: '6px 8px', textAlign: 'right' }}>Total</th>
+                        <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          <th style={{ padding: '8px 10px' }}>Product / Module</th>
+                          <th style={{ padding: '8px 10px' }}>Description / Unit</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'center' }}>Quantity</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Unit Price</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Total</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedOpportunity.product_lines.map((item, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                            <td style={{ padding: '8px', fontWeight: 600 }}>{item.product_name}</td>
-                            <td style={{ padding: '8px' }}>{item.quantity}</td>
-                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
-                              {selectedOpportunity.currency} {Number(item.total_amount).toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
+                        {proposalLineItems && proposalLineItems.length > 0 ? (
+                          proposalLineItems.map((item: any, idx: number) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                              <td style={{ padding: '10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                <div>{item.product_name}</div>
+                                {item.module_name && (
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 500 }}>
+                                    {item.module_name}
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>
+                                {item.description || 'User / Device Seat'}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600 }}>
+                                {Number(item.quantity).toLocaleString()} {item.quantity === 1 ? 'seat' : 'seats'}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-secondary)' }}>
+                                {selectedOpportunity.currency} {Number(item.unit_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                                {selectedOpportunity.currency} {Number(item.line_total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          (selectedOpportunity.product_lines && selectedOpportunity.product_lines.length > 0
+                            ? selectedOpportunity.product_lines
+                            : [{
+                                product_name: selectedOpportunity.product_name || 'Standard Enterprise Subscription',
+                                product_code: selectedOpportunity.product_code || '',
+                                quantity: displaySeats,
+                                unit_price: (Number(displayTcv) / Math.max(1, displaySeats)),
+                                total_amount: Number(displayTcv)
+                              }]
+                          ).map((item, idx) => {
+                            const effectiveQty = item.quantity || displaySeats || 1;
+                            const unitPrice = (item.unit_price != null && Number(item.unit_price) > 0)
+                              ? Number(item.unit_price)
+                              : (effectiveQty > 0 ? Number(item.total_amount) / effectiveQty : 0);
+                            const totalAmount = (item.total_amount != null && Number(item.total_amount) > 0)
+                              ? Number(item.total_amount)
+                              : (effectiveQty * unitPrice);
+
+                            return (
+                              <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                <td style={{ padding: '10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                  {item.product_name || selectedOpportunity.product_name || 'Enterprise Subscription'}
+                                </td>
+                                <td style={{ padding: '10px', color: 'var(--text-secondary)' }}>
+                                  User / Device Seat
+                                </td>
+                                <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600 }}>
+                                  {effectiveQty.toLocaleString()} {effectiveQty === 1 ? 'seat' : 'seats'}
+                                </td>
+                                <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-secondary)' }}>
+                                  {selectedOpportunity.currency} {unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
+                                  {selectedOpportunity.currency} {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
                       </tbody>
                     </table>
                   </div>
-                )}
+
+                  {/* Financial Summary Matching Commercial Proposals */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
+                    <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                        <span>Subtotal (Gross):</span>
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {selectedOpportunity.currency} {Number(activeProposalVersion?.gross_amount ?? displayTcv).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
+                      {Number(activeProposalVersion?.discount_amount || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                          <span>Discount ({activeProposalVersion?.discount_pct}%):</span>
+                          <span style={{ fontWeight: 700, color: 'var(--warning)' }}>
+                            - {selectedOpportunity.currency} {Number(activeProposalVersion?.discount_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
+
+                      {Number(activeProposalVersion?.tax_amount || 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                          <span>Tax / VAT ({activeProposalVersion?.tax_pct}%):</span>
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                            + {selectedOpportunity.currency} {Number(activeProposalVersion?.tax_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
+
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '1rem',
+                        fontWeight: 800,
+                        color: 'var(--success)',
+                        borderTop: '1px solid var(--border-subtle)',
+                        paddingTop: '8px',
+                        marginTop: '4px'
+                      }}>
+                        <span>Total Net Contract Value:</span>
+                        <span>{selectedOpportunity.currency} {Number(displayTcv).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

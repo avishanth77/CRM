@@ -19,6 +19,7 @@ api_v1_patterns = [
     path('', include('apps.pld_assessments.urls')),
     path('', include('apps.integrations.urls')),
     path('', include('apps.authentication.urls')),
+    path('', include('apps.core.urls')),
 ]
 
 urlpatterns = [

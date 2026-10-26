@@ -124,7 +124,7 @@ class LeadSerializer(serializers.ModelSerializer):
             'pld_score', 'score_classification', 'icp_knockout_passed',
             'icp_result', 'icp_fit_score', 'icp_reasons',
             'last_activity_at', 'next_activity_due_at', 'next_action_description',
-            'estimated_opportunity_value', 'timeline_expectation',
+            'estimated_opportunity_value', 'timeline_expectation', 'territory',
             'product_interests', 'recorded_problems', 'touches', 'created_at', 'updated_at',
             'icp_attributes'
         ]
@@ -179,3 +179,84 @@ class LeadSerializer(serializers.ModelSerializer):
     def get_icp_reasons(self, obj):
         ass = self._get_latest_assessment(obj)
         return ass.icp_reasons if ass else []
+
+
+class WebsiteLeadIngestSerializer(serializers.Serializer):
+    """
+    Public webhook serializer for capturing leads from product websites
+    (e.g., VanForces, Al Mawasil, TaskForces, SpeakOrder landing pages).
+    """
+    # Contact Information
+    contact_name = serializers.CharField(max_length=255, required=False, allow_blank=True, help_text="Full name of the contact person")
+    name = serializers.CharField(max_length=255, required=False, allow_blank=True, help_text="Alias for contact_name")
+    first_name = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True, help_text="Work email address of the prospect")
+    phone = serializers.CharField(max_length=64, required=False, allow_blank=True, help_text="Contact phone or mobile number")
+    phone_number = serializers.CharField(max_length=64, required=False, allow_blank=True, help_text="Alias for phone")
+    ph_number = serializers.CharField(max_length=64, required=False, allow_blank=True, help_text="Alias for phone")
+    designation = serializers.CharField(max_length=128, required=False, allow_blank=True, help_text="Job title or commercial role")
+
+    # Company / Organization Information
+    company_name = serializers.CharField(max_length=255, required=False, allow_blank=True, help_text="Company or organization name")
+    company = serializers.CharField(max_length=255, required=False, allow_blank=True, help_text="Alias for company_name")
+    domain = serializers.CharField(max_length=255, required=False, allow_blank=True, help_text="Corporate website domain")
+    industry = serializers.CharField(max_length=128, required=False, allow_blank=True, help_text="Industry vertical")
+    employees_count = serializers.IntegerField(required=False, min_value=1, help_text="Total employee count")
+    city = serializers.CharField(max_length=128, required=False, allow_blank=True, help_text="City or municipality")
+    place = serializers.CharField(max_length=128, required=False, allow_blank=True, help_text="Alias for city/place")
+    location = serializers.CharField(max_length=128, required=False, allow_blank=True, help_text="Alias for city/place")
+    country = serializers.CharField(max_length=128, required=False, default="Saudi Arabia", help_text="Country name")
+    territory = serializers.CharField(max_length=128, required=False, allow_blank=True, help_text="Target territory / region (e.g. Central / Riyadh)")
+
+    # Target Product
+    product_code = serializers.CharField(max_length=64, required=False, default="VANFORCES", help_text="Product code (VANFORCES, AL_MAWASIL, SPEAKORDER, TASKFORCES, ENTAURA)")
+
+    # Inquiry & Message
+    message = serializers.CharField(required=False, allow_blank=True, help_text="Prospect inquiry message, requirements, or pain points")
+    inquiry_type = serializers.CharField(max_length=64, required=False, allow_blank=True, help_text="Inquiry type: DEMO_REQUEST, PRICING, GENERAL")
+    estimated_opportunity_value = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, help_text="Estimated commercial opportunity value ($)")
+
+    # Operational ICP attributes (specific or dynamic)
+    vans_count = serializers.IntegerField(required=False, min_value=0)
+    salesmen_count = serializers.IntegerField(required=False, min_value=0)
+    primary_erp = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    distribution_centers_count = serializers.IntegerField(required=False, min_value=0)
+    monthly_invoices = serializers.IntegerField(required=False, min_value=0)
+    daily_orders = serializers.IntegerField(required=False, min_value=0)
+    field_sales = serializers.BooleanField(required=False)
+    vat_registered = serializers.BooleanField(required=False)
+    icp_attributes = serializers.DictField(required=False, help_text="Additional key-value product operational attributes")
+
+    # Tracking & Attribution
+    website_url = serializers.CharField(max_length=512, required=False, allow_blank=True, help_text="Product landing page URL where form was submitted")
+    utm_source = serializers.CharField(max_length=128, required=False, default="website")
+    utm_medium = serializers.CharField(max_length=128, required=False, default="contact_form")
+    utm_campaign = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    utm_term = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    utm_content = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    referrer = serializers.CharField(max_length=512, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        # Resolve company alias
+        if not attrs.get('company_name') and attrs.get('company'):
+            attrs['company_name'] = attrs['company']
+
+        # Resolve contact name alias
+        if not attrs.get('contact_name') and attrs.get('name'):
+            attrs['contact_name'] = attrs['name']
+
+        # Resolve phone aliases
+        if not attrs.get('phone'):
+            attrs['phone'] = attrs.get('ph_number') or attrs.get('phone_number') or ''
+
+        # Resolve city / place aliases
+        if not attrs.get('city'):
+            attrs['city'] = attrs.get('place') or attrs.get('location') or ''
+
+        email = (attrs.get('email') or '').strip()
+        phone = (attrs.get('phone') or '').strip()
+        if not email and not phone:
+            raise serializers.ValidationError("Either a valid email address or phone number must be provided.")
+        return attrs
+

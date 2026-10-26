@@ -16,6 +16,7 @@ from apps.authentication.permissions import (
     DomainOperationPermission, ScopedQuerySetMixin,
     apply_data_scoping, can_override_stage_gate
 )
+from apps.authentication.backends import get_request_user, is_management_or_admin, is_sales_staff
 from apps.audit_logging.models import AuditLog, AuditAction
 
 User = get_user_model()
@@ -24,7 +25,8 @@ User = get_user_model()
 class SQLHandoffViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     queryset = SQLHandoff.objects.all().select_related(
         'lead__account', 'lead__contact', 'product', 'pld_executive',
-        'assigned_sales_owner', 'previous_owner', 'override_approved_by'
+        'assigned_sales_owner', 'previous_owner', 'override_approved_by',
+        'converted_opportunity'
     ).order_by('-created_at')
     serializer_class = SQLHandoffSerializer
     permission_classes = [permissions.IsAuthenticated, DomainOperationPermission]
@@ -35,6 +37,29 @@ class SQLHandoffViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
         user = getattr(self.request, 'user', None) or get_request_user(self.request)
         if user and user.is_authenticated:
             qs = apply_data_scoping(qs, user, domain='SQL_HANDOFF')
+
+        query_params = getattr(self.request, 'query_params', None)
+        if query_params is None:
+            query_params = getattr(self.request, 'GET', {})
+
+        lead_param = query_params.get('lead') or query_params.get('lead_id')
+        if lead_param:
+            qs = qs.filter(lead_id=lead_param)
+
+        account_param = query_params.get('account') or query_params.get('account_id')
+        if account_param:
+            qs = qs.filter(Q(account_id=account_param) | Q(lead__account_id=account_param))
+
+        product_param = query_params.get('product') or query_params.get('product_id')
+        if product_param:
+            qs = qs.filter(product_id=product_param)
+
+        status_param = query_params.get('status')
+        if status_param:
+            statuses = [s.strip().upper() for s in status_param.split(',') if s.strip()]
+            if statuses:
+                qs = qs.filter(status__in=statuses)
+
         return qs
 
     @action(detail=False, methods=['get', 'post'], url_path='readiness')
@@ -91,7 +116,7 @@ class SQLHandoffViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             sales_owner = User.objects.filter(id=sales_owner_id).first()
 
         user_role = str(getattr(user, 'role', '') or '').upper()
-        is_pld_or_mgmt = is_management_or_admin(user) or user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST']
+        is_pld_or_mgmt = is_management_or_admin(user) or user_role in ['PLD_EXECUTIVE', 'PLD_SPECIALIST', 'PRESALES']
         if not is_pld_or_mgmt:
             if sales_owner and getattr(sales_owner, 'id', None) != getattr(user, 'id', None):
                 return Response({'error': 'Staff members cannot assign handoffs to other owners. Only managers and PLD specialists can assign leads.'}, status=status.HTTP_403_FORBIDDEN)

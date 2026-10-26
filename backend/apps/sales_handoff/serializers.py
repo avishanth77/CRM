@@ -15,8 +15,19 @@ class SQLHandoffSerializer(serializers.ModelSerializer):
     opportunity_id = serializers.SerializerMethodField()
 
     def get_opportunity_id(self, obj):
-        if hasattr(obj, 'converted_opportunity') and obj.converted_opportunity:
-            return str(obj.converted_opportunity.id)
+        try:
+            if hasattr(obj, 'converted_opportunity') and obj.converted_opportunity:
+                return str(obj.converted_opportunity.id)
+        except Exception:
+            pass
+        from apps.opportunities.models import Opportunity
+        opp = Opportunity.objects.filter(sql_handoff=obj).first()
+        if opp:
+            return str(opp.id)
+        if obj.lead_id:
+            opp_lead = Opportunity.objects.filter(sql_handoff__lead_id=obj.lead_id).first()
+            if opp_lead:
+                return str(opp_lead.id)
         return None
 
     class Meta:

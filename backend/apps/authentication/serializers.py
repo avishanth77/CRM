@@ -5,28 +5,32 @@ ROLE_WORKSPACE_PERMISSIONS = {
     'ADMIN': [
         'dashboard', 'work-queue', 'account-360', 'queue', 'discovery', 'demo', 
         'poc', 'sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'partners', 'studio', 
-        'audit', 'attribution', 'leakage', 'communications', 'erp', 'staff-partners'
+        'audit', 'attribution', 'leakage', 'communications', 'erp', 'staff-partners', 'admin-leads', 'website-leads'
     ],
     'MANAGEMENT': [
         'dashboard', 'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc',
         'sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'attribution', 'leakage', 'audit', 'partners',
-        'communications'
+        'communications', 'admin-leads', 'website-leads'
     ],
     'SALES_MANAGER': [
         'dashboard', 'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc',
-        'sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'leakage', 'communications', 'audit'
+        'sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'leakage', 'communications', 'audit', 'admin-leads', 'website-leads'
     ],
     'SALES_BDM': [
-        'work-queue', 'account-360', 'discovery', 'demo', 'poc', 'sql', 
+        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 'sql', 
         'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'communications'
     ],
     'ACCOUNT_EXECUTIVE': [
-        'work-queue', 'account-360', 'discovery', 'demo', 'poc', 'sql', 
+        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 'sql', 
         'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'communications'
     ],
+    'PRESALES': [
+        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 
+        'opportunities', 'sql', 'communications'
+    ],
     'PLD_EXECUTIVE': [
-        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 
-        'sql', 'communications'
+        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 
+        'opportunities', 'sql', 'communications'
     ],
     'SDR': [
         'work-queue', 'account-360', 'queue', 'discovery', 'demo', 
@@ -34,11 +38,11 @@ ROLE_WORKSPACE_PERMISSIONS = {
     ],
     'SOLUTION_CONSULTANT': [
         'work-queue', 'account-360', 'discovery', 'demo', 'poc', 
-        'sql', 'communications'
+        'opportunities', 'sql', 'communications'
     ],
     'SOLUTIONS_CONSULTANT': [
         'work-queue', 'account-360', 'discovery', 'demo', 'poc', 
-        'sql', 'communications'
+        'opportunities', 'sql', 'communications'
     ],
     'PRODUCT_MANAGER': [
         'studio', 'dashboard', 'work-queue', 'account-360', 'queue',
@@ -125,6 +129,22 @@ ROLE_CAPABILITIES = {
         'can_edit_proposals': True,
         'can_negotiate': True,
         'can_self_approve_discount_pct': 15.0,
+    },
+    'PRESALES': {
+        'can_override_scores': False,
+        'can_override_stage_gates': False,
+        'can_accept_sql': False,
+        'can_publish_configs': False,
+        'can_sync_erp': False,
+        'can_view_audit': False,
+        'can_manage_partners': False,
+        'can_edit_proposals': False,
+        'can_negotiate': False,
+        'can_self_approve_discount_pct': 0.0,
+        'can_conduct_discovery': True,
+        'can_conduct_demo': True,
+        'can_lead_poc': True,
+        'can_support_opportunity': True,
     },
     'PLD_EXECUTIVE': {
         'can_override_scores': False,

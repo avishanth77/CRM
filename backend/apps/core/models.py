@@ -55,3 +55,31 @@ class BaseModel(models.Model):
 
     def hard_delete(self, using=None, keep_parents=False):
         super().delete(using=using, keep_parents=keep_parents)
+
+
+class Territory(BaseModel):
+    """
+    Master business territory / region configured by Platform Admin.
+    Used for regional scoping, sales manager assignments, lead routing, and analytics.
+    """
+    name = models.CharField(max_length=128, unique=True)
+    code = models.CharField(max_length=64, unique=True)
+    country = models.CharField(max_length=128, default='Saudi Arabia')
+    regional_manager = models.ForeignKey(
+        'authentication.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_territories",
+        help_text="Assigned Sales Manager for this territory/region"
+    )
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name_plural = 'Territories'
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"

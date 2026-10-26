@@ -128,6 +128,11 @@ class OpportunityProduct(BaseModel):
     class Meta:
         unique_together = ('opportunity', 'product')
 
+    def save(self, *args, **kwargs):
+        if self.unit_price and self.quantity and (not self.total_amount or (self.quantity > 1 and self.total_amount == self.unit_price)):
+            self.total_amount = (Decimal(str(self.quantity)) * Decimal(str(self.unit_price))).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.opportunity}: {self.product.name} ({self.total_amount})"
 

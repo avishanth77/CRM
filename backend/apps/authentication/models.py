@@ -9,8 +9,7 @@ class UserRole(models.TextChoices):
     MANAGEMENT = 'MANAGEMENT', 'TEXOL Management'
     SALES_MANAGER = 'SALES_MANAGER', 'Sales Manager'
     SALES_BDM = 'SALES_BDM', 'Sales / BDM'
-    PLD_EXECUTIVE = 'PLD_EXECUTIVE', 'PLD Executive'
-    SOLUTION_CONSULTANT = 'SOLUTION_CONSULTANT', 'Solution Consultant'
+    PRESALES = 'PRESALES', 'Presales'
     MARKETING = 'MARKETING', 'Marketing'
     PRODUCT_MANAGER = 'PRODUCT_MANAGER', 'Product Manager'
     CUSTOMER_SUCCESS = 'CUSTOMER_SUCCESS', 'Customer Success'
@@ -19,8 +18,10 @@ class UserRole(models.TextChoices):
     FINANCE = 'FINANCE', 'Finance / Operations'
 
 
-# Documented alias for Sales / BDM
+# Documented aliases for backwards compatibility & consolidation
 UserRole.AE = UserRole.SALES_BDM
+UserRole.PLD_EXECUTIVE = UserRole.PRESALES
+UserRole.SOLUTION_CONSULTANT = UserRole.PRESALES
 
 
 class User(AbstractUser):
@@ -39,7 +40,7 @@ class User(AbstractUser):
     role = models.CharField(
         max_length=32,
         choices=UserRole.choices,
-        default=UserRole.PLD_EXECUTIVE,
+        default=UserRole.PRESALES,
         db_index=True
     )
     phone = models.CharField(max_length=32, blank=True, null=True)
@@ -62,8 +63,13 @@ class User(AbstractUser):
         'ACCOUNT_EXECUTIVE': UserRole.SALES_BDM,
         'AE': UserRole.SALES_BDM,
         'SALES_REP': UserRole.SALES_BDM,
-        'SDR': UserRole.PLD_EXECUTIVE,
-        'SOLUTIONS_CONSULTANT': UserRole.SOLUTION_CONSULTANT,
+        'PLD_EXECUTIVE': UserRole.PRESALES,
+        'PLD_SPECIALIST': UserRole.PRESALES,
+        'SDR': UserRole.PRESALES,
+        'SOLUTION_CONSULTANT': UserRole.PRESALES,
+        'SOLUTIONS_CONSULTANT': UserRole.PRESALES,
+        'PRESALES': UserRole.PRESALES,
+        'PRESALES_CONSULTANT': UserRole.PRESALES,
         'SALES_MGR': UserRole.SALES_MANAGER,
         'MGMT': UserRole.MANAGEMENT,
         'CS': UserRole.CUSTOMER_SUCCESS,
@@ -74,7 +80,7 @@ class User(AbstractUser):
     @property
     def canonical_role(self) -> str:
         """
-        Normalizes role aliases consistently into one of the 12 primary UserRole codes.
+        Normalizes role aliases consistently into one of the primary UserRole codes.
         """
         raw = str(self.role or '').strip().upper()
         return self.ROLE_ALIASES.get(raw, raw)
@@ -94,8 +100,7 @@ class User(AbstractUser):
         """Tier 3: Owner / Functional Scope"""
         return self.canonical_role in [
             UserRole.SALES_BDM,
-            UserRole.PLD_EXECUTIVE,
-            UserRole.SOLUTION_CONSULTANT,
+            UserRole.PRESALES,
             UserRole.MARKETING,
             UserRole.PRODUCT_MANAGER,
             UserRole.CUSTOMER_SUCCESS,

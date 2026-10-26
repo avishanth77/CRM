@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 # Load environment configuration from .env file
-load_dotenv(BASE_DIR / '.env')
+load_dotenv(BASE_DIR / '.env', override=True)
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'texol-crm-insecure-dev-key-change-in-production')
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 't')
@@ -195,4 +195,5 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1',
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 't')
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 15))
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', os.environ.get('EMAIL_HOST_USER', 'notifications@texol.com'))
+# Active SMTP integration reloaded
 

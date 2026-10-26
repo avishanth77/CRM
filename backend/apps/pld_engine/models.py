@@ -58,6 +58,10 @@ class ICPProfile(BaseModel):
     name = models.CharField(max_length=255, default="Default ICP Profile")
     version_number = models.PositiveIntegerField(default=1)
     is_active = models.BooleanField(default=True)
+    pass_threshold = models.PositiveIntegerField(
+        default=50,
+        help_text="Minimum ICP fit score (0-100%) required to PASS ICP qualification"
+    )
     description = models.TextField(blank=True, null=True)
 
     class Meta:

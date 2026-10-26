@@ -67,7 +67,14 @@ export const InAppAlertContainer: React.FC = () => {
 
   useEffect(() => {
     const handleNewAlert: AlertListener = (newAlert) => {
-      setAlerts(prev => [...prev, newAlert]);
+      setAlerts(prev => {
+        const isDuplicate = prev.some(
+          a => a.message === newAlert.message && (Date.now() - a.timestamp) < 3500
+        );
+        if (isDuplicate) return prev;
+        const updated = [...prev, newAlert];
+        return updated.slice(-4);
+      });
       if (newAlert.duration > 0) {
         setTimeout(() => {
           setAlerts(current => current.filter(a => a.id !== newAlert.id));

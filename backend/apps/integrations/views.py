@@ -14,12 +14,14 @@ from apps.integrations.serializers import (
 from apps.integrations.attribution_engine import MultiTouchAttributionEngine, AttributionModelType
 from apps.integrations.adapters import EmailNotificationAdapter, WhatsAppNotificationAdapter, NotificationTemplates
 from apps.integrations.erp_service import ERPSyncService
-from apps.accounts.models import Account, Contact
+from apps.accounts.models import Account, Contact, AccountAttribute
+from apps.activities.models import Activity, ActivityType, ActivityStatus
 from apps.leads.models import Lead, LeadProductInterest, LeadStatus, Campaign, LeadTouch, LeadSource
 from apps.products.models import Product
 from apps.pld_engine.services import ICPEvaluator
 from apps.authentication.permissions import IsAdminOrFinance, can_sync_erp
 from apps.audit_logging.models import AuditLog, AuditAction
+from apps.leads.services import ingest_website_lead
 
 
 class CampaignViewSet(viewsets.ModelViewSet):
@@ -68,114 +70,21 @@ class AttributionAnalyticsView(APIView):
 
 class InboundWebhookLeadView(APIView):
     """
-    Public webhook endpoint receiving marketing campaign form fills or partner submissions.
-    Creates Lead, registers LeadTouch, and performs initial ICP evaluation automatically.
+    Public webhook endpoint receiving marketing campaign form fills, website inquiries, or partner submissions.
+    Supports product-specific websites (VanForces, Al Mawasil, TaskForces, SpeakOrder, EntAura).
+    Delegates to the unified lead ingestion service with automatic territory resolution, domain extraction,
+    and Inbound Triage queue routing.
     """
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
-        data = request.data
-        company_name = data.get('company_name')
-        contact_name = data.get('contact_name', 'Inbound Contact')
-        email = data.get('email', '')
-        phone = data.get('phone', '')
-        product_code = data.get('product_code', 'VANFORCES')
-        utm_source = data.get('utm_source', 'website')
-        utm_medium = data.get('utm_medium', 'cpc')
-        utm_campaign = data.get('utm_campaign', 'gcc_growth_2026')
-        industry = data.get('industry', 'Distribution / Wholesale')
-        employee_count = int(data.get('employee_count', 100))
-
-        if not company_name:
-            return Response({'error': 'company_name is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # 1. Resolve or create Account
-        account, _ = Account.objects.get_or_create(
-            company_name=company_name,
-            defaults={
-                'industry': industry,
-                'employee_count': employee_count,
-                'city': data.get('city', ''),
-                'country': data.get('country', ''),
-                'account_stage': 'PROSPECT'
-            }
+        lead, response_payload = ingest_website_lead(
+            data=request.data,
+            request_meta=request.META
         )
+        return Response(response_payload, status=status.HTTP_201_CREATED)
 
-        # 2. Create Contact
-        first_name = contact_name.split()[0] if contact_name else 'Lead'
-        last_name = ' '.join(contact_name.split()[1:]) if ' ' in contact_name else ''
-        contact, _ = Contact.objects.get_or_create(
-            account=account,
-            email=email if email else f"info@{company_name.lower().replace(' ', '')}.com",
-            defaults={
-                'first_name': first_name,
-                'last_name': last_name,
-                'phone': phone,
-                'job_title': 'Commercial Operations Manager'
-            }
-        )
-
-        # 3. Resolve primary product
-        product = Product.objects.filter(code=product_code).first()
-        if not product:
-            product = Product.objects.first()
-
-        # 4. Resolve source
-        source, _ = LeadSource.objects.get_or_create(
-            code=utm_source.upper(),
-            defaults={'name': f"{utm_source.title()} Inbound"}
-        )
-
-        # 5. Create Lead
-        lead = Lead.objects.create(
-            account=account,
-            contact=contact,
-            primary_product=product,
-            source=source,
-            status=LeadStatus.ACTIVE,
-            next_action_description='Review inbound lead ICP and assign PLD specialist',
-        )
-
-        # 6. Attach Product Interest
-        LeadProductInterest.objects.create(
-            lead=lead,
-            product=product,
-            is_primary=True,
-            interest_level='HIGH'
-        )
-
-        # 7. Find matching campaign if exists
-        campaign = Campaign.objects.filter(code=utm_campaign).first()
-        if not campaign:
-            campaign = Campaign.objects.first()
-
-        # 8. Record Omni-channel Touchpoint
-        touch = LeadTouch.objects.create(
-            lead=lead,
-            campaign=campaign,
-            source=source,
-            touch_type='Inbound Webhook Demo Request',
-            utm_parameters={
-                'utm_source': utm_source,
-                'utm_medium': utm_medium,
-                'utm_campaign': utm_campaign,
-                'device': data.get('device', 'Desktop')
-            }
-        )
-
-        # 9. Run initial ICP Evaluation
-        icp_result = None
-        if product:
-            icp_result = ICPEvaluator.evaluate_lead_for_product(lead, product)
-
-        return Response({
-            'success': True,
-            'message': f"Inbound lead successfully registered for {company_name}",
-            'lead_id': str(lead.id),
-            'account_id': str(account.id),
-            'touch_id': str(touch.id),
-            'icp_status': icp_result.get('icp_status') if icp_result else 'EVALUATED'
-        }, status=status.HTTP_201_CREATED)
 
 
 class CommunicationViewSet(viewsets.ModelViewSet):
@@ -216,23 +125,32 @@ class CommunicationViewSet(viewsets.ModelViewSet):
         # Check if template is one of the customer stage completion templates
         from apps.integrations.stage_notifications import CUSTOMER_STAGE_TEMPLATES, CustomerStageEmailService
         normalized_key = template_key.replace('STAGE_', '')
+        custom_subject = request.data.get('subject')
+        custom_body = request.data.get('body')
         if normalized_key in CUSTOMER_STAGE_TEMPLATES:
             if channel == 'EMAIL':
                 res = CustomerStageEmailService.send_stage_email(
                     record=lead or account,
                     stage=normalized_key,
                     user=request.user if request.user.is_authenticated else None,
+                    custom_subject=custom_subject,
+                    custom_body=custom_body,
                     custom_recipient_email=recipient
                 )
+                rendered_body = custom_body or res.get('body')
+                if not rendered_body and (lead or account):
+                    try:
+                        ctx = CustomerStageEmailService.build_context(lead or account, normalized_key)
+                        rendered_body = ctx['template']['body'].format(**ctx)
+                    except Exception:
+                        rendered_body = ''
                 return Response({
                     'success': res.get('success', True),
                     'message_id': res.get('message_id'),
                     'channel': 'EMAIL',
                     'status': res.get('status'),
                     'subject': res.get('subject'),
-                    'body': CustomerStageEmailService.build_context(lead or account, normalized_key)['template']['body'].format(
-                        **CustomerStageEmailService.build_context(lead or account, normalized_key)
-                    )
+                    'body': rendered_body or ''
                 }, status=status.HTTP_201_CREATED)
 
         template_map = {
