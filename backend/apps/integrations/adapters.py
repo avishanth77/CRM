@@ -100,23 +100,8 @@ class EmailNotificationAdapter(BaseAdapter):
         body = template['email_body'].format(**context)
         from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'notifications@texol.com')
 
-        comm_status = CommStatus.DELIVERED
-        error_msg = ""
-        delivered_at = timezone.now()
-
-        try:
-            send_mail(
-                subject=subject,
-                message=body,
-                from_email=from_email,
-                recipient_list=[recipient],
-                fail_silently=False
-            )
-        except Exception as e:
-            logger.warning(f"Email delivery failed to {recipient}: {str(e)}")
-            comm_status = CommStatus.FAILED
-            error_msg = str(e)
-            delivered_at = None
+        import threading
+        from django.db import close_old_connections
 
         msg = CommunicationMessage.objects.create(
             channel=CommChannel.EMAIL,
@@ -127,12 +112,42 @@ class EmailNotificationAdapter(BaseAdapter):
             template_code=template['code'],
             subject=subject,
             body=body,
-            status=comm_status,
+            status=CommStatus.QUEUED,
             provider='TEXOL SMTP/SES Adapter',
             provider_message_id=f"email_{uuid.uuid4().hex[:12]}",
-            delivered_at=delivered_at,
-            error_message=error_msg
+            delivered_at=None,
+            error_message=""
         )
+
+        def _worker(msg_id, subj, msg_text, from_addr, to_addr):
+            close_old_connections()
+            try:
+                send_mail(
+                    subject=subj,
+                    message=msg_text,
+                    from_email=from_addr,
+                    recipient_list=[to_addr],
+                    fail_silently=False
+                )
+                CommunicationMessage.objects.filter(id=msg_id).update(
+                    status=CommStatus.DELIVERED,
+                    delivered_at=timezone.now()
+                )
+            except Exception as exc:
+                logger.warning(f"Email delivery failed to {to_addr}: {exc}")
+                CommunicationMessage.objects.filter(id=msg_id).update(
+                    status=CommStatus.FAILED,
+                    error_message=str(exc)
+                )
+            finally:
+                close_old_connections()
+
+        threading.Thread(
+            target=_worker,
+            args=(msg.id, subject, body, from_email, recipient),
+            daemon=True
+        ).start()
+
         return msg
 
 

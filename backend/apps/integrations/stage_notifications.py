@@ -1,9 +1,11 @@
 import uuid
 import logging
+import threading
 from typing import Dict, Any, Optional, Tuple
 from django.utils import timezone
 from django.conf import settings
 from django.core.mail import send_mail
+from django.db import close_old_connections
 
 from apps.integrations.models import CommunicationMessage, CommChannel, CommStatus
 from apps.activities.models import Activity, ActivityType, ActivityStatus, ActivityPriority
@@ -478,11 +480,12 @@ class CustomerStageEmailService:
         custom_subject: Optional[str] = None,
         custom_body: Optional[str] = None,
         custom_recipient_email: Optional[str] = None,
-        status_override: Optional[str] = None
+        status_override: Optional[str] = None,
+        async_send: bool = True
     ) -> Dict[str, Any]:
         """
-        Renders, dispatches (via Django email), and persists stage completion customer email.
-        Dual-records in CommunicationMessage and Activity.
+        Renders, dispatches (via Django email in a background worker thread to prevent HTTP delay),
+        and persists stage completion customer email. Dual-records in CommunicationMessage and Activity.
         """
         context = cls.build_context(record, stage, user=user, status_override=status_override)
         template = context['template']
@@ -500,26 +503,9 @@ class CustomerStageEmailService:
 
         email_sent = False
         error_msg = ""
-        comm_status = CommStatus.DELIVERED
+        comm_status = CommStatus.QUEUED if (recipient_email and async_send) else (CommStatus.DELIVERED if recipient_email else CommStatus.FAILED)
 
-        if recipient_email:
-            try:
-                send_mail(
-                    subject=subject,
-                    message=body,
-                    from_email=from_email,
-                    recipient_list=[recipient_email],
-                    fail_silently=False
-                )
-                email_sent = True
-                comm_status = CommStatus.DELIVERED
-            except Exception as e:
-                logger.warning(f"Stage email delivery encountered warning for {recipient_email}: {str(e)}")
-                # We do not crash the transaction; we log and record status
-                error_msg = str(e)
-                comm_status = CommStatus.FAILED
-        else:
-            comm_status = CommStatus.FAILED
+        if not recipient_email:
             error_msg = "Customer contact email address not found on record. Logged for sales rep review."
 
         # 1. Record in CommunicationMessage (Unified Omni-Channel Ledger)
@@ -535,7 +521,7 @@ class CustomerStageEmailService:
             status=comm_status,
             provider='TEXOL Automated Stage Dispatcher',
             provider_message_id=f"stg_{uuid.uuid4().hex[:12]}",
-            delivered_at=timezone.now() if (email_sent or comm_status == CommStatus.DELIVERED) else None,
+            delivered_at=None,
             error_message=error_msg
         )
 
@@ -553,7 +539,7 @@ class CustomerStageEmailService:
                 status=ActivityStatus.COMPLETED,
                 outcome_notes=(
                     f"Customer notified via email upon completion of '{context['stage_name']}' stage. "
-                    f"Recipient: {recipient_email or 'No email provided'} (Status: {comm_status})."
+                    f"Recipient: {recipient_email or 'No email provided'}."
                 ),
                 performed_by=user if (user and hasattr(user, 'is_authenticated') and user.is_authenticated) else None,
                 created_by=user if (user and hasattr(user, 'is_authenticated') and user.is_authenticated) else None
@@ -561,11 +547,64 @@ class CustomerStageEmailService:
         except Exception as act_err:
             logger.warning(f"Activity stream recording failed for stage notification: {str(act_err)}")
 
+        # 3. Dispatch Email (Background Thread to prevent freezing the HTTP request)
+        if recipient_email:
+            if async_send:
+                def _dispatch_worker(msg_id, subj, msg_text, from_addr, to_addr):
+                    close_old_connections()
+                    try:
+                        send_mail(
+                            subject=subj,
+                            message=msg_text,
+                            from_email=from_addr,
+                            recipient_list=[to_addr],
+                            fail_silently=False
+                        )
+                        CommunicationMessage.objects.filter(id=msg_id).update(
+                            status=CommStatus.DELIVERED,
+                            delivered_at=timezone.now()
+                        )
+                    except Exception as exc:
+                        logger.warning(f"Stage email background delivery failed for {to_addr}: {exc}")
+                        CommunicationMessage.objects.filter(id=msg_id).update(
+                            status=CommStatus.FAILED,
+                            error_message=str(exc)
+                        )
+                    finally:
+                        close_old_connections()
+
+                worker_thread = threading.Thread(
+                    target=_dispatch_worker,
+                    args=(comm_msg.id, subject, body, from_email, recipient_email),
+                    daemon=True
+                )
+                worker_thread.start()
+                email_sent = True
+            else:
+                try:
+                    send_mail(
+                        subject=subject,
+                        message=body,
+                        from_email=from_email,
+                        recipient_list=[recipient_email],
+                        fail_silently=False
+                    )
+                    email_sent = True
+                    comm_msg.status = CommStatus.DELIVERED
+                    comm_msg.delivered_at = timezone.now()
+                    comm_msg.save(update_fields=['status', 'delivered_at'])
+                except Exception as e:
+                    logger.warning(f"Stage email delivery encountered warning for {recipient_email}: {str(e)}")
+                    error_msg = str(e)
+                    comm_msg.status = CommStatus.FAILED
+                    comm_msg.error_message = error_msg
+                    comm_msg.save(update_fields=['status', 'error_message'])
+
         return {
-            'success': email_sent or (comm_status != CommStatus.FAILED),
+            'success': True if recipient_email else False,
             'email_sent': email_sent,
             'message_id': str(comm_msg.id),
-            'status': comm_status,
+            'status': comm_msg.status,
             'recipient_name': recipient_name,
             'recipient_email': recipient_email,
             'subject': subject,

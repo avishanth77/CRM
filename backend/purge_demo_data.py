@@ -14,6 +14,7 @@ django.setup()
 from django.db import transaction
 from django.contrib.admin.models import LogEntry
 from django.contrib.sessions.models import Session
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from apps.authentication.models import User
 
 # Import all operational models to purge
@@ -45,6 +46,9 @@ from apps.partners.models import (
 )
 
 MODELS_TO_PURGE = [
+    # JWT Tokens
+    BlacklistedToken,
+    OutstandingToken,
     # Sessions
     Session,
     # Admin logs
@@ -143,6 +147,33 @@ def purge_demo_data(dry_run=False):
             summary.append(('authentication.User (PARTNER_USER)', pu_count))
         else:
             print("        0 test partner user accounts (already clean)")
+
+        # Clean up custom added user accounts (outside standard staff accounts)
+        DEFAULT_STAFF_EMAILS = {
+            'admin@texol.com',
+            'management@texol.com',
+            'sales.manager@texol.com',
+            'sales.ae@texol.com',
+            'sales.ae2@texol.com',
+            'presales@texol.com',
+            'pld.exec@texol.com',
+            'solution.consultant@texol.com',
+            'product.manager@texol.com',
+            'partner.manager@texol.com',
+            'customer.success@texol.com',
+            'marketing@texol.com',
+            'finance@texol.com',
+        }
+        custom_users = User.objects.exclude(email__in=DEFAULT_STAFF_EMAILS)
+        cu_count = custom_users.count()
+        if cu_count > 0:
+            custom_emails = list(custom_users.values_list('email', flat=True))
+            print(f"Purging {cu_count:4d} custom added user account(s): {', '.join(custom_emails)}...")
+            if not dry_run:
+                custom_users.delete()
+            summary.append((f"authentication.User (custom: {', '.join(custom_emails)})", cu_count))
+        else:
+            print("        0 custom added user accounts (already clean)")
 
         if dry_run:
             print("\nDry run complete. No records were modified.")

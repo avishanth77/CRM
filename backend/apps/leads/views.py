@@ -328,6 +328,7 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='transition-stage')
     def transition_stage(self, request, pk=None):
         lead = self.get_object()
+        user = get_request_user(request)
         target_stage_id = request.data.get('target_stage_id')
         transition_reason = request.data.get('transition_reason', '')
         is_override = request.data.get('is_override', False)
@@ -358,13 +359,13 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             to_stage=target_stage,
             transition_reason=transition_reason,
             is_override=is_override,
-            changed_by=request.user if request.user.is_authenticated else None
+            changed_by=user
         )
 
         AuditLog.objects.create(
-            actor=request.user if request.user.is_authenticated else None,
-            actor_email=request.user.email if request.user.is_authenticated else 'system@texol.com',
-            actor_role=getattr(request.user, 'role', 'SYSTEM') if request.user.is_authenticated else 'SYSTEM',
+            actor=user,
+            actor_email=user.email if user else 'system@texol.com',
+            actor_role=getattr(user, 'role', 'SYSTEM') if user else 'SYSTEM',
             entity_type='Lead',
             entity_id=lead.id,
             action=AuditAction.STAGE_CHANGE,
@@ -384,7 +385,7 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
                 defaults={
                     'account': lead.account,
                     'product': lead.primary_product,
-                    'conducted_by': request.user if request.user.is_authenticated else None,
+                    'conducted_by': user,
                     'next_action_description': lead.next_action_description,
                     'next_activity_due_at': lead.next_activity_due_at
                 }
@@ -397,7 +398,7 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             DemoService.create_or_init_demo(
                 lead=lead,
                 discovery=lead.discoveries.first(),
-                user=request.user if request.user.is_authenticated else None
+                user=user
             )
 
         # If entering POC stage, auto-initialize POC trial with Discovery KPIs & criteria
@@ -406,7 +407,7 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
             POCService.create_or_init_poc(
                 lead=lead,
                 discovery=lead.discoveries.first(),
-                user=request.user if request.user.is_authenticated else None
+                user=user
             )
 
         # Automated Customer Stage Email
@@ -418,7 +419,7 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
                 stage_email_res = CustomerStageEmailService.send_stage_email(
                     record=lead,
                     stage=target_stage,
-                    user=request.user if request.user.is_authenticated else None,
+                    user=user,
                     custom_subject=request.data.get('custom_email_subject'),
                     custom_body=request.data.get('custom_email_body'),
                     custom_recipient_email=request.data.get('custom_recipient_email')
@@ -464,7 +465,7 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
                         status=TaskStatus.OPEN,
                         task_type="FOLLOW_UP",
                         assigned_to=new_sales_owner,
-                        created_by=request.user if (request.user and request.user.is_authenticated) else None
+                        created_by=user
                     )
 
                     Activity.objects.create(
@@ -475,8 +476,8 @@ class LeadViewSet(ScopedQuerySetMixin, viewsets.ModelViewSet):
                         description_notes=f"Lead qualified through PLD Engine and advanced to {target_stage.stage_name}. Assigned to {new_sales_owner.get_full_name() or new_sales_owner.email}.",
                         conducted_at=timezone.now(),
                         status=ActivityStatus.COMPLETED,
-                        performed_by=request.user if request.user.is_authenticated else None,
-                        created_by=request.user if request.user.is_authenticated else None
+                        performed_by=user,
+                        created_by=user
                     )
                 except User.DoesNotExist:
                     pass
