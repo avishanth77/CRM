@@ -203,8 +203,20 @@ def ingest_website_lead(data: Dict[str, Any], request_meta: Optional[Dict[str, A
             company_name = f"{contact_name}'s Organization"
 
     city = (data.get('city') or data.get('place') or data.get('location') or data.get('account_city') or '').strip()
+    state = (data.get('state') or data.get('province') or data.get('account_state') or '').strip()
     country = (data.get('country') or data.get('account_country') or 'Saudi Arabia').strip()
     industry = (data.get('industry') or 'Distribution & Wholesale').strip()
+    if industry:
+        try:
+            import re
+            from apps.core.models import Industry
+            ind_code = re.sub(r'[^A-Z0-9_]+', '_', industry.upper()).strip('_')
+            Industry.objects.get_or_create(
+                name=industry,
+                defaults={'code': ind_code or 'INDUSTRY', 'is_active': True}
+            )
+        except Exception:
+            pass
     
     try:
         employees_count = int(data.get('employees_count') or data.get('employee_count') or data.get('employees') or 100)
@@ -231,9 +243,11 @@ def ingest_website_lead(data: Dict[str, Any], request_meta: Optional[Dict[str, A
             domain=domain or None,
             industry=industry,
             employees_count=employees_count,
-            city=city or None,
             country=country,
+            state=state or None,
+            city=city or None,
             territory=territory,
+            address=data.get('address') or data.get('street_address') or None,
             website=data.get('website_url') or None,
             phone=phone or None,
             source='Product Website Form'
@@ -244,9 +258,15 @@ def ingest_website_lead(data: Dict[str, Any], request_meta: Optional[Dict[str, A
         if territory and not account.territory:
             account.territory = territory
             fields_to_update.append('territory')
+        if state and not account.state:
+            account.state = state
+            fields_to_update.append('state')
         if city and not account.city:
             account.city = city
             fields_to_update.append('city')
+        if (data.get('address') or data.get('street_address')) and not account.address:
+            account.address = data.get('address') or data.get('street_address')
+            fields_to_update.append('address')
         if domain and not account.domain:
             account.domain = domain
             fields_to_update.append('domain')

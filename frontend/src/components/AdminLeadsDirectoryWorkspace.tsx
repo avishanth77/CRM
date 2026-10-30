@@ -43,6 +43,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
   const [filterIcp, setFilterIcp] = useState('ALL');
   const [filterScoreBand, setFilterScoreBand] = useState('ALL');
   const [filterCountry, setFilterCountry] = useState('ALL');
+  const [filterState, setFilterState] = useState('ALL');
   const [filterTargetAccount, setFilterTargetAccount] = useState('ALL');
   const [filterSource, setFilterSource] = useState('ALL');
   const [filterRegion, setFilterRegion] = useState('ALL');
@@ -136,6 +137,15 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
     return Array.from(set);
   }, [leads]);
 
+  const availableStates = useMemo(() => {
+    const set = new Set<string>();
+    leads.forEach(l => {
+      if (filterCountry !== 'ALL' && l.account_country !== filterCountry) return;
+      if (l.account_state) set.add(l.account_state);
+    });
+    return Array.from(set).sort();
+  }, [leads, filterCountry]);
+
   // Filtered Leads Computation
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
@@ -145,11 +155,12 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
         const accMatch = lead.account_name?.toLowerCase().includes(q);
         const contactMatch = lead.contact_name?.toLowerCase().includes(q) || lead.contact_email?.toLowerCase().includes(q);
         const domainMatch = lead.domain?.toLowerCase().includes(q);
+        const stateMatch = lead.account_state?.toLowerCase().includes(q);
         const cityMatch = lead.account_city?.toLowerCase().includes(q);
         const countryMatch = lead.account_country?.toLowerCase().includes(q);
         const ownerMatch = lead.owner_name?.toLowerCase().includes(q) || lead.owner_email?.toLowerCase().includes(q);
         const prodMatch = lead.primary_product_name?.toLowerCase().includes(q) || lead.primary_product_code?.toLowerCase().includes(q);
-        if (!accMatch && !contactMatch && !domainMatch && !cityMatch && !countryMatch && !ownerMatch && !prodMatch) {
+        if (!accMatch && !contactMatch && !domainMatch && !stateMatch && !cityMatch && !countryMatch && !ownerMatch && !prodMatch) {
           return false;
         }
       }
@@ -198,6 +209,11 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
         if (lead.account_country !== filterCountry) return false;
       }
 
+      // 8b. State / Province Filter
+      if (filterState !== 'ALL') {
+        if (lead.account_state !== filterState) return false;
+      }
+
       // 9. Target Account Filter
       if (filterTargetAccount !== 'ALL') {
         if (filterTargetAccount === 'TARGET' && !lead.is_target_account) return false;
@@ -216,7 +232,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
 
       return true;
     });
-  }, [leads, searchQuery, filterOwner, filterProduct, filterStage, filterStatus, filterIcp, filterScoreBand, filterCountry, filterTargetAccount, filterSource, filterRegion]);
+  }, [leads, searchQuery, filterOwner, filterProduct, filterStage, filterStatus, filterIcp, filterScoreBand, filterCountry, filterState, filterTargetAccount, filterSource, filterRegion]);
 
   // Executive KPI summary calculations
   const totalPipelineVal = useMemo(() => {
@@ -298,7 +314,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
     }
 
     const headers = [
-      'Lead ID', 'Company Name', 'Domain', 'City', 'Country', 'Territory / Region', 'Target Account',
+      'Lead ID', 'Company Name', 'Domain', 'City / Place', 'State / Province', 'Country', 'Territory / Region', 'Target Account',
       'Contact Name', 'Contact Title', 'Contact Email', 'Contact Phone',
       'Primary Product', 'Product Code', 'Assigned Owner', 'Owner Email',
       'Current Stage', 'Status', 'PLD Score', 'Score Classification', 'ICP Passed',
@@ -310,6 +326,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
       `"${(l.account_name || '').replace(/"/g, '""')}"`,
       `"${l.domain || ''}"`,
       `"${l.account_city || ''}"`,
+      `"${l.account_state || ''}"`,
       `"${l.account_country || ''}"`,
       `"${(l.territory || '').replace(/"/g, '""')}"`,
       l.is_target_account ? 'Yes' : 'No',
@@ -551,7 +568,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
               )}
             </div>
 
-            {(searchQuery || filterOwner !== 'ALL' || filterProduct !== 'ALL' || filterStage !== 'ALL' || filterStatus !== 'ALL' || filterIcp !== 'ALL' || filterScoreBand !== 'ALL' || filterCountry !== 'ALL' || filterTargetAccount !== 'ALL' || filterSource !== 'ALL' || filterRegion !== 'ALL') && (
+            {(searchQuery || filterOwner !== 'ALL' || filterProduct !== 'ALL' || filterStage !== 'ALL' || filterStatus !== 'ALL' || filterIcp !== 'ALL' || filterScoreBand !== 'ALL' || filterCountry !== 'ALL' || filterState !== 'ALL' || filterTargetAccount !== 'ALL' || filterSource !== 'ALL' || filterRegion !== 'ALL') && (
               <button
                 className="btn btn-outline"
                 onClick={() => {
@@ -563,6 +580,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                   setFilterIcp('ALL');
                   setFilterScoreBand('ALL');
                   setFilterCountry('ALL');
+                  setFilterState('ALL');
                   setFilterTargetAccount('ALL');
                   setFilterSource('ALL');
                   setFilterRegion('ALL');
@@ -769,7 +787,10 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
               <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Country</label>
               <select
                 value={filterCountry}
-                onChange={e => setFilterCountry(e.target.value)}
+                onChange={e => {
+                  setFilterCountry(e.target.value);
+                  setFilterState('ALL');
+                }}
                 style={{
                   width: '100%',
                   padding: '8px 10px',
@@ -785,6 +806,31 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                 <option value="ALL">All Countries</option>
                 {availableCountries.map(c => (
                   <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter: State / Province */}
+            <div>
+              <label style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)' }}>State / Province</label>
+              <select
+                value={filterState}
+                onChange={e => setFilterState(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  marginTop: '4px',
+                  outline: 'none'
+                }}
+              >
+                <option value="ALL">All States / Provinces</option>
+                {availableStates.map(s => (
+                  <option key={s} value={s}>{s}</option>
                 ))}
               </select>
             </div>
@@ -964,7 +1010,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
                             <MapPin size={13} color="var(--text-muted)" />
                             <span>
-                              {lead.account_city ? `${lead.account_city}, ` : ''}{lead.account_country || 'Saudi Arabia'}
+                              {[lead.account_city, lead.account_state, lead.account_country || 'Saudi Arabia'].filter(Boolean).join(', ')}
                             </span>
                           </div>
                           {lead.territory && (
@@ -1464,7 +1510,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                       <>
                         <span>•</span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                          <MapPin size={11} /> {inspectingLead.account_city ? `${inspectingLead.account_city}, ` : ''}{inspectingLead.account_country}
+                          <MapPin size={11} /> {[inspectingLead.account_city, inspectingLead.account_state, inspectingLead.account_country].filter(Boolean).join(', ')}
                         </span>
                       </>
                     )}
@@ -1592,7 +1638,7 @@ export const AdminLeadsDirectoryWorkspace: React.FC<AdminLeadsDirectoryWorkspace
                       <div>
                         <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '3px' }}>Location / Place</span>
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {inspectingLead.account_city ? `${inspectingLead.account_city}, ` : ''}{inspectingLead.account_country || 'Saudi Arabia'}
+                          {[inspectingLead.account_city, inspectingLead.account_state, inspectingLead.account_country || 'Saudi Arabia'].filter(Boolean).join(', ')}
                         </span>
                       </div>
 

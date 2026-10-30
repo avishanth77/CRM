@@ -4,17 +4,19 @@ import {
   HelpCircle, Plus, FileText, 
   ArrowRight, RefreshCw, UserCheck, Scale, History, AlertCircle, Sliders,
   Calendar, Search, ChevronDown, ChevronUp, User, RotateCcw, MapPin, Share2, UserPlus,
-  Building2, Package, X, ExternalLink, PlusCircle, ShieldAlert
+  Building2, Package
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { 
   Lead, AccountProductAssessment, QuestionnaireTemplate, 
   LeadProblemItem, StageGateChecklist, LeadActionLog, LeadSource, AuthUser,
-  Product, Territory, ICPRule
+  Product, Territory, ICPRule, Industry
 } from '../services/api';
 import { UnifiedActivityTimeline } from './UnifiedActivityTimeline';
 import { inAppAlert } from './common/InAppAlert';
 import { Modal } from './common/Modal';
+import { AddIndustryModal } from './common/AddIndustryModal';
+import { LocationHierarchySelector } from './common/LocationHierarchySelector';
 
 interface PLDQualificationWorkspaceProps {
   lead: Lead;
@@ -130,9 +132,11 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
   const [editDomain, setEditDomain] = useState(lead.domain || '');
   const [editIndustry, setEditIndustry] = useState(lead.industry || 'FMCG');
   const [editEmployees, setEditEmployees] = useState<number>(lead.employees_count || 100);
-  const [editCity, setEditCity] = useState(lead.account_city || '');
   const [editCountry, setEditCountry] = useState(lead.account_country || 'Saudi Arabia');
+  const [editState, setEditState] = useState(lead.account_state || '');
+  const [editCity, setEditCity] = useState(lead.account_city || '');
   const [editTerritory, setEditTerritory] = useState(lead.territory || '');
+  const [editAddress, setEditAddress] = useState(lead.account_address || '');
   const [editIsTarget, setEditIsTarget] = useState<boolean>(Boolean(lead.is_target_account));
   const [editTargetTier, setEditTargetTier] = useState(lead.target_tier || 'TIER_1');
 
@@ -147,9 +151,21 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
   const [editSourceId, setEditSourceId] = useState(lead.source || '');
   const [editNextAction, setEditNextAction] = useState(lead.next_action_description || 'Schedule introductory discovery call');
 
-  // Product & Territory lists & selection
+  // Product, Territory & Industry lists & selection
   const [productsList, setProductsList] = useState<Product[]>([]);
   const [territoriesList, setTerritoriesList] = useState<Territory[]>([]);
+  const [industriesList, setIndustriesList] = useState<Industry[]>([
+    { id: '1', name: 'FMCG', code: 'FMCG', is_active: true },
+    { id: '2', name: 'Bakery', code: 'BAKERY', is_active: true },
+    { id: '3', name: 'Food & Beverage', code: 'FOOD_BEVERAGE', is_active: true },
+    { id: '4', name: 'Wholesale Distribution', code: 'WHOLESALE_DISTRIBUTION', is_active: true },
+    { id: '5', name: 'Distribution', code: 'DISTRIBUTION', is_active: true },
+    { id: '6', name: 'Dairy', code: 'DAIRY', is_active: true },
+    { id: '7', name: 'Frozen Food', code: 'FROZEN_FOOD', is_active: true },
+    { id: '8', name: 'Retail', code: 'RETAIL', is_active: true },
+    { id: '9', name: 'Logistics & Transport', code: 'LOGISTICS_TRANSPORT', is_active: true },
+  ]);
+  const [showAddIndustryModal, setShowAddIndustryModal] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState(lead.primary_product || '');
   const [selectedProductCode, setSelectedProductCode] = useState(lead.primary_product_code || 'VANFORCES');
   const [productIcpRules, setProductIcpRules] = useState<ICPRule[]>([]);
@@ -178,9 +194,11 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
     const dom = accountData?.domain || lead.domain || '';
     const ind = accountData?.industry || lead.industry || 'FMCG';
     const emp = Number(accountData?.employees_count || lead.employees_count || 100);
-    const cit = accountData?.city || lead.account_city || '';
     const ctry = accountData?.country || lead.account_country || 'Saudi Arabia';
+    const ste = accountData?.state || lead.account_state || '';
+    const cit = accountData?.city || lead.account_city || '';
     const terr = accountData?.territory || lead.territory || '';
+    const addr = accountData?.address || lead.account_address || '';
     const isTgt = accountData?.is_target_account !== undefined ? Boolean(accountData.is_target_account) : Boolean(lead.is_target_account);
     const tgtTier = accountData?.target_tier || lead.target_tier || 'TIER_1';
 
@@ -188,9 +206,11 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
     setEditDomain(dom);
     setEditIndustry(ind);
     setEditEmployees(emp);
-    setEditCity(cit);
     setEditCountry(ctry);
+    setEditState(ste);
+    setEditCity(cit);
     setEditTerritory(terr);
+    setEditAddress(addr);
     setEditIsTarget(isTgt);
     setEditTargetTier(tgtTier);
 
@@ -310,6 +330,7 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
     else if (rule.field_name === 'employees_count' || rule.field_name === 'employees') val = editEmployees;
     else if (rule.field_name === 'distribution_centers_count' || rule.field_name === 'distribution_depots') val = icpDistributionCenters;
     else if (rule.field_name === 'country') val = editCountry;
+    else if (rule.field_name === 'state' || rule.field_name === 'province') val = editState;
     else if (rule.field_name === 'city') val = editCity;
     else if (rule.field_name === 'field_sales') val = icpFieldSales;
     else if (rule.field_name === 'vans_count') val = icpVansCount;
@@ -581,6 +602,17 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
         setProductsList(pList);
       } catch (err) {
         console.warn('Error loading products:', err);
+      }
+
+      // Load Industries
+      try {
+        const indRes = await api.getIndustries();
+        const indList = Array.isArray(indRes) ? indRes : (indRes?.results || []);
+        if (indList.length > 0) {
+          setIndustriesList(indList);
+        }
+      } catch (err) {
+        console.warn('Error loading industries:', err);
       }
 
       // Load dynamic ICP rules for the product
@@ -891,12 +923,18 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
             industry: editIndustry,
             employees_count: Number(editEmployees),
             distribution_centers_count: Number(icpDistributionCenters || 1),
-            city: editCity.trim() || undefined,
             country: editCountry.trim() || undefined,
+            state: editState.trim() || undefined,
+            city: editCity.trim() || undefined,
             territory: editTerritory || undefined,
+            address: editAddress.trim() || undefined,
             is_target_account: editIsTarget,
             target_tier: editIsTarget ? editTargetTier : undefined
           });
+          lead.account_country = editCountry.trim();
+          lead.account_state = editState.trim();
+          lead.account_city = editCity.trim();
+          lead.account_address = editAddress.trim();
         } catch (accErr) {
           console.warn('Failed to update account:', accErr);
         }
@@ -954,6 +992,7 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
         industry: editIndustry,
         employees_count: Number(editEmployees),
         country: editCountry,
+        state: editState,
         city: editCity,
         ...dynamicIcpValues
       };
@@ -1289,15 +1328,16 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
                 <MapPin size={14} color="#F59E0B" />
                 <span>Location: <strong style={{ color: 'var(--text-primary)' }}>
-                  {lead.account_city && lead.account_country 
-                    ? `${lead.account_city}, ${lead.account_country}` 
-                    : (lead.account_city || lead.account_country || 'Not specified')}
+                  {[lead.account_address, lead.account_city, lead.account_state, lead.account_country].filter(Boolean).join(', ') || 'Not specified'}
                 </strong></span>
                 <button
                   type="button"
                   onClick={() => {
+                    setEditCountry(lead.account_country || 'Saudi Arabia');
+                    setEditState(lead.account_state || '');
                     setEditCity(lead.account_city || '');
-                    setEditCountry(lead.account_country || '');
+                    setEditAddress(lead.account_address || '');
+                    setEditTerritory(lead.territory || '');
                     setShowEditPlaceModal(true);
                   }}
                   style={{
@@ -1310,7 +1350,7 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
                     padding: '0 4px'
                   }}
                 >
-                  {lead.account_city || lead.account_country ? 'Change' : '+ Add Place'}
+                  {lead.account_city || lead.account_state || lead.account_country ? 'Change' : '+ Add Place'}
                 </button>
               </div>
 
@@ -3202,12 +3242,35 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Industry</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                    <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Industry Vertical</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddIndustryModal(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary)',
+                        cursor: 'pointer',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '2px 4px'
+                      }}
+                      title="Add a custom industry sector"
+                    >
+                      + Add Industry
+                    </button>
+                  </div>
                   <select
                     value={editIndustry}
                     onChange={(e) => {
-                      setEditIndustry(e.target.value);
-                      setDynamicIcpValues(prev => ({ ...prev, industry: e.target.value }));
+                      const val = e.target.value;
+                      if (val === '__NEW__') {
+                        setShowAddIndustryModal(true);
+                      } else {
+                        setEditIndustry(val);
+                        setDynamicIcpValues(prev => ({ ...prev, industry: val }));
+                      }
                     }}
                     style={{
                       width: '100%',
@@ -3216,20 +3279,16 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
                       background: 'var(--bg-primary)',
                       border: '1px solid var(--border-subtle)',
                       color: 'var(--text-primary)',
-                      marginTop: '4px',
+                      marginTop: '2px',
                       outline: 'none',
                       fontSize: '0.82rem'
                     }}
                   >
-                    <option value="FMCG">FMCG</option>
-                    <option value="Bakery">Bakery</option>
-                    <option value="Food & Beverage">Food &amp; Beverage</option>
-                    <option value="Wholesale Distribution">Wholesale Distribution</option>
-                    <option value="Distribution">Distribution</option>
-                    <option value="Dairy">Dairy</option>
-                    <option value="Frozen Food">Frozen Food</option>
-                    <option value="Retail">Retail</option>
-                    <option value="Logistics">Logistics &amp; Transport</option>
+                    <option value="">-- Select Industry --</option>
+                    {industriesList.map(ind => (
+                      <option key={ind.id || ind.code} value={ind.name}>{ind.name}</option>
+                    ))}
+                    <option value="__NEW__">+ Add Custom Industry...</option>
                   </select>
                 </div>
 
@@ -3259,79 +3318,31 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>City / Place</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Jeddah, Dammam, Dubai, Riyadh"
-                    value={editCity}
-                    onChange={(e) => {
-                      setEditCity(e.target.value);
-                      setDynamicIcpValues(prev => ({ ...prev, city: e.target.value }));
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-subtle)',
-                      color: 'var(--text-primary)',
-                      marginTop: '4px',
-                      outline: 'none',
-                      fontSize: '0.82rem'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Country</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Saudi Arabia, UAE, Qatar"
-                    value={editCountry}
-                    onChange={(e) => {
-                      setEditCountry(e.target.value);
-                      setDynamicIcpValues(prev => ({ ...prev, country: e.target.value }));
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-subtle)',
-                      color: 'var(--text-primary)',
-                      marginTop: '4px',
-                      outline: 'none',
-                      fontSize: '0.82rem'
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Region / Territory</label>
-                <select
-                  value={editTerritory}
-                  onChange={(e) => setEditTerritory(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-primary)',
-                    marginTop: '4px',
-                    outline: 'none',
-                    fontSize: '0.82rem'
-                  }}
-                >
-                  <option value="">-- Select Region / Territory (Admin Defined) --</option>
-                  {territoriesList.map(t => (
-                    <option key={t.id} value={t.name}>{t.name} ({t.country})</option>
-                  ))}
-                </select>
-              </div>
+              <LocationHierarchySelector
+                country={editCountry}
+                onCountryChange={(ctry) => {
+                  setEditCountry(ctry);
+                  setDynamicIcpValues(prev => ({ ...prev, country: ctry }));
+                }}
+                state={editState}
+                onStateChange={(ste) => {
+                  setEditState(ste);
+                  setDynamicIcpValues(prev => ({ ...prev, state: ste, province: ste }));
+                }}
+                city={editCity}
+                onCityChange={(cit) => {
+                  setEditCity(cit);
+                  setDynamicIcpValues(prev => ({ ...prev, city: cit }));
+                }}
+                territory={editTerritory}
+                onTerritoryChange={setEditTerritory}
+                territories={territoriesList}
+                showTerritory={true}
+                address={editAddress}
+                onAddressChange={setEditAddress}
+                showAddress={true}
+                variant="horizontal-2col"
+              />
             </div>
           </div>
 
@@ -4494,13 +4505,19 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
             setSavingPlace(true);
             try {
               await api.updateAccount(lead.account, {
-                city: editCity.trim() || '',
-                country: editCountry.trim() || ''
+                country: editCountry.trim() || undefined,
+                state: editState.trim() || undefined,
+                city: editCity.trim() || undefined,
+                territory: editTerritory || undefined,
+                address: editAddress.trim() || undefined
               });
-              lead.account_city = editCity.trim();
               lead.account_country = editCountry.trim();
+              lead.account_state = editState.trim();
+              lead.account_city = editCity.trim();
+              lead.account_address = editAddress.trim();
+              if (editTerritory) lead.territory = editTerritory;
               setShowEditPlaceModal(false);
-              inAppAlert.success('Lead location updated successfully!');
+              inAppAlert.success('Lead location & address updated successfully!');
               onLeadUpdated?.();
             } catch (err: any) {
               inAppAlert.error(err.message || 'Failed to update location');
@@ -4510,49 +4527,22 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                City / Place
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Jeddah, Dammam, Dubai, Riyadh"
-                value={editCity}
-                onChange={(e) => setEditCity(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                  fontSize: '0.85rem'
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Country
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Saudi Arabia, UAE, Qatar"
-                value={editCountry}
-                onChange={(e) => setEditCountry(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                  fontSize: '0.85rem'
-                }}
-              />
-            </div>
+            <LocationHierarchySelector
+              country={editCountry}
+              onCountryChange={setEditCountry}
+              state={editState}
+              onStateChange={setEditState}
+              city={editCity}
+              onCityChange={setEditCity}
+              territory={editTerritory}
+              onTerritoryChange={setEditTerritory}
+              territories={territoriesList}
+              showTerritory={true}
+              address={editAddress}
+              onAddressChange={setEditAddress}
+              showAddress={true}
+              variant="stacked"
+            />
           </div>
         </form>
       </Modal>
@@ -4839,6 +4829,21 @@ export const PLDQualificationWorkspace: React.FC<PLDQualificationWorkspaceProps>
           </div>
         </div>
       </Modal>
+
+      <AddIndustryModal
+        isOpen={showAddIndustryModal}
+        onClose={() => setShowAddIndustryModal(false)}
+        onIndustryCreated={(newInd) => {
+          setIndustriesList(prev => {
+            if (prev.some(i => i.id === newInd.id || i.name.toLowerCase() === newInd.name.toLowerCase())) {
+              return prev;
+            }
+            return [...prev, newInd];
+          });
+          setEditIndustry(newInd.name);
+          setDynamicIcpValues(prev => ({ ...prev, industry: newInd.name }));
+        }}
+      />
     </div>
   );
 };

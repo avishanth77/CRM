@@ -6,6 +6,7 @@ import {
 import { api } from '../services/api';
 import { UnifiedActivityTimeline } from './UnifiedActivityTimeline';
 import { Modal } from './common/Modal';
+import { LocationHierarchySelector } from './common/LocationHierarchySelector';
 
 interface Account360WorkspaceProps {
   initialAccountId?: string;
@@ -21,13 +22,27 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showEditPlaceModal, setShowEditPlaceModal] = useState(false);
+  const [editCountry, setEditCountry] = useState('Saudi Arabia');
+  const [editState, setEditState] = useState('');
   const [editCity, setEditCity] = useState('');
-  const [editCountry, setEditCountry] = useState('');
+  const [editTerritory, setEditTerritory] = useState('');
+  const [territoriesList, setTerritoriesList] = useState<any[]>([]);
   const [savingPlace, setSavingPlace] = useState(false);
 
   useEffect(() => {
     loadAccounts();
+    loadTerritories();
   }, []);
+
+  const loadTerritories = async () => {
+    try {
+      const res: any = await api.getTerritories(true);
+      const list = Array.isArray(res) ? res : res?.results || [];
+      setTerritoriesList(list);
+    } catch (e) {
+      console.warn('Failed to load territories:', e);
+    }
+  };
 
   useEffect(() => {
     if (initialAccountId) {
@@ -57,10 +72,18 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
     setSavingPlace(true);
     try {
       await api.updateAccount(selectedAccount.id, {
-        city: editCity.trim() || '',
-        country: editCountry.trim() || ''
+        country: editCountry.trim() || undefined,
+        state: editState.trim() || undefined,
+        city: editCity.trim() || undefined,
+        territory: editTerritory.trim() || undefined
       });
-      setAccounts(prev => prev.map(a => a.id === selectedAccount.id ? { ...a, city: editCity.trim(), country: editCountry.trim() } : a));
+      setAccounts(prev => prev.map(a => a.id === selectedAccount.id ? { 
+        ...a, 
+        country: editCountry.trim(),
+        state: editState.trim(),
+        city: editCity.trim(),
+        territory: editTerritory.trim()
+      } : a));
       setShowEditPlaceModal(false);
     } catch (err: any) {
       alert(err.message || 'Failed to update location');
@@ -177,7 +200,7 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                   <span>{acc.industry || 'Enterprise'}</span>
                   <span>•</span>
-                  <span>{acc.city ? (acc.country ? `${acc.city}, ${acc.country}` : acc.city) : (acc.country || 'No location')}</span>
+                  <span>{[acc.city, acc.state, acc.country].filter(Boolean).join(', ') || 'No location'}</span>
                 </div>
 
                 <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -234,18 +257,23 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                       <Phone size={13} /> {selectedAccount.phone}
                     </span>
                   )}
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     <MapPin size={13} color="var(--primary)" />
                     <span>
-                      {selectedAccount.city && selectedAccount.country
-                        ? `${selectedAccount.city}, ${selectedAccount.country}`
-                        : (selectedAccount.city || selectedAccount.country || 'Location not specified')}
+                      {[selectedAccount.city, selectedAccount.state, selectedAccount.country].filter(Boolean).join(', ') || 'Location not specified'}
                     </span>
+                    {selectedAccount.territory && (
+                      <span className="badge badge-primary" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                        Region: {selectedAccount.territory}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
+                        setEditCountry(selectedAccount.country || 'Saudi Arabia');
+                        setEditState(selectedAccount.state || '');
                         setEditCity(selectedAccount.city || '');
-                        setEditCountry(selectedAccount.country || '');
+                        setEditTerritory(selectedAccount.territory || '');
                         setShowEditPlaceModal(true);
                       }}
                       style={{
@@ -261,7 +289,7 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
                         gap: '3px'
                       }}
                     >
-                      {selectedAccount.city || selectedAccount.country ? 'Edit' : '+ Add Place'}
+                      {selectedAccount.city || selectedAccount.state || selectedAccount.country ? 'Edit Location' : '+ Add Location'}
                     </button>
                   </span>
                   {onNavigateToOpportunity && (
@@ -413,49 +441,19 @@ export const Account360Workspace: React.FC<Account360WorkspaceProps> = ({
       >
         <form id="account-place-form" onSubmit={handleSavePlace}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                City / Place
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Jeddah, Dammam, Dubai, Riyadh"
-                value={editCity}
-                onChange={(e) => setEditCity(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                  fontSize: '0.85rem'
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Country
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Saudi Arabia, UAE, Qatar"
-                value={editCountry}
-                onChange={(e) => setEditCountry(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                  fontSize: '0.85rem'
-                }}
-              />
-            </div>
+            <LocationHierarchySelector
+              country={editCountry}
+              onCountryChange={setEditCountry}
+              state={editState}
+              onStateChange={setEditState}
+              city={editCity}
+              onCityChange={setEditCity}
+              territory={editTerritory}
+              onTerritoryChange={setEditTerritory}
+              territories={territoriesList}
+              showTerritory={true}
+              variant="stacked"
+            />
           </div>
         </form>
       </Modal>

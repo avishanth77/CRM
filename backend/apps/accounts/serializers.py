@@ -44,7 +44,7 @@ class AccountSerializer(serializers.ModelSerializer):
         model = Account
         fields = [
             'id', 'company_name', 'legal_name', 'trade_name', 'account_type',
-            'industry', 'sub_industry', 'country', 'state', 'city',
+            'industry', 'sub_industry', 'country', 'state', 'city', 'territory', 'address',
             'company_size_band', 'website', 'domain', 'phone',
             'employees_count', 'distribution_centers_count',
             'is_target_account', 'target_tier', 'source', 'partner', 'partner_name',
@@ -52,3 +52,29 @@ class AccountSerializer(serializers.ModelSerializer):
             'next_activity_due_at', 'next_action_description',
             'contacts', 'custom_attributes', 'product_relationships'
         ]
+
+    def _sync_industry(self, industry_name):
+        if industry_name and isinstance(industry_name, str) and industry_name.strip():
+            try:
+                import re
+                from apps.core.models import Industry
+                name = industry_name.strip()
+                code = re.sub(r'[^A-Z0-9_]+', '_', name.upper()).strip('_')
+                Industry.objects.get_or_create(
+                    name=name,
+                    defaults={'code': code or 'INDUSTRY', 'is_active': True}
+                )
+            except Exception:
+                pass
+
+    def create(self, validated_data):
+        industry = validated_data.get('industry')
+        self._sync_industry(industry)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        industry = validated_data.get('industry')
+        if industry:
+            self._sync_industry(industry)
+        return super().update(instance, validated_data)
+

@@ -98,7 +98,10 @@ export const WebsiteLeadsTriageWorkspace: React.FC<WebsiteLeadsTriageWorkspacePr
         const matchesEmail = (lead.contact_email || '').toLowerCase().includes(q);
         const matchesPhone = (lead.contact_phone || '').toLowerCase().includes(q);
         const matchesAction = (lead.next_action_description || '').toLowerCase().includes(q);
-        if (!matchesComp && !matchesContact && !matchesEmail && !matchesPhone && !matchesAction) {
+        const matchesCity = (lead.account_city || '').toLowerCase().includes(q);
+        const matchesState = (lead.account_state || '').toLowerCase().includes(q);
+        const matchesCountry = (lead.account_country || '').toLowerCase().includes(q);
+        if (!matchesComp && !matchesContact && !matchesEmail && !matchesPhone && !matchesAction && !matchesCity && !matchesState && !matchesCountry) {
           return false;
         }
       }
@@ -534,10 +537,10 @@ export const WebsiteLeadsTriageWorkspace: React.FC<WebsiteLeadsTriageWorkspacePr
                           Received {new Date(lead.created_at).toLocaleDateString()} at {new Date(lead.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
 
-                        {(lead.account_city || lead.account_country) && (
+                        {(lead.account_city || lead.account_state || lead.account_country) && (
                           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <MapPin size={13} />
-                            {[lead.account_city, lead.account_country].filter(Boolean).join(', ')}
+                            {[lead.account_city, lead.account_state, lead.account_country].filter(Boolean).join(', ')}
                           </span>
                         )}
                       </div>

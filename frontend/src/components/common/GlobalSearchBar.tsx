@@ -47,14 +47,16 @@ export const GlobalSearchBar: React.FC<GlobalSearchBarProps> = ({
       const name = (a.company_name || a.name || '').toLowerCase();
       const domain = (a.domain || a.website || '').toLowerCase();
       const ind = (a.industry || '').toLowerCase();
-      return name.includes(q) || domain.includes(q) || ind.includes(q);
+      const loc = `${a.city || ''} ${a.state || ''} ${a.country || ''}`.toLowerCase();
+      return name.includes(q) || domain.includes(q) || ind.includes(q) || loc.includes(q);
     }).slice(0, 4);
 
     const matchedLeads = leads.filter(l => {
       const acc = (l.account_name || '').toLowerCase();
       const contact = (l.contact_name || l.contact_email || '').toLowerCase();
       const prod = (l.primary_product_name || l.primary_product_code || '').toLowerCase();
-      return acc.includes(q) || contact.includes(q) || prod.includes(q);
+      const loc = `${l.account_city || ''} ${l.account_state || ''} ${l.account_country || ''}`.toLowerCase();
+      return acc.includes(q) || contact.includes(q) || prod.includes(q) || loc.includes(q);
     }).slice(0, 4);
 
     const matchedOpportunities = opportunities.filter(o => {
@@ -222,7 +224,7 @@ export const GlobalSearchBar: React.FC<GlobalSearchBarProps> = ({
                           {acc.company_name || acc.name}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                          {acc.industry || 'Account'} {acc.country ? `• ${acc.country}` : ''}
+                          {acc.industry || 'Account'} {[acc.city, acc.state, acc.country].filter(Boolean).length > 0 ? `• ${[acc.city, acc.state, acc.country].filter(Boolean).join(', ')}` : ''}
                         </div>
                       </div>
                       <ArrowRight size={13} color="var(--text-muted)" />

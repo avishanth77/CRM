@@ -32,3 +32,23 @@ Thumbs.db
 
 # Extracted temp files
 *_extracted.txt
+
+# Root specification docs, PDFs, videos, and generator scripts
+/*.pdf
+/*.docx
+/*.gif
+/*.webp
+/*.png
+/*.html
+/PLAN
+/POST_NEGOTIATION_IMPLEMENTATION_PLAN.md
+/SYSTEM_DOCUMENTATION.md
+/TEXOL_CRM_PROCESS_INPUT_DATA_PAGE_WISE.txt
+/TEXOL_CRM_Postman_Collection.json
+/texol_crm_data_dictionary_and_field_guide.*
+/texol_pld_crm_technical_foundation_plan.md
+/build_*_plan_pdf.py
+/generate_pdf.py
+/view_test_recording.html
+if the icp failed don't add the lea.txt
+build_*.py

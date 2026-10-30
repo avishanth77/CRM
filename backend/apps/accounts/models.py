@@ -32,6 +32,7 @@ class Account(BaseModel):
     state = models.CharField(max_length=128, blank=True, null=True)
     city = models.CharField(max_length=128, blank=True, null=True)
     territory = models.CharField(max_length=128, blank=True, null=True, db_index=True, help_text="Assigned business territory or region")
+    address = models.TextField(blank=True, null=True, help_text="Street address / building / headquarters location")
     company_size_band = models.CharField(max_length=64, blank=True, null=True)
     website = models.URLField(max_length=255, blank=True, null=True)
     domain = models.CharField(max_length=255, blank=True, null=True, db_index=True)

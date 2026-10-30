@@ -83,3 +83,23 @@ class Territory(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+
+class Industry(BaseModel):
+    """
+    Master business industry / vertical configured dynamically or by Admin.
+    Used for account classification, ICP sector evaluations, sales scoping, and analytics.
+    """
+    name = models.CharField(max_length=128, unique=True)
+    code = models.CharField(max_length=64, unique=True)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name_plural = 'Industries'
+
+    def __str__(self):
+        return self.name
+

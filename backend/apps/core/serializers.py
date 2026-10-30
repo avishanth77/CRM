@@ -1,6 +1,6 @@
 import re
 from rest_framework import serializers
-from apps.core.models import Territory
+from apps.core.models import Territory, Industry
 from apps.authentication.models import User
 
 
@@ -40,3 +40,35 @@ class TerritorySerializer(serializers.ModelSerializer):
                 counter += 1
             attrs['code'] = code
         return attrs
+
+
+class IndustrySerializer(serializers.ModelSerializer):
+    code = serializers.CharField(max_length=64, required=False)
+    is_active = serializers.BooleanField(default=True, required=False)
+
+    class Meta:
+        model = Industry
+        fields = [
+            'id', 'name', 'code', 'description', 'is_active', 'sort_order', 'created_at', 'updated_at'
+        ]
+
+    def validate(self, attrs):
+        name = attrs.get('name')
+        if name:
+            attrs['name'] = name.strip()
+        attrs.setdefault('is_active', True)
+        code = attrs.get('code')
+        if not code and name:
+            base_code = re.sub(r'[^A-Z0-9_]+', '_', name.strip().upper()).strip('_')
+            if not base_code:
+                base_code = 'INDUSTRY'
+            code = base_code
+            counter = 1
+            while Industry.objects.filter(code=code).exclude(id=self.instance.id if self.instance else None).exists():
+                code = f"{base_code}_{counter}"
+                counter += 1
+            attrs['code'] = code
+        elif code:
+            attrs['code'] = code.strip().upper()
+        return attrs
+

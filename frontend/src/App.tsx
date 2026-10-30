@@ -5,21 +5,21 @@ import {
   ShieldCheck, Settings, Sparkles, 
   PlusCircle, Briefcase, 
   Check, X, Compass, CheckSquare, Handshake, 
-  FlaskConical, History, Share2, Gauge, Send, Database, Monitor, FileText,
-  Building2, ListTodo, LogOut, UserCheck, ShieldAlert, UserPlus, Package, User,
-  Sun, Moon, Calendar, Clock, RotateCcw, FolderKanban,
-  CheckCircle2, AlertTriangle, ExternalLink, Globe, MapPin
+  FlaskConical, History, Share2, Gauge, Send, Monitor, FileText,
+  Building2, ListTodo, LogOut, UserCheck, ShieldAlert, UserPlus, Package, User, Plus,
+  Sun, Moon, Calendar, Clock, RotateCcw, FolderKanban, Users,
+  CheckCircle2, AlertTriangle, ExternalLink, Globe, MapPin, Edit2, Trash2,
+  ChevronDown, Workflow
 } from 'lucide-react';
 import { api } from './services/api';
 import type { 
   Lead, Product, Discovery, SQLHandoff, Opportunity, Demo, POC, OperationalMetrics,
-  AuthUser, LeadSource, ICPRule, ICPProfile, Territory
+  AuthUser, LeadSource, ICPRule, ICPProfile, Territory, Industry
 } from './services/api';
 import { LoginPage } from './components/LoginPage';
 import { MultiTouchAttributionView } from './components/MultiTouchAttributionView';
 import { FunnelLeakageVelocityView } from './components/FunnelLeakageVelocityView';
 import { OmniChannelCommsView } from './components/OmniChannelCommsView';
-import { ERPSyncGatewayView } from './components/ERPSyncGatewayView';
 import { PLDQualificationWorkspace } from './components/PLDQualificationWorkspace';
 import { AdminEngineStudio } from './components/AdminEngineStudio';
 import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
@@ -35,6 +35,7 @@ import { NurtureWorkspace } from './components/NurtureWorkspace';
 import { NotificationCenter } from './components/NotificationCenter';
 import { MyWorkQueueWorkspace } from './components/MyWorkQueueWorkspace';
 import { Account360Workspace } from './components/Account360Workspace';
+import { MyLeadsWorkspace, isLeadAssignedToUser, getLeadStageMeta } from './components/MyLeadsWorkspace';
 import { AnalyticsHubView } from './components/AnalyticsHubView';
 import { AdminStaffPartnersWorkspace } from './components/AdminStaffPartnersWorkspace';
 import { AdminLeadsDirectoryWorkspace } from './components/AdminLeadsDirectoryWorkspace';
@@ -42,10 +43,15 @@ import { WebsiteLeadsTriageWorkspace } from './components/WebsiteLeadsTriageWork
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { InAppAlertContainer, inAppAlert } from './components/common/InAppAlert';
 import { GlobalSearchBar } from './components/common/GlobalSearchBar';
+import { AddProductModal } from './components/common/AddProductModal';
+import { AddIndustryModal } from './components/common/AddIndustryModal';
+import { EditProductModal } from './components/common/EditProductModal';
+import { LocationHierarchySelector } from './components/common/LocationHierarchySelector';
 
 export type TabType = 
   | 'dashboard' 
   | 'work-queue' 
+  | 'leads'
   | 'account-360' 
   | 'queue' 
   | 'discovery' 
@@ -63,7 +69,6 @@ export type TabType =
   | 'attribution' 
   | 'leakage' 
   | 'communications' 
-  | 'erp' 
   | 'staff-partners'
   | 'admin-leads'
   | 'website-leads';
@@ -80,6 +85,11 @@ export const isTabAllowedForUser = (tabId: string, user: AuthUser | null): boole
   // Website Leads Triage is accessible to Management and Sales Managers
   if (tabId === 'website-leads') {
     return ['ADMIN', 'MANAGEMENT', 'SALES_MANAGER'].includes(user.role);
+  }
+
+  // Leads Workspace is accessible to all internal authenticated staff
+  if (tabId === 'leads') {
+    return true;
   }
 
   // Use the canonical backend allowed_workspaces from Section 9.4
@@ -251,13 +261,57 @@ export default function App() {
   const [studioView, setStudioView] = useState<'modules' | 'engine'>('engine');
   const [nurtureInitialTab, setNurtureInitialTab] = useState<'LOST_OPPORTUNITIES' | 'ICP_FAILED' | 'NURTURE_LEADS' | 'INTELLIGENCE_MATRIX'>('LOST_OPPORTUNITIES');
 
+  // Collapsible PLD Pipeline dropdown state
+  const [isStagesOpen, setIsStagesOpen] = useState<boolean>(() => {
+    const saved = localStorage.getItem('texol_crm_stages_dropdown_open');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const toggleStagesDropdown = () => {
+    setIsStagesOpen(prev => {
+      const next = !prev;
+      localStorage.setItem('texol_crm_stages_dropdown_open', String(next));
+      return next;
+    });
+  };
+
+  // Collapsible Sales Pipeline dropdown state
+  const [isSalesPipelineOpen, setIsSalesPipelineOpen] = useState<boolean>(() => {
+    const saved = localStorage.getItem('texol_crm_sales_dropdown_open');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const toggleSalesPipelineDropdown = () => {
+    setIsSalesPipelineOpen(prev => {
+      const next = !prev;
+      localStorage.setItem('texol_crm_sales_dropdown_open', String(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const pldStageTabs: TabType[] = ['queue', 'discovery', 'demo', 'poc'];
+    if (pldStageTabs.includes(activeTab) && !isStagesOpen) {
+      setIsStagesOpen(true);
+      localStorage.setItem('texol_crm_stages_dropdown_open', 'true');
+    }
+
+    const salesStageTabs: TabType[] = ['sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle'];
+    if (salesStageTabs.includes(activeTab) && !isSalesPipelineOpen) {
+      setIsSalesPipelineOpen(true);
+      localStorage.setItem('texol_crm_sales_dropdown_open', 'true');
+    }
+  }, [activeTab]);
+
   // New Lead Form State
   const [accountSelectionMode, setAccountSelectionMode] = useState<'create' | 'existing'>('create');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newDomain, setNewDomain] = useState('');
   const [newCity, setNewCity] = useState('');
-  const [newCountry, setNewCountry] = useState('');
+  const [newState, setNewState] = useState('');
+  const [newCountry, setNewCountry] = useState('Saudi Arabia');
+  const [newAddress, setNewAddress] = useState('');
   const [newIndustry, setNewIndustry] = useState('FMCG');
   const [newEmployees, setNewEmployees] = useState(100);
   const [newContactName, setNewContactName] = useState('');
@@ -275,6 +329,61 @@ export default function App() {
   const [showAddSourceModal, setShowAddSourceModal] = useState<boolean>(false);
   const [newSourceName, setNewSourceName] = useState<string>('');
   const [savingNewSource, setSavingNewSource] = useState<boolean>(false);
+  const [showAddProductModal, setShowAddProductModal] = useState<boolean>(false);
+  const [industries, setIndustries] = useState<Industry[]>([
+    { id: '1', name: 'FMCG', code: 'FMCG', is_active: true },
+    { id: '2', name: 'Bakery', code: 'BAKERY', is_active: true },
+    { id: '3', name: 'Food & Beverage', code: 'FOOD_BEVERAGE', is_active: true },
+    { id: '4', name: 'Wholesale Distribution', code: 'WHOLESALE_DISTRIBUTION', is_active: true },
+    { id: '5', name: 'Distribution', code: 'DISTRIBUTION', is_active: true },
+    { id: '6', name: 'Dairy', code: 'DAIRY', is_active: true },
+    { id: '7', name: 'Frozen Food', code: 'FROZEN_FOOD', is_active: true },
+    { id: '8', name: 'Retail', code: 'RETAIL', is_active: true },
+    { id: '9', name: 'Logistics & Transport', code: 'LOGISTICS_TRANSPORT', is_active: true },
+    { id: '10', name: 'Pharmaceuticals & Healthcare', code: 'PHARMACEUTICALS_HEALTHCARE', is_active: true },
+    { id: '11', name: 'Cold Chain Distribution', code: 'COLD_CHAIN_DISTRIBUTION', is_active: true },
+  ]);
+  const [showAddIndustryModal, setShowAddIndustryModal] = useState<boolean>(false);
+
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  const handleProductCreated = (newProduct: Product) => {
+    setProducts(prev => {
+      if (prev.some(p => p.id === newProduct.id)) return prev;
+      return [...prev, newProduct];
+    });
+    setNewProductId(newProduct.id);
+    setNewProductCode(newProduct.code);
+    setRegProductCode(newProduct.code);
+  };
+
+  const handleProductUpdated = (updatedProd: Product) => {
+    setProducts(prev => prev.map(p => p.id === updatedProd.id ? updatedProd : p));
+    if (newProductId === updatedProd.id) {
+      setNewProductCode(updatedProd.code);
+    }
+  };
+
+  const handleProductDeleted = (deletedId: string) => {
+    setProducts(prev => {
+      const remaining = prev.filter(p => p.id !== deletedId);
+      if (newProductId === deletedId) {
+        setNewProductId(remaining[0]?.id || '');
+        setNewProductCode(remaining[0]?.code || '');
+      }
+      return remaining;
+    });
+  };
+
+  const handleIndustryCreated = (newInd: Industry) => {
+    setIndustries(prev => {
+      if (prev.some(i => i.id === newInd.id || i.name.toLowerCase() === newInd.name.toLowerCase())) {
+        return prev;
+      }
+      return [...prev, newInd];
+    });
+    setNewIndustry(newInd.name);
+  };
   const [newIsTarget, setNewIsTarget] = useState(false);
   const [newTargetTier, setNewTargetTier] = useState('TIER_1');
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
@@ -583,7 +692,7 @@ export default function App() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [fData, lData, pData, dData, demoData, sData, oData, pocData, aData, accData, opMetrics, uData, pListData, srcData, terrData] = await Promise.all([
+      const [fData, lData, pData, dData, demoData, sData, oData, pocData, aData, accData, opMetrics, uData, pListData, srcData, terrData, indData] = await Promise.all([
         api.getFunnelAnalytics().catch(() => null),
         api.getLeads().catch(() => ({ results: [] })),
         api.getProducts().catch(() => ({ results: [] })),
@@ -598,7 +707,8 @@ export default function App() {
         api.getUsers().catch(() => ({ results: [] })),
         api.getPartners().catch(() => ({ results: [] })),
         api.getLeadSources().catch(() => ({ results: [] })),
-        api.getTerritories().catch(() => ({ results: [] }))
+        api.getTerritories().catch(() => ({ results: [] })),
+        api.getIndustries().catch(() => ({ results: [] }))
       ]);
       setFunnelData(fData);
       setLeads(lData.results);
@@ -606,6 +716,10 @@ export default function App() {
       setLeadSources(fetchedSources);
       const fetchedTerritories = Array.isArray(terrData) ? terrData : (terrData?.results || []);
       setTerritories(fetchedTerritories);
+      const fetchedIndustries = Array.isArray(indData) ? indData : (indData?.results || []);
+      if (fetchedIndustries.length > 0) {
+        setIndustries(fetchedIndustries);
+      }
       setProducts(pData.results);
       if (pData.results && pData.results.length > 0 && !newProductId) {
         setNewProductId(pData.results[0].id);
@@ -724,9 +838,11 @@ export default function App() {
           industry: newIndustry,
           employees_count: Number(newEmployees),
           distribution_centers_count: Number(icpDistributionCenters || 1),
-          city: newCity.trim() || undefined,
           country: newCountry.trim() || undefined,
+          state: newState.trim() || undefined,
+          city: newCity.trim() || undefined,
           territory: newLeadTerritory || undefined,
+          address: newAddress.trim() || undefined,
           is_target_account: newIsTarget,
           target_tier: newIsTarget ? newTargetTier : undefined
         });
@@ -831,8 +947,10 @@ export default function App() {
       setNewLeadTerritory('');
       setNewCompanyName('');
       setNewDomain('');
+      setNewCountry('Saudi Arabia');
+      setNewState('');
       setNewCity('');
-      setNewCountry('');
+      setNewAddress('');
       setSelectedAccountId('');
       setAccountSelectionMode('create');
       setNewContactName('');
@@ -1000,132 +1118,367 @@ export default function App() {
             </button>
           )}
 
-          {isTabAllowed('account-360') && (
+          {/* Leads Directory (Replaces Account 360 - Shows leads assigned to logged user) */}
+          {isTabAllowed('leads') && (
             <button 
-              className={`btn ${activeTab === 'account-360' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('account-360')}
+              className={`btn ${activeTab === 'leads' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setActiveTab('leads')}
               style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
+              title="View all leads assigned to you"
             >
-              <Building2 size={16} />
-              Account 360
-              <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{accounts.length}</span>
+              <Users size={16} />
+              <span>Leads</span>
+              {(() => {
+                const myCount = leads.filter(l => isLeadAssignedToUser(l, currentUser)).length;
+                return (
+                  <span className="badge badge-primary" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>
+                    {myCount}
+                  </span>
+                );
+              })()}
             </button>
           )}
 
-          {isTabAllowed('queue') && (
-            <button 
-              className={`btn ${activeTab === 'queue' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => { setActiveTab('queue'); if (visibleLeads.length > 0) handleInspectLead(visibleLeads[0]); }}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <Layers size={16} />
-              PLD Work Queue
-              <span className="badge badge-info" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{visibleLeads.length}</span>
-            </button>
-          )}
+          {/* PLD Stages Dropdown (PLD Work Queue, Discovery & Mapping, Demo Workspace, POC Pilot Trials) */}
+          {(() => {
+            const pldTabs: TabType[] = ['queue', 'discovery', 'demo', 'poc'];
+            const hasAnyPldAccess = pldTabs.some(t => isTabAllowed(t));
+            if (!hasAnyPldAccess) return null;
 
-          {isTabAllowed('discovery') && (
-            <button 
-              className={`btn ${activeTab === 'discovery' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('discovery')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <Compass size={16} />
-              Discovery &amp; Mapping
-              <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{discoveries.length}</span>
-            </button>
-          )}
+            const isPldActive = pldTabs.includes(activeTab);
+            const totalPldCount = visibleLeads.length + discoveries.length + demos.length + pocs.length;
 
-          {isTabAllowed('demo') && (
-            <button 
-              className={`btn ${activeTab === 'demo' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('demo')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <Monitor size={16} />
-              Demo Workspace
-              <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{demos.length}</span>
-            </button>
-          )}
+            const getActivePldName = () => {
+              switch (activeTab) {
+                case 'queue': return 'PLD Queue';
+                case 'discovery': return 'Discovery';
+                case 'demo': return 'Demo';
+                case 'poc': return 'POC Pilot';
+                default: return '';
+              }
+            };
 
-          {isTabAllowed('poc') && (
-            <button 
-              className={`btn ${activeTab === 'poc' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('poc')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <FlaskConical size={16} />
-              POC Pilot Trials
-              <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{pocs.length}</span>
-            </button>
-          )}
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {/* Dropdown Toggle Button */}
+                <button
+                  type="button"
+                  className={`btn ${isPldActive && !isStagesOpen ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={toggleStagesDropdown}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    borderColor: isPldActive ? 'var(--primary)' : undefined,
+                    background: isPldActive && !isStagesOpen 
+                      ? 'var(--primary)' 
+                      : isPldActive 
+                        ? 'rgba(79, 70, 229, 0.08)' 
+                        : undefined,
+                    color: isPldActive && !isStagesOpen ? '#FFFFFF' : undefined,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Toggle PLD Pipeline dropdown (PLD Work Queue, Discovery, Demo, POC)"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <Workflow size={16} color={isPldActive && !isStagesOpen ? '#FFFFFF' : 'var(--primary)'} />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      PLD Pipeline
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    {!isStagesOpen && isPldActive && (
+                      <span 
+                        className="badge badge-primary" 
+                        style={{ 
+                          fontSize: '0.62rem', 
+                          padding: '1px 6px',
+                          background: 'rgba(255, 255, 255, 0.25)',
+                          color: '#FFFFFF'
+                        }}
+                      >
+                        {getActivePldName()}
+                      </span>
+                    )}
+                    {totalPldCount > 0 && (
+                      <span 
+                        className="badge badge-neutral" 
+                        style={{ 
+                          fontSize: '0.68rem', 
+                          padding: '1px 6px',
+                          background: isPldActive && !isStagesOpen ? 'rgba(255, 255, 255, 0.2)' : undefined,
+                          color: isPldActive && !isStagesOpen ? '#FFFFFF' : undefined
+                        }}
+                        title={`${totalPldCount} items in PLD pipeline`}
+                      >
+                        {totalPldCount}
+                      </span>
+                    )}
+                    <ChevronDown 
+                      size={14} 
+                      style={{ 
+                        transform: isStagesOpen ? 'rotate(0deg)' : 'rotate(-90deg)', 
+                        transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                        color: isPldActive && !isStagesOpen ? '#FFFFFF' : 'var(--text-muted)'
+                      }} 
+                    />
+                  </div>
+                </button>
 
-          {isTabAllowed('sql') && (
-            <button 
-              className={`btn ${activeTab === 'sql' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('sql')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <CheckSquare size={16} />
-              SQL Gate Readiness
-              <span className="badge badge-warning" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{sqlHandoffs.filter(h => h.status === 'PENDING').length}</span>
-            </button>
-          )}
+                {/* Dropdown Items (Collapsible) */}
+                {isStagesOpen && (
+                  <div 
+                    style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '3px', 
+                      marginLeft: '8px', 
+                      paddingLeft: '8px', 
+                      borderLeft: '2px solid rgba(79, 70, 229, 0.25)',
+                      paddingTop: '2px',
+                      paddingBottom: '2px'
+                    }}
+                  >
+                    {isTabAllowed('queue') && (
+                      <button 
+                        className={`btn ${activeTab === 'queue' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => { setActiveTab('queue'); if (visibleLeads.length > 0) handleInspectLead(visibleLeads[0]); }}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <Layers size={15} />
+                        PLD Work Queue
+                        <span className="badge badge-info" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{visibleLeads.length}</span>
+                      </button>
+                    )}
 
-          {isTabAllowed('opportunities') && (
-            <button 
-              className={`btn ${activeTab === 'opportunities' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('opportunities')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <Briefcase size={16} />
-              Opportunities
-              <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{opportunities.length}</span>
-            </button>
-          )}
+                    {isTabAllowed('discovery') && (
+                      <button 
+                        className={`btn ${activeTab === 'discovery' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('discovery')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <Compass size={15} />
+                        Discovery &amp; Mapping
+                        <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{discoveries.length}</span>
+                      </button>
+                    )}
 
-          {isTabAllowed('proposals') && (
-            <button 
-              className={`btn ${activeTab === 'proposals' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('proposals')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <FileText size={16} />
-              Commercial Proposals
-            </button>
-          )}
+                    {isTabAllowed('demo') && (
+                      <button 
+                        className={`btn ${activeTab === 'demo' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('demo')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <Monitor size={15} />
+                        Demo Workspace
+                        <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{demos.length}</span>
+                      </button>
+                    )}
 
-          {isTabAllowed('negotiation') && (
-            <button 
-              className={`btn ${activeTab === 'negotiation' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('negotiation')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <Handshake size={16} />
-              Negotiation Stage
-              {opportunities.filter(o => o.status === 'OPEN' && (o.stage_code === 'OPP_NEGOTIATION' || o.stage_name?.includes('Negotiation'))).length > 0 && (
-                <span className="badge badge-warning" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>
-                  {opportunities.filter(o => o.status === 'OPEN' && (o.stage_code === 'OPP_NEGOTIATION' || o.stage_name?.includes('Negotiation'))).length}
-                </span>
-              )}
-            </button>
-          )}
+                    {isTabAllowed('poc') && (
+                      <button 
+                        className={`btn ${activeTab === 'poc' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('poc')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <FlaskConical size={15} />
+                        POC Pilot Trials
+                        <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{pocs.length}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
-          {isTabAllowed('customer-lifecycle') && (
-            <button 
-              className={`btn ${activeTab === 'customer-lifecycle' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('customer-lifecycle')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <Layers size={16} />
-              Customer Lifecycle
-              {opportunities.filter(o => o.status === 'WON').length > 0 && (
-                <span className="badge badge-success" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>
-                  {opportunities.filter(o => o.status === 'WON').length}
-                </span>
-              )}
-            </button>
-          )}
+          {/* Sales Pipeline Dropdown (SQL Gate Readiness, Opportunities, Commercial Proposals, Negotiation Stage, Customer Lifecycle) */}
+          {(() => {
+            const salesTabs: TabType[] = ['sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle'];
+            const hasAnySalesAccess = salesTabs.some(t => isTabAllowed(t));
+            if (!hasAnySalesAccess) return null;
+
+            const isSalesActive = salesTabs.includes(activeTab);
+            const pendingSqlCount = sqlHandoffs.filter(h => h.status === 'PENDING').length;
+            const openNegotiationCount = opportunities.filter(o => o.status === 'OPEN' && (o.stage_code === 'OPP_NEGOTIATION' || o.stage_name?.includes('Negotiation'))).length;
+            const wonCustomerCount = opportunities.filter(o => o.status === 'WON').length;
+            const totalSalesCount = pendingSqlCount + opportunities.length;
+
+            const getActiveSalesName = () => {
+              switch (activeTab) {
+                case 'sql': return 'SQL Gate';
+                case 'opportunities': return 'Opportunities';
+                case 'proposals': return 'Proposals';
+                case 'negotiation': return 'Negotiation';
+                case 'customer-lifecycle': return 'Lifecycle';
+                default: return '';
+              }
+            };
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {/* Dropdown Toggle Button */}
+                <button
+                  type="button"
+                  className={`btn ${isSalesActive && !isSalesPipelineOpen ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={toggleSalesPipelineDropdown}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    borderColor: isSalesActive ? 'var(--primary)' : undefined,
+                    background: isSalesActive && !isSalesPipelineOpen 
+                      ? 'var(--primary)' 
+                      : isSalesActive 
+                        ? 'rgba(79, 70, 229, 0.08)' 
+                        : undefined,
+                    color: isSalesActive && !isSalesPipelineOpen ? '#FFFFFF' : undefined,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Toggle Sales Pipeline dropdown (SQL Gate, Opportunities, Proposals, Negotiation, Lifecycle)"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <Briefcase size={16} color={isSalesActive && !isSalesPipelineOpen ? '#FFFFFF' : 'var(--primary)'} />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Sales Pipeline
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    {!isSalesPipelineOpen && isSalesActive && (
+                      <span 
+                        className="badge badge-primary" 
+                        style={{ 
+                          fontSize: '0.62rem', 
+                          padding: '1px 6px',
+                          background: 'rgba(255, 255, 255, 0.25)',
+                          color: '#FFFFFF'
+                        }}
+                      >
+                        {getActiveSalesName()}
+                      </span>
+                    )}
+                    {totalSalesCount > 0 && (
+                      <span 
+                        className="badge badge-neutral" 
+                        style={{ 
+                          fontSize: '0.68rem', 
+                          padding: '1px 6px',
+                          background: isSalesActive && !isSalesPipelineOpen ? 'rgba(255, 255, 255, 0.2)' : undefined,
+                          color: isSalesActive && !isSalesPipelineOpen ? '#FFFFFF' : undefined
+                        }}
+                        title={`${totalSalesCount} items in sales pipeline`}
+                      >
+                        {totalSalesCount}
+                      </span>
+                    )}
+                    <ChevronDown 
+                      size={14} 
+                      style={{ 
+                        transform: isSalesPipelineOpen ? 'rotate(0deg)' : 'rotate(-90deg)', 
+                        transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                        color: isSalesActive && !isSalesPipelineOpen ? '#FFFFFF' : 'var(--text-muted)'
+                      }} 
+                    />
+                  </div>
+                </button>
+
+                {/* Dropdown Items (Collapsible) */}
+                {isSalesPipelineOpen && (
+                  <div 
+                    style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '3px', 
+                      marginLeft: '8px', 
+                      paddingLeft: '8px', 
+                      borderLeft: '2px solid rgba(79, 70, 229, 0.25)',
+                      paddingTop: '2px',
+                      paddingBottom: '2px'
+                    }}
+                  >
+                    {isTabAllowed('sql') && (
+                      <button 
+                        className={`btn ${activeTab === 'sql' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('sql')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <CheckSquare size={15} />
+                        SQL Gate Readiness
+                        {pendingSqlCount > 0 && (
+                          <span className="badge badge-warning" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{pendingSqlCount}</span>
+                        )}
+                      </button>
+                    )}
+
+                    {isTabAllowed('opportunities') && (
+                      <button 
+                        className={`btn ${activeTab === 'opportunities' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('opportunities')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <Briefcase size={15} />
+                        Opportunities
+                        <span className="badge badge-neutral" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>{opportunities.length}</span>
+                      </button>
+                    )}
+
+                    {isTabAllowed('proposals') && (
+                      <button 
+                        className={`btn ${activeTab === 'proposals' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('proposals')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <FileText size={15} />
+                        Commercial Proposals
+                      </button>
+                    )}
+
+                    {isTabAllowed('negotiation') && (
+                      <button 
+                        className={`btn ${activeTab === 'negotiation' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('negotiation')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <Handshake size={15} />
+                        Negotiation Stage
+                        {openNegotiationCount > 0 && (
+                          <span className="badge badge-warning" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>
+                            {openNegotiationCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    {isTabAllowed('customer-lifecycle') && (
+                      <button 
+                        className={`btn ${activeTab === 'customer-lifecycle' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setActiveTab('customer-lifecycle')}
+                        style={{ justifyContent: 'flex-start', padding: '7px 10px', fontSize: '0.80rem' }}
+                      >
+                        <Layers size={15} />
+                        Customer Lifecycle
+                        {wonCustomerCount > 0 && (
+                          <span className="badge badge-success" style={{ marginLeft: 'auto', fontSize: '0.68rem' }}>
+                            {wonCustomerCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {isTabAllowed('nurture-pool') && (
             <button 
@@ -1148,7 +1501,7 @@ export default function App() {
           )}
 
           {/* Phase 3 Tabs */}
-          {(isTabAllowed('attribution') || isTabAllowed('leakage') || isTabAllowed('communications') || isTabAllowed('erp')) && (
+          {(isTabAllowed('attribution') || isTabAllowed('leakage') || isTabAllowed('communications')) && (
             <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '8px 0' }} />
           )}
 
@@ -1182,17 +1535,6 @@ export default function App() {
             >
               <Send size={16} />
               Omni-Channel Comms
-            </button>
-          )}
-
-          {isTabAllowed('erp') && (
-            <button 
-              className={`btn ${activeTab === 'erp' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab('erp')}
-              style={{ justifyContent: 'flex-start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              <Database size={16} />
-              ERP Customer Sync
             </button>
           )}
 
@@ -1317,7 +1659,7 @@ export default function App() {
 
           <div style={{ display: 'flex', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)' }}>
             <button
-              onClick={handleLogout}
+              onClick={() => handleLogout()}
               className="btn btn-outline"
               style={{ width: '100%', padding: '6px 12px', fontSize: '0.75rem', color: '#F43F5E', borderColor: 'rgba(244, 63, 94, 0.3)', justifyContent: 'center' }}
               title="Sign Out"
@@ -1990,7 +2332,25 @@ export default function App() {
             />
           )}
 
-          {/* TAB: ACCOUNT 360 (PHASE 9) */}
+          {/* TAB: LEADS (ASSIGNED LEADS DIRECTORY WITH STAGE REDIRECTION) */}
+          {activeTab === 'leads' && (
+            <div className="animate-fade-in">
+              <MyLeadsWorkspace
+                leads={leads}
+                products={products}
+                currentUser={currentUser}
+                onRefresh={loadData}
+                onNavigateToStage={(lead) => {
+                  setSelectedLead(lead);
+                  const stageMeta = getLeadStageMeta(lead);
+                  setActiveTab(stageMeta.tab as TabType);
+                }}
+                onCreateNewLead={() => setShowIntakeModal(true)}
+              />
+            </div>
+          )}
+
+          {/* TAB: ACCOUNT 360 (PHASE 9 - INTERNAL DETAILS VIEW) */}
           {activeTab === 'account-360' && (
             <Account360Workspace
               initialAccountId={selectedAccount360Id}
@@ -2248,7 +2608,7 @@ export default function App() {
                   </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button
                     className={`btn ${studioView === 'engine' ? 'btn-primary' : 'btn-outline'}`}
                     onClick={() => setStudioView('engine')}
@@ -2265,23 +2625,73 @@ export default function App() {
                     <Layers size={15} />
                     Modules &amp; Capabilities Catalog
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => setShowAddProductModal(true)}
+                    style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Add new commercial product"
+                  >
+                    <Plus size={15} />
+                    Add Product
+                  </button>
                 </div>
               </div>
 
               {studioView === 'engine' ? (
-                <AdminEngineStudio products={products} />
+                <AdminEngineStudio 
+                  products={products} 
+                  onProductCreated={handleProductCreated} 
+                  onProductUpdated={handleProductUpdated}
+                  onProductDeleted={handleProductDeleted}
+                />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {products.map(prod => (
                     <div key={prod.id} className="glass-panel" style={{ padding: '24px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{prod.name}</h2>
-                            <span className="badge badge-success">Status: {prod.status}</span>
-                            <span className="badge badge-info">Version 1.0 (Published)</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0 }}>{prod.name}</h2>
+                            <span className="badge badge-info">{prod.code}</span>
+                            <span className={`badge ${prod.status === 'ACTIVE' ? 'badge-success' : 'badge-warning'}`}>
+                              Status: {prod.status}
+                            </span>
+                            <span className="badge badge-primary">Version 1.0 (Published)</span>
                           </div>
-                          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>{prod.category}</div>
+                          {prod.category && (
+                            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                              Category: <strong>{prod.category}</strong>
+                            </div>
+                          )}
+                          {prod.description && (
+                            <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '6px', maxWidth: '650px', lineHeight: 1.4 }}>
+                              {prod.description}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => setEditingProduct(prod)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '6px 12px' }}
+                            title={`Edit ${prod.name}`}
+                          >
+                            <Edit2 size={13} />
+                            <span>Edit Product</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => setEditingProduct(prod)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '6px 12px', color: '#EF4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                            title={`Delete ${prod.name}`}
+                          >
+                            <Trash2 size={13} />
+                            <span>Delete</span>
+                          </button>
                         </div>
                       </div>
 
@@ -2373,12 +2783,6 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 13: ERP CUSTOMER SYNC */}
-          {activeTab === 'erp' && (
-            <div className="animate-fade-in">
-              <ERPSyncGatewayView accounts={accounts} onNotify={notifySuccess} />
-            </div>
-          )}
 
           {/* TAB 14: STAFF & PARTNERS MANAGEMENT (ADMIN) */}
           {activeTab === 'staff-partners' && (
@@ -2572,10 +2976,23 @@ export default function App() {
                       <option value="">-- Choose Existing Customer Account --</option>
                       {accounts.map(acc => (
                         <option key={acc.id} value={acc.id}>
-                          {acc.company_name} {acc.industry ? `(${acc.industry})` : ''} {acc.city ? `• ${acc.city}` : ''} {acc.country ? `• ${acc.country}` : ''}
+                          {acc.company_name} {acc.industry ? `(${acc.industry})` : ''} {[acc.address, acc.city, acc.state, acc.country].filter(Boolean).length > 0 ? `• ${[acc.address, acc.city, acc.state, acc.country].filter(Boolean).join(', ')}` : ''}
                         </option>
                       ))}
                     </select>
+                    {selectedAccountId && (() => {
+                      const acc = accounts.find(a => a.id === selectedAccountId);
+                      if (!acc) return null;
+                      return (
+                        <div style={{ marginTop: '8px', padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-subtle)', fontSize: '0.78rem' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{acc.company_name}</div>
+                          <div style={{ color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <MapPin size={13} color="var(--primary)" />
+                            <span>{[acc.address, acc.city, acc.state, acc.country, acc.territory].filter(Boolean).join(' • ') || 'No address/location recorded'}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                       Assign this new lead to an already established customer organization in the CRM.
                     </div>
@@ -2678,10 +3095,38 @@ export default function App() {
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div>
-                        <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Industry</label>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                          <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Industry Vertical</label>
+                          <button
+                            type="button"
+                            onClick={() => setShowAddIndustryModal(true)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--primary)',
+                              cursor: 'pointer',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '2px 4px',
+                              borderRadius: '4px'
+                            }}
+                            title="Add new industry vertical"
+                          >
+                            + Add Industry
+                          </button>
+                        </div>
                         <select 
                           value={newIndustry}
-                          onChange={(e) => setNewIndustry(e.target.value)}
+                          onChange={(e) => {
+                            if (e.target.value === '__NEW__') {
+                              setShowAddIndustryModal(true);
+                            } else {
+                              setNewIndustry(e.target.value);
+                            }
+                          }}
                           style={{
                             width: '100%',
                             padding: '8px 12px',
@@ -2689,19 +3134,16 @@ export default function App() {
                             background: 'var(--bg-surface)',
                             border: '1px solid var(--border-subtle)',
                             color: 'var(--text-primary)',
-                            marginTop: '4px',
-                            outline: 'none'
+                            marginTop: '2px',
+                            outline: 'none',
+                            fontSize: '0.82rem'
                           }}
                         >
-                          <option value="FMCG">FMCG</option>
-                          <option value="Bakery">Bakery</option>
-                          <option value="Food & Beverage">Food &amp; Beverage</option>
-                          <option value="Wholesale Distribution">Wholesale Distribution</option>
-                          <option value="Distribution">Distribution</option>
-                          <option value="Dairy">Dairy</option>
-                          <option value="Frozen Food">Frozen Food</option>
-                          <option value="Retail">Retail</option>
-                          <option value="Logistics">Logistics &amp; Transport</option>
+                          <option value="">-- Select Industry Sector --</option>
+                          {industries.map(ind => (
+                            <option key={ind.id || ind.code} value={ind.name}>{ind.name}</option>
+                          ))}
+                          <option value="__NEW__">+ Add Custom Industry...</option>
                         </select>
                       </div>
 
@@ -2725,71 +3167,22 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div>
-                        <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>City / Place</label>
-                        <input 
-                          type="text" 
-                          placeholder="e.g. Jeddah, Dammam, Dubai, Riyadh"
-                          value={newCity}
-                          onChange={(e) => setNewCity(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            background: 'var(--bg-surface)',
-                            border: '1px solid var(--border-subtle)',
-                            color: 'var(--text-primary)',
-                            marginTop: '4px',
-                            outline: 'none'
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Country</label>
-                        <input 
-                          type="text" 
-                          placeholder="e.g. Saudi Arabia, UAE, Qatar"
-                          value={newCountry}
-                          onChange={(e) => setNewCountry(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            background: 'var(--bg-surface)',
-                            border: '1px solid var(--border-subtle)',
-                            color: 'var(--text-primary)',
-                            marginTop: '4px',
-                            outline: 'none'
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Region / Territory</label>
-                      <select
-                        value={newLeadTerritory}
-                        onChange={(e) => setNewLeadTerritory(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: '8px',
-                          background: 'var(--bg-surface)',
-                          border: '1px solid var(--border-subtle)',
-                          color: 'var(--text-primary)',
-                          marginTop: '4px',
-                          outline: 'none',
-                          fontSize: '0.82rem'
-                        }}
-                      >
-                        <option value="">-- Select Region / Territory (Admin Defined) --</option>
-                        {territories.map(t => (
-                          <option key={t.id} value={t.name}>{t.name} ({t.country})</option>
-                        ))}
-                      </select>
-                    </div>
+                    <LocationHierarchySelector
+                      country={newCountry}
+                      onCountryChange={setNewCountry}
+                      state={newState}
+                      onStateChange={setNewState}
+                      city={newCity}
+                      onCityChange={setNewCity}
+                      territory={newLeadTerritory}
+                      onTerritoryChange={setNewLeadTerritory}
+                      territories={territories}
+                      showTerritory={true}
+                      address={newAddress}
+                      onAddressChange={setNewAddress}
+                      showAddress={true}
+                      variant="horizontal-2col"
+                    />
                   </div>
                 )}
               </div>
@@ -2992,16 +3385,41 @@ export default function App() {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Package size={14} color="var(--primary)" />
-                  <span>Product Name</span>
-                  <span style={{ color: '#EF4444' }}>*</span>
-                </label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Package size={14} color="var(--primary)" />
+                    <span>Product Name</span>
+                    <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddProductModal(true)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--primary)',
+                      cursor: 'pointer',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 6px',
+                      borderRadius: '4px'
+                    }}
+                  >
+                    + Add New Product
+                  </button>
+                </div>
                 <select 
                   required
                   value={newProductId || (products.find(p => p.code === newProductCode)?.id || '')}
                   onChange={(e) => {
                     const chosenId = e.target.value;
+                    if (chosenId === '__NEW__') {
+                      setShowAddProductModal(true);
+                      return;
+                    }
                     setNewProductId(chosenId);
                     const prod = products.find(p => p.id === chosenId);
                     if (prod) setNewProductCode(prod.code);
@@ -3013,7 +3431,7 @@ export default function App() {
                     background: 'var(--bg-surface)',
                     border: '1px solid var(--border-subtle)',
                     color: 'var(--text-primary)',
-                    marginTop: '6px',
+                    marginTop: '2px',
                     outline: 'none'
                   }}
                 >
@@ -3023,6 +3441,7 @@ export default function App() {
                       {p.name} ({p.code}){p.category ? ` • ${p.category}` : ''}
                     </option>
                   ))}
+                  <option value="__NEW__">+ Add Custom Product...</option>
                 </select>
               </div>
 
@@ -3720,7 +4139,13 @@ export default function App() {
                   <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Registered Product</label>
                   <select 
                     value={regProductCode}
-                    onChange={(e) => setRegProductCode(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === '__NEW__') {
+                        setShowAddProductModal(true);
+                      } else {
+                        setRegProductCode(e.target.value);
+                      }
+                    }}
                     style={{
                       width: '100%',
                       padding: '10px 14px',
@@ -3735,6 +4160,7 @@ export default function App() {
                     {products.map(p => (
                       <option key={p.id} value={p.code}>{p.name}</option>
                     ))}
+                    <option value="__NEW__">+ Add Custom Product...</option>
                   </select>
                 </div>
 
@@ -3892,6 +4318,32 @@ export default function App() {
         </div>,
         document.body
       )}
+
+      <AddProductModal
+        isOpen={showAddProductModal}
+        onClose={() => setShowAddProductModal(false)}
+        onProductCreated={handleProductCreated}
+      />
+
+      <AddIndustryModal
+        isOpen={showAddIndustryModal}
+        onClose={() => setShowAddIndustryModal(false)}
+        onIndustryCreated={handleIndustryCreated}
+      />
+
+      <EditProductModal
+        isOpen={Boolean(editingProduct)}
+        product={editingProduct}
+        onClose={() => setEditingProduct(null)}
+        onProductUpdated={(updatedProd) => {
+          handleProductUpdated(updatedProd);
+          setEditingProduct(null);
+        }}
+        onProductDeleted={(deletedId) => {
+          handleProductDeleted(deletedId);
+          setEditingProduct(null);
+        }}
+      />
 
     </div>
   );

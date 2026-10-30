@@ -72,6 +72,7 @@ export interface Product {
   code: string;
   name: string;
   category: string;
+  description?: string;
   status: string;
   modules?: Array<{
     id: string;
@@ -108,12 +109,56 @@ export interface LeadSource {
   is_active: boolean;
 }
 
+export interface Industry {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  is_active: boolean;
+  sort_order?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+
+export interface Account {
+  id: string;
+  company_name: string;
+  legal_name?: string;
+  trade_name?: string;
+  account_type?: string;
+  industry?: string;
+  sub_industry?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  territory?: string;
+  address?: string;
+  company_size_band?: string;
+  website?: string;
+  domain?: string;
+  phone?: string;
+  employees_count?: number;
+  distribution_centers_count?: number;
+  is_target_account?: boolean;
+  target_tier?: string;
+  source?: string;
+  partner?: string;
+  partner_name?: string;
+  primary_owner?: string;
+  primary_owner_name?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Lead {
   id: string;
   account: string;
   account_name: string;
-  account_city?: string;
   account_country?: string;
+  account_state?: string;
+  account_city?: string;
+  account_address?: string;
   territory?: string;
   contact?: string;
   contact_name?: string;
@@ -1788,6 +1833,17 @@ export const api = {
 
   // Products
   getProducts: () => request<{ results: Product[] }>('/products/'),
+  createProduct: (data: {
+    name: string;
+    code?: string;
+    category?: string;
+    description?: string;
+    status?: string;
+  }) => request<Product>('/products/', { method: 'POST', body: JSON.stringify(data) }),
+  updateProduct: (id: string, data: Partial<Product>) =>
+    request<Product>(`/products/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteProduct: (id: string) =>
+    request<{ message?: string }>(`/products/${id}/`, { method: 'DELETE' }),
   getProblems: () => request<{ results: any[] }>('/problems/'),
 
   // Configurations
@@ -2739,6 +2795,26 @@ export const api = {
     }),
   deleteTerritory: (id: string) =>
     request<{ message: string }>(`/territories/${id}/`, {
+      method: 'DELETE',
+    }),
+
+  // Master Industries & Vertical Sectors
+  getIndustries: (includeInactive = false) =>
+    request<{ count: number; results: Industry[] } | Industry[]>(
+      `/industries/${includeInactive ? '?include_inactive=true' : ''}`
+    ),
+  createIndustry: (data: { name: string; code?: string; description?: string }) =>
+    request<Industry>('/industries/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateIndustry: (id: string, data: Partial<Industry>) =>
+    request<Industry>(`/industries/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteIndustry: (id: string) =>
+    request<{ message: string }>(`/industries/${id}/`, {
       method: 'DELETE',
     }),
   createPartnerAdmin: (data: {

@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
-from apps.core.models import Territory
-from apps.core.serializers import TerritorySerializer
+from apps.core.models import Territory, Industry
+from apps.core.serializers import TerritorySerializer, IndustrySerializer
 from apps.authentication.models import User, UserRole
 from apps.audit_logging.models import AuditLog, AuditAction
 
@@ -73,3 +73,22 @@ class TerritoryViewSet(viewsets.ModelViewSet):
                 "Only Platform Administrators can delete territories."
             )
         instance.delete()
+
+
+class IndustryViewSet(viewsets.ModelViewSet):
+    """
+    CRUD ViewSet for Master Industries & Vertical Sectors.
+    Read: Available to all authenticated CRM staff for lead intake, qualification, and scoping.
+    Write: Available to all authenticated users so sales reps can add new industries dynamically while creating leads.
+    """
+    queryset = Industry.objects.all()
+    serializer_class = IndustrySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Industry.objects.all()
+        include_inactive = self.request.query_params.get('include_inactive')
+        if not (include_inactive and include_inactive.lower() in ['true', '1']):
+            qs = qs.filter(is_active=True)
+        return qs.order_by('sort_order', 'name')
+

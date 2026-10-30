@@ -3,66 +3,66 @@ from apps.authentication.models import User, UserRole
 
 ROLE_WORKSPACE_PERMISSIONS = {
     'ADMIN': [
-        'dashboard', 'work-queue', 'account-360', 'queue', 'discovery', 'demo', 
+        'dashboard', 'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 
         'poc', 'sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'partners', 'studio', 
-        'audit', 'attribution', 'leakage', 'communications', 'erp', 'staff-partners', 'admin-leads', 'website-leads'
+        'audit', 'attribution', 'leakage', 'communications', 'staff-partners', 'admin-leads', 'website-leads'
     ],
     'MANAGEMENT': [
-        'dashboard', 'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc',
+        'dashboard', 'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 'poc',
         'sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'attribution', 'leakage', 'audit', 'partners',
         'communications', 'admin-leads', 'website-leads'
     ],
     'SALES_MANAGER': [
-        'dashboard', 'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc',
+        'dashboard', 'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 'poc',
         'sql', 'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'leakage', 'communications', 'audit', 'admin-leads', 'website-leads'
     ],
     'SALES_BDM': [
-        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 'sql', 
+        'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 'poc', 'sql', 
         'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'communications'
     ],
     'ACCOUNT_EXECUTIVE': [
-        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 'sql', 
+        'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 'poc', 'sql', 
         'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'nurture-pool', 'communications'
     ],
     'PRESALES': [
-        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 
+        'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 'poc', 
         'opportunities', 'sql', 'communications'
     ],
     'PLD_EXECUTIVE': [
-        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 'poc', 
+        'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 'poc', 
         'opportunities', 'sql', 'communications'
     ],
     'SDR': [
-        'work-queue', 'account-360', 'queue', 'discovery', 'demo', 
+        'work-queue', 'leads', 'account-360', 'queue', 'discovery', 'demo', 
         'sql', 'communications'
     ],
     'SOLUTION_CONSULTANT': [
-        'work-queue', 'account-360', 'discovery', 'demo', 'poc', 
+        'work-queue', 'leads', 'account-360', 'discovery', 'demo', 'poc', 
         'opportunities', 'sql', 'communications'
     ],
     'SOLUTIONS_CONSULTANT': [
-        'work-queue', 'account-360', 'discovery', 'demo', 'poc', 
+        'work-queue', 'leads', 'account-360', 'discovery', 'demo', 'poc', 
         'opportunities', 'sql', 'communications'
     ],
     'PRODUCT_MANAGER': [
-        'studio', 'dashboard', 'work-queue', 'account-360', 'queue',
+        'studio', 'dashboard', 'work-queue', 'leads', 'account-360', 'queue',
         'discovery', 'demo', 'poc'
     ],
     'PARTNER_MANAGER': [
-        'partners', 'dashboard', 'staff-partners', 'work-queue', 'account-360',
+        'partners', 'dashboard', 'staff-partners', 'work-queue', 'leads', 'account-360',
         'opportunities', 'proposals', 'negotiation', 'customer-lifecycle', 'attribution'
     ],
     'CUSTOMER_SUCCESS': [
-        'account-360', 'work-queue', 'customer-lifecycle', 'communications', 'dashboard', 'opportunities'
+        'leads', 'account-360', 'work-queue', 'customer-lifecycle', 'communications', 'dashboard', 'opportunities'
     ],
     'MARKETING': [
-        'dashboard', 'attribution', 'leakage', 'nurture-pool', 'work-queue', 'account-360', 'communications'
+        'dashboard', 'attribution', 'leakage', 'nurture-pool', 'work-queue', 'leads', 'account-360', 'communications'
     ],
     'FINANCE': [
-        'dashboard', 'opportunities', 'proposals', 'negotiation', 'erp', 'account-360', 'audit'
+        'dashboard', 'opportunities', 'proposals', 'negotiation', 'leads', 'account-360', 'audit'
     ],
     'DEPLOYMENT_ENGINEER': [
-        'work-queue', 'poc', 'demo', 'discovery', 'communications'
+        'work-queue', 'leads', 'poc', 'demo', 'discovery', 'communications'
     ],
     'PARTNER_USER': [
         'partners'

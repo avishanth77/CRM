@@ -2,22 +2,36 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   ShieldCheck, Scale, FileText, Plus, Edit2, 
-  RefreshCw, Sliders, Trash2, X 
+  RefreshCw, Sliders, Trash2, X, Building2
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { 
   Product, ICPProfile, ICPRule, ScoreModel, 
-  QuestionnaireTemplate, QuestionnaireQuestion, QuestionAnswerOption 
+  QuestionnaireTemplate, QuestionnaireQuestion, QuestionAnswerOption
 } from '../services/api';
 import { inAppAlert } from './common/InAppAlert';
+import { AddProductModal } from './common/AddProductModal';
+import { AddIndustryModal } from './common/AddIndustryModal';
+import { EditProductModal } from './common/EditProductModal';
 
 interface AdminEngineStudioProps {
   products: Product[];
+  onProductCreated?: (product: Product) => void;
+  onProductUpdated?: (product: Product) => void;
+  onProductDeleted?: (productId: string) => void;
 }
 
-export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ products }) => {
+export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ 
+  products, 
+  onProductCreated, 
+  onProductUpdated, 
+  onProductDeleted 
+}) => {
   const [activeSubTab, setActiveSubTab] = useState<'icp' | 'scoring' | 'questionnaires'>('icp');
   const [selectedProduct, setSelectedProduct] = useState<string>(products[0]?.id || '');
+  const [showAddProductModal, setShowAddProductModal] = useState<boolean>(false);
+  const [showEditProductModal, setShowEditProductModal] = useState<boolean>(false);
+  const [showAddIndustryModal, setShowAddIndustryModal] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [profiles, setProfiles] = useState<ICPProfile[]>([]);
   const [rules, setRules] = useState<ICPRule[]>([]);
@@ -262,32 +276,108 @@ export const AdminEngineStudio: React.FC<AdminEngineStudioProps> = ({ products }
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Active Product:</span>
             <select
               className="form-select"
               value={selectedProduct}
-              onChange={e => setSelectedProduct(e.target.value)}
+              onChange={e => {
+                if (e.target.value === '__NEW__') {
+                  setShowAddProductModal(true);
+                } else {
+                  setSelectedProduct(e.target.value);
+                }
+              }}
               style={{ minWidth: '180px' }}
             >
               {products.map(p => (
                 <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
               ))}
+              <option value="__NEW__">+ Add New Product...</option>
             </select>
+
+            {products.find(p => p.id === selectedProduct) && (
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setShowEditProductModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.78rem', padding: '6px 10px' }}
+                title="Edit active product settings"
+              >
+                <Edit2 size={13} />
+                <span>Edit Product</span>
+              </button>
+            )}
           </div>
+
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setShowAddProductModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px' }}
+            title="Create a new commercial solution product"
+          >
+            <Plus size={14} />
+            <span>Add Product</span>
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => setShowAddIndustryModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px' }}
+            title="Create a new master industry sector"
+          >
+            <Building2 size={14} />
+            <span>Add Industry</span>
+          </button>
 
           <button
             className="btn btn-secondary"
             onClick={loadEngineConfigs}
             disabled={loading}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px' }}
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
         </div>
       </div>
+
+      <AddProductModal
+        isOpen={showAddProductModal}
+        onClose={() => setShowAddProductModal(false)}
+        onProductCreated={(newProd) => {
+          onProductCreated?.(newProd);
+          setSelectedProduct(newProd.id);
+          notify('success', `Product "${newProd.name}" created and set as active.`);
+        }}
+      />
+
+      <EditProductModal
+        isOpen={showEditProductModal}
+        product={products.find(p => p.id === selectedProduct) || null}
+        onClose={() => setShowEditProductModal(false)}
+        onProductUpdated={(updatedProd) => {
+          onProductUpdated?.(updatedProd);
+          notify('success', `Product "${updatedProd.name}" updated successfully.`);
+        }}
+        onProductDeleted={(deletedId) => {
+          onProductDeleted?.(deletedId);
+          notify('success', 'Product deleted successfully.');
+          const remaining = products.filter(p => p.id !== deletedId);
+          setSelectedProduct(remaining[0]?.id || '');
+        }}
+      />
+
+      <AddIndustryModal
+        isOpen={showAddIndustryModal}
+        onClose={() => setShowAddIndustryModal(false)}
+        onIndustryCreated={(newInd) => {
+          notify('success', `Industry "${newInd.name}" created successfully.`);
+        }}
+      />
 
       {statusMsg && (
         <div style={{

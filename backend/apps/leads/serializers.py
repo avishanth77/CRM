@@ -79,7 +79,9 @@ class LeadProblemSerializer(serializers.ModelSerializer):
 class LeadSerializer(serializers.ModelSerializer):
     account_name = serializers.ReadOnlyField(source='account.company_name')
     account_city = serializers.ReadOnlyField(source='account.city')
+    account_state = serializers.ReadOnlyField(source='account.state')
     account_country = serializers.ReadOnlyField(source='account.country')
+    account_address = serializers.ReadOnlyField(source='account.address')
     contact_name = serializers.SerializerMethodField()
     contact_email = serializers.ReadOnlyField(source='contact.email')
     contact_phone = serializers.ReadOnlyField(source='contact.phone')
@@ -113,7 +115,7 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = [
-            'id', 'account', 'account_name', 'account_city', 'account_country',
+            'id', 'account', 'account_name', 'account_country', 'account_state', 'account_city', 'account_address',
             'domain', 'industry', 'employees_count', 'is_target_account', 'target_tier',
             'contact', 'contact_name',
             'contact_email', 'contact_phone', 'contact_designation',
